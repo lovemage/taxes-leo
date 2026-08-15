@@ -14,7 +14,7 @@
   <text class="title" x="700" y="40" text-anchor="middle">9-max 本機平台使用流程</text>
 
   <rect class="primary" x="510" y="70" width="380" height="55" rx="12"/><text class="h" x="700" y="103" text-anchor="middle">開啟 Windows App</text>
-  <rect class="primary" x="510" y="150" width="380" height="62" rx="12"/><text class="h" x="700" y="177" text-anchor="middle">建立或載入本機桌型</text><text class="s" x="700" y="198" text-anchor="middle">3–9 人・1 User + 2–8 Bot</text>
+  <rect class="primary" x="510" y="150" width="380" height="62" rx="12"/><text class="h" x="700" y="177" text-anchor="middle">建立或載入本機桌型</text><text class="s" x="700" y="198" text-anchor="middle">6–9 人・1 User + 5–8 Bot</text>
   <rect class="primary" x="510" y="237" width="380" height="62" rx="12"/><text class="h" x="700" y="264" text-anchor="middle">調整牌桌／Persona／Level／覆寫</text><text class="s" x="700" y="285" text-anchor="middle">參數是主要操作中心</text>
   <rect class="primary" x="510" y="324" width="380" height="62" rx="12"/><text class="h" x="700" y="351" text-anchor="middle">編輯或選擇使用者策略</text><text class="s" x="700" y="372" text-anchor="middle">169 格 × Action・Postflop 規則</text>
   <path class="edge" d="M700 125V150M700 212V237M700 299V324"/>

@@ -57,7 +57,7 @@
 
 | 欄位 | 型別 | 說明 |
 |---|---|---|
-| players | 3–9 | 座位數 |
+| players | 6–9（預設 9） | 座位數 |
 | blind | struct | SB／BB；顯示可用 bb 正規化，保存為最小籌碼整數 |
 | stackBySeatBb | map[seat, 20\|50\|100] | 每座**桌次開局**的起始深度，三檔擇一。破產離桌後籌碼跨手漂移，策略 applicability 依英雄與相關對手的**有效籌碼 bucket**（規則細則 8.5）判定，不依起始檔位 |
 | ante | enum | none／perPlayer（逐人）／bbAnte（BB ante）／btnAnte（BTN ante）＋ 金額 |
@@ -72,13 +72,12 @@
 
 | 座位數 | 位置集合 |
 |---|---|
-| 9 | UTG／UTG+1／UTG+2／LJ／HJ／CO／BTN／SB／BB |
+| 9（預設） | UTG／UTG+1／UTG+2／LJ／HJ／CO／BTN／SB／BB |
 | 8 | UTG／UTG+1／LJ／HJ／CO／BTN／SB／BB |
 | 7 | UTG／LJ／HJ／CO／BTN／SB／BB |
 | 6 | LJ／HJ／CO／BTN／SB／BB |
-| 5 | HJ／CO／BTN／SB／BB |
-| 4 | CO／BTN／SB／BB |
-| 3 | BTN／SB／BB（三個獨立位置；BTN 翻前先動、翻後最後動） |
+
+> 6-max 以下不在產品範圍內。破產離桌期間在桌人數可能短暫低於 6，該情形下桌次即結束（自動補位關閉時）或立即補位回 `targetPlayers`（自動補位開啟時），不產生 5-max 以下的常態桌型。
 
 （位置命名以牌手顧問最終定案為準；此表是引擎位置映射在 UI 上的呈現依據。）
 
@@ -157,6 +156,7 @@
 ### H.1 定位
 
 - 呈現「自身座位」（本機方）的表現：勝率、EV、頻率，供策略診斷。
+- **統計主體只有使用者座位**（核心規格 5.0）。Bot 的結果不計入策略統計，只在「對照」區塊作為基準顯示，不進入顯著性判定與漏洞旗標。
 - 資料來源：本機引擎的逐手輸出聚合 ＋ Equity engine；小型狀態可精確枚舉，大型多人狀態採 deterministic sampling。**不拿逐手盈虧直接下結論，一律揭露樣本數、計算模式與不確定性**。
 
 ### H.2 指標定義（含公式）
@@ -200,7 +200,7 @@
 
 | 資料／比較 | 顯示方法 |
 |---|---|
-| 一般 EV／bb100 | **以桌次為 cluster** 的 cluster bootstrap，顯示 estimator 名稱；不得以固定手數切 batch |
+| 一般 EV／bb100 | **moving block bootstrap**（block 長度 M0 凍結，桌次邊界為強制斷點），顯示 estimator 名稱 |
 | CRN／duplicate A/B | 對配對差值做 CI，不顯示兩次獨立區間相減 |
 | Win Rate／VPIP／PFR 等比例 | 分子／分母＋Wilson interval；有 cluster 時改用 cluster bootstrap |
 | Exact Equity | 標示「模型內精確」，不製造 sampling CI |
@@ -210,8 +210,8 @@
 ### H.4 版面與視覺（GTO Wizard 式）
 
 - **整體卡**：先顯示「可判定／無法判定／樣本不足」，再顯示勝率的分子／分母與區間、EV／bb100＋CI、estimator、All-in EV、σ、最大回撤及樣本數。
-- **逐位置表**：列 = 位置，欄 = 勝率／EV／bb/100／VPIP／PFR。**必須依當手在桌人數切片**；9 人桌的 BTN 與 4 人桌的 BTN 是不同母體，不得合併為同一列。切片的有效樣本以桌次數計。
-- **桌次卡**：桌次數、平均存活手數、結束原因分佈（使用者破產／降至 2 人／達手數上限）。桌次存活手數本身是策略強弱的觀測值。
+- **逐位置表**：列 = 位置，欄 = 勝率／EV／bb/100／VPIP／PFR。**必須依當手在桌人數切片**；使用者在 9 人桌的 BTN 與在 7 人桌的 BTN 是不同母體，不得合併為同一列。切片的有效樣本以 block 數計。
+- **桌次卡**：桌次數、平均存活手數、結束原因分佈（使用者破產／人數不足／達手數上限）、補位次數。使用者的桌次存活手數本身是策略強弱的觀測值。
 - **13×13 EV 熱力圖**：每格可切換 EV／勝率／使用頻率；顯示值、樣本數、CI 狀態與探索性標示；提供色階圖例及非紅綠的色盲可辨識方案。
 - **逐街分解**：preflop／flop／turn／river 的 EV 與頻率長條。
 - **對照**：自身 vs 全桌 Bot 平均的 EV 差距與剝削幅度。

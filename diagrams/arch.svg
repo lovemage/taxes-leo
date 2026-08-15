@@ -25,7 +25,7 @@
 
   <rect class="group" x="220" y="130" width="350" height="530" rx="14"/>
   <text class="h" x="395" y="162" text-anchor="middle">React／TypeScript UI</text>
-  <rect class="ui" x="245" y="185" width="300" height="62" rx="9"/><text class="t" x="395" y="212" text-anchor="middle">3–9 人牌桌</text><text class="s" x="395" y="234" text-anchor="middle">1 User + 2–8 Bot</text>
+  <rect class="ui" x="245" y="185" width="300" height="62" rx="9"/><text class="t" x="395" y="212" text-anchor="middle">6–9 人牌桌</text><text class="s" x="395" y="234" text-anchor="middle">1 User + 5–8 Bot</text>
   <rect class="ui" x="245" y="265" width="300" height="62" rx="9"/><text class="t" x="395" y="291" text-anchor="middle">牌桌／Bot／策略參數中心</text><text class="s" x="395" y="313" text-anchor="middle">搜尋・繼承・覆寫・驗證</text>
   <rect class="ui" x="245" y="345" width="300" height="62" rx="9"/><text class="t" x="395" y="371" text-anchor="middle">互動 Play／批次執行</text><text class="s" x="395" y="393" text-anchor="middle">進度・暫停・續跑・取消</text>
   <rect class="ui" x="245" y="425" width="300" height="62" rx="9"/><text class="t" x="395" y="451" text-anchor="middle">統計儀表板／熱力圖</text><text class="s" x="395" y="473" text-anchor="middle">樣本・CI・Estimator・FDR</text>
