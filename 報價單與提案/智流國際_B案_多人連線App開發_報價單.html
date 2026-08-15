@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>智流國際有限公司｜多人連線 App 開發報價單</title>
+  <style>
+    :root { --ink:#14213d; --ink-soft:#33415c; --muted:#687386; --line:#d9e0ea; --line-strong:#aab7c9; --brand:#075985; --brand-deep:#063d61; --brand-soft:#e8f3f8; --paper:#fff; --wash:#f7fafc; --warm:#fff8e8; --warm-line:#ebd29a; }
+    * { box-sizing:border-box; }
+    @page { size:A4; margin:10mm 9mm; }
+    body { margin:0; color:var(--ink); background:#eef2f6; font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",Arial,sans-serif; font-size:13px; line-height:1.58; }
+    .sheet { width:min(1000px,calc(100% - 32px)); margin:20px auto; padding:42px 46px 36px; border:1px solid var(--ink); background:var(--paper); box-shadow:0 8px 28px rgba(23,45,73,.1); }
+    .topline { height:7px; margin:-42px -46px 27px; background:var(--brand-deep); }
+    .head { display:grid; grid-template-columns:1fr auto; align-items:start; gap:26px; padding-bottom:19px; border-bottom:2px solid var(--brand-deep); }
+    .eyebrow,.label,.small-caps { color:var(--brand); font-size:10px; font-weight:800; letter-spacing:1.25px; text-transform:uppercase; }
+    .issuer-name { margin:4px 0 6px; font-size:22px; font-weight:800; letter-spacing:.3px; }
+    .issuer-detail,.meta { margin:2px 0; color:var(--ink-soft); font-size:12px; }
+    .title { text-align:right; } h1 { margin:3px 0 8px; font-size:25px; letter-spacing:1.4px; line-height:1.2; } .doc-type { display:block; color:var(--brand); font-size:10px; font-weight:800; letter-spacing:1.5px; }
+    .summary { display:grid; grid-template-columns:1fr 1fr 1fr 1.6fr; margin:22px 0 25px; border:1px solid var(--line-strong); }
+    .summary>div { min-height:79px; padding:12px 13px; border-right:1px solid var(--line); } .summary>div:last-child { border-right:0; } .summary .label { display:block; margin-bottom:5px; } .summary strong { display:block; font-size:17px; letter-spacing:.1px; } .summary .scope { font-size:12.5px; font-weight:700; line-height:1.42; }
+    .party-grid,.two-col { display:grid; grid-template-columns:1fr 1fr; gap:16px; } .card { padding:15px 16px; border:1px solid var(--line-strong); background:#fff; } .card h3 { margin:0 0 9px; font-size:13px; } .card p { margin:4px 0; } .client-card p { margin:3px 0; font-size:11.5px; line-height:1.45; } .muted { color:var(--muted); }
+    h2 { margin:25px 0 11px; padding:8px 12px; color:#fff; background:var(--brand-deep); font-size:15px; letter-spacing:.5px; line-height:1.3; } h3 { margin:14px 0 7px; font-size:13.5px; } p { margin:7px 0; } ul { margin:7px 0; padding-left:20px; } li { margin:5px 0; } .lead { font-size:13.5px; }
+    .notice { margin:11px 0; padding:12px 14px; border:1px solid var(--warm-line); background:var(--warm); } .notice strong { color:#6f4b00; }
+    table { width:100%; border-collapse:collapse; margin:10px 0 7px; font-size:12.2px; } th,td { padding:10px; border:1px solid var(--line); vertical-align:top; } th { color:var(--brand-deep); background:var(--brand-soft); font-weight:800; text-align:left; } tbody tr:nth-child(even) { background:#fafcff; } .num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; } .total-row td { border-top:2px solid var(--brand-deep); background:#eef7fb; font-weight:800; } .grand-total td { color:#fff; border-color:var(--brand-deep); background:var(--brand-deep); font-size:13.5px; font-weight:800; } .fine { margin-top:6px; color:var(--muted); font-size:11px; } .grp td { background:var(--brand-soft); color:var(--brand-deep); font-weight:800; }
+    .scope-list { display:grid; grid-template-columns:42px 1fr; gap:0 13px; } .scope-list .step { align-self:start; margin-top:6px; padding:5px 0; color:#fff; background:var(--brand); font-size:11px; font-weight:800; line-height:1; text-align:center; } .scope-list .content { padding:2px 0 14px; border-bottom:1px solid var(--line); } .scope-list .content:last-child { border-bottom:0; } .scope-list h3 { margin:0 0 3px; }
+    .term-box { padding:14px 15px; border:1px solid var(--line-strong); background:var(--wash); } .term-box h3 { margin-top:0; color:var(--brand-deep); } .term-box ul { font-size:12.2px; }
+    .timeline { display:grid; grid-template-columns:104px 1fr; border:1px solid var(--line); } .timeline>div { padding:9px 11px; border-bottom:1px solid var(--line); } .timeline>div:nth-last-child(-n+2) { border-bottom:0; } .timeline .phase { color:var(--brand-deep); background:var(--brand-soft); font-weight:800; }
+    .payment-grid { display:grid; grid-template-columns:1.12fr .88fr; gap:16px; } .bank { padding:15px 16px; border:1px solid var(--brand-deep); } .bank p { margin:5px 0; }
+    .signature { display:grid; grid-template-columns:1fr 1fr; gap:30px; margin-top:29px; } .signature-block { padding-top:8px; } .signature-line { height:54px; margin-top:10px; border-bottom:1px solid var(--ink); } .signature-meta { display:flex; justify-content:space-between; gap:8px; margin-top:8px; color:var(--muted); font-size:11px; }
+    footer { margin-top:28px; padding-top:11px; border-top:1px solid var(--line-strong); color:var(--muted); font-size:10.5px; text-align:center; } .page-break { break-before:page; page-break-before:always; } .avoid { break-inside:avoid; page-break-inside:avoid; }
+    @media print { body { background:#fff; font-size:11.4px; line-height:1.47; } .sheet { width:100%; min-height:0; margin:0; padding:8mm 9mm 7mm; border:1.4px solid var(--ink); box-shadow:none; } .topline { height:5px; margin:-8mm -9mm 6mm; } .head { padding-bottom:12px; gap:20px; } .issuer-name { font-size:18px; } h1 { font-size:21px; } .summary { margin:14px 0 17px; } .summary>div { min-height:61px; padding:8px 9px; } .summary strong { font-size:14px; } h2 { margin:17px 0 8px; padding:6px 9px; font-size:13px; } h3 { font-size:12px; } table { margin:7px 0 4px; font-size:10.6px; } th,td { padding:6px 7px; } .card,.term-box,.bank { padding:10px 11px; } .client-card p { margin:2px 0; font-size:10.6px; line-height:1.4; } .notice { padding:9px 10px; } .scope-list .content { padding-bottom:9px; } .scope-list .step { padding:4px 0; } .fine,footer,.signature-meta { font-size:9.5px; } footer { margin-top:12px; padding-top:7px; } .signature { margin-top:16px; } .signature-line { height:44px; } .page-break { break-before:page; page-break-before:always; } .avoid,.summary,.party-grid,.two-col,.payment-grid,.signature,.notice { break-inside:avoid; page-break-inside:avoid; } .two-col.splitok, .two-col.splitok .term-box { break-inside:auto; page-break-inside:auto; } thead { display:table-header-group; } tr,th,td { break-inside:avoid; page-break-inside:avoid; } * { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+    @media (max-width:720px) { .sheet { width:100%; margin:0; padding:28px 20px; border:0; box-shadow:none; } .topline { margin:-28px -20px 21px; } .head,.party-grid,.two-col,.payment-grid { grid-template-columns:1fr; } .title { text-align:left; } .summary { grid-template-columns:1fr 1fr; } .summary>div:nth-child(2) { border-right:0; } .summary>div:nth-child(-n+2) { border-bottom:1px solid var(--line); } .signature { grid-template-columns:1fr; } .timeline { grid-template-columns:82px 1fr; } }
+  </style>
+</head>
+<body>
+  <main class="sheet">
+    <div class="topline"></div>
+    <header class="head">
+      <section>
+        <span class="eyebrow">Issued by</span>
+        <p class="issuer-name">海水不可斗量工作室</p>
+        <p class="issuer-detail">登記實體：卉田國際有限公司</p>
+        <p class="issuer-detail">專案窗口：Ivan Bai（白翼輔）｜0912-305-910</p>
+        <p class="issuer-detail">support@oceanads.org ｜ Oceanads.org</p>
+      </section>
+      <section class="title">
+        <span class="doc-type">Project quotation</span>
+        <h1>正 式 報 價 單</h1>
+        <p class="meta" style="font-weight:800;color:#063d61">B 案｜多人連線 App</p>
+        <p class="meta">報價日期　2026 / 07 / 29</p>
+        <p class="meta">報價編號　PSL-B-20260729-001</p>
+        <p class="meta">有效期限　2026 / 08 / 12</p>
+      </section>
+    </header>
+
+    <section class="summary avoid" aria-label="報價摘要">
+      <div><span class="label">開發費用</span><strong>NT$ 240,000</strong><span class="muted">未稅</span></div>
+      <div><span class="label">含稅應付</span><strong>NT$ 252,000</strong><span class="muted">加計 5% 營業稅</span></div>
+      <div><span class="label">上線後月費（含稅）</span><strong>NT$ 13,650 起</strong><span class="muted">第 1～2 個月：僅主機代管<br>第 3 個月起：NT$ 51,450 起（＋維運 37,800）</span></div>
+      <div><span class="label">服務範圍</span><span class="scope">iOS／Android <b>獨立多人連線 App</b>、伺服器權威真人牌桌、Play Chips 籌碼經濟、獨立商店送審、主機代管與軟體維運</span></div>
+    </section>
+
+    <section class="party-grid avoid">
+      <article class="card client-card">
+        <h3>甲方｜Client</h3>
+        <p><b>公司名稱：</b>智流國際有限公司</p>
+        <p><b>統一編號：</b>62218947</p>
+        <p><b>負責人：</b>郭子鼎</p>
+        <p><b>專案聯絡人：</b>Leo／郭子鼎　<b>聯絡電話：</b>0928-901-964</p>
+        <p><b>登記地址：</b>臺中市西屯區何仁里天水中街 56 之 3 號</p>
+        <p><b>發票寄送 Email：</b>＿＿＿＿＿＿＿＿＿＿＿＿＿＿</p>
+        <p class="muted"><b>簽認前必填</b>——電子發票開立與第 12.3 節之有效通知均以此 Email 為準。</p>
+      </article>
+      <article class="card">
+        <h3>乙方｜Vendor</h3>
+        <p><b>公司名稱：</b>卉田國際有限公司（海水不可斗量工作室）</p>
+        <p><b>統一編號：</b>91093506</p>
+        <p><b>負責人：</b>劉苡妡</p>
+        <p><b>專案聯絡人：</b>Ivan Bai（白翼輔）　<b>聯絡電話：</b>0912-305-910</p>
+        <p><b>登記地址：</b>台中市西區中興街 183 號 4 樓</p>
+        <p><b>聯絡 Email：</b>support@oceanads.org</p>
+      </article>
+    </section>
+
+    <h2>一、專案定位與本次報價範圍</h2>
+    <p class="lead">本案為<b>獨立的多人即時對戰 App</b>，提供伺服器權威的真人德州撲克牌局、大廳配對、私人好友房與 Play Chips 籌碼經濟。所有籌碼皆為虛擬籌碼，<b>不可提領、兌現、轉讓或交易</b>。</p>
+    <div class="notice avoid"><strong>本報價單之範圍與雙 App 架構：</strong>經雙方確認，多人即時對戰<b>不併入單人策略模擬 App，而以獨立 App 開發並獨立送審</b>。單人策略模擬 App 之開發與伺服器費用另訂於《單人策略模擬 App 開發報價單》（PSL-A-20260729-001），<b>與本報價單各自獨立簽署、各自驗收、各自計費</b>。<br><br>分開的理由有三：① <b>合規風險隔離</b>——本 App 具備可購買籌碼與牌桌台費（Rake），屬社交博弈遊戲，年齡分級與地區限制均較嚴格；若與工具型的 A 案合併，將使 A 案被迫承受最嚴格分級，且本案一旦送審受阻或遇政策變動，A 案會一併受影響。② <b>市場覆蓋不同</b>——A 案可上架地區明顯多於本案。③ <b>定位與評價分離</b>——真人牌局易因牌運與爭議產生負評，不應影響工具型產品之評分池。<br><br><b>此決策使本案的工作量高於併入既有 App</b>：需獨立建立商店項目、獨立年齡分級與模擬博弈內容申報、獨立雙語商店素材、獨立 TestFlight 與 Google Play 封測、獨立正式送審，並實作跨 App 之訂閱權益同步。上列工作<b>均已列入本報價之交付範圍</b>（見第二節第 09～12 項）。</div>
+    <table>
+      <thead><tr><th style="width:20%">項目</th><th>內容</th><th style="width:13%" class="num">金額（未稅）</th><th style="width:13%" class="num">含稅</th></tr></thead>
+      <tbody>
+        <tr><td><b>B 案｜多人連線 App</b><br><span class="muted">本報價單</span></td><td>伺服器權威牌桌、WebSocket 即時通訊、大廳與配對、私人好友房、逾時處理與斷線重連、牌局稽核紀錄、Play Chips 籌碼經濟與台費機制、基礎反作弊、<b>獨立 App 之商店建立與送審</b>、跨 App 訂閱權益同步</td><td class="num"><b>NT$ 240,000</b></td><td class="num">NT$ 252,000</td></tr>
+        <tr><td><b>主機代管</b><br><span class="muted">本報價單・經常性費用</span></td><td>即時牌桌基礎設施，機房三方案擇一，詳見第四節與附件 A</td><td class="num">NT$ 13,000～15,000／月</td><td class="num">NT$ 13,650～15,750／月</td></tr>
+        <tr><td><b>軟體維運</b><br><span class="muted">本報價單・經常性費用</span></td><td>上線後<b>前 2 個月免費</b>，第 3 個月起計費；服務時間週一至週五 09:00–17:00，詳見第五節</td><td class="num">NT$ 36,000／月</td><td class="num">NT$ 37,800／月</td></tr>
+        <tr class="total-row"><td colspan="2">上線後<b>第 1～2 個月</b>每月合計（僅主機代管，維運免費）</td><td class="num">NT$ 13,000～15,000／月</td><td class="num">NT$ 13,650～15,750／月</td></tr>
+        <tr class="total-row"><td colspan="2">上線後<b>第 3 個月起</b>每月合計（Stage 0 主機代管＋軟體維運）</td><td class="num">NT$ 49,000～51,000／月</td><td class="num">NT$ 51,450～53,550／月</td></tr>
+        <tr><td colspan="2">A 案｜單人策略模擬 App（<b>不含於本報價單</b>，另訂 PSL-A-20260729-001）</td><td class="num">另行報價</td><td class="num">另行報價</td></tr>
+      </tbody>
+    </table>
+    <p class="fine">開發費用以<b>未稅</b>為合約計價基礎，<b>5% 營業稅另行外加</b>；本案稅額為 NT$ 12,000，含稅應付總額為 NT$ 252,000。電子發票依各請款階段之含稅金額開立。主機代管與軟體維運月費同樣以未稅為計價基礎、稅額外加，各節均並列未稅與含稅金額，請款以含稅金額為準。<b>本案應於 A 案驗收完成、架構穩定後啟動。</b></p>
+
+    <h2>二、交付範圍｜多人連線 App</h2>
+    <p class="lead">多人即時對戰不是一項畫面功能，而是一套常駐多人連線系統加上一個獨立上架的 App。本案於 A 案驗收完成、架構穩定後啟動。</p>
+    <section class="two-col splitok">
+      <article class="term-box">
+        <h3>包含項目</h3>
+        <ul>
+          <li>WebSocket 即時通訊與連線管理。</li>
+          <li>伺服器端牌桌狀態機；發牌、籌碼、行動合法性與勝負<b>全部由伺服器判定</b>，客戶端不具權威。</li>
+          <li>以密碼學安全亂數（CSPRNG）產生牌序。</li>
+          <li>玩家大廳、入桌、離桌與基本快速配對。</li>
+          <li>好友私人房建立與加入。</li>
+          <li>逾時自動 Fold／Check、斷線重連與牌局續行。</li>
+          <li>每局完整且不可修改的牌局稽核紀錄，供爭議調查與重播。</li>
+          <li>基礎反作弊：多開偵測、客戶端竄改防護、基本異常行為告警。</li>
+          <li><b>Play Chips 籌碼帳本</b>：發放、扣減、對帳與異常稽核；平台購買籌碼與免費贈送籌碼分帳管理。</li>
+          <li><b>每日免費籌碼</b>與破產救濟發放機制。</li>
+          <li><b>籌碼商店</b>：消耗性 IAP 品項串接與購買流程（沿用 A 案已建置之 IAP 基礎建設）。</li>
+          <li><b>牌桌台費（Rake）機制</b>：每底池依設定比例回收虛擬籌碼，為籌碼經濟之回收端。</li>
+          <li><b>私人房開房消耗</b>：由房主消耗籌碼或使用 VIP 額度開房。</li>
+          <li>測試環境、基礎日誌與監控、併發與安全測試。</li>
+          <li><b>獨立 App 之建立與送審（09）：</b>App Store Connect 與 Google Play Console 之新 App 項目建立、Bundle ID 與套件名稱設定、簽章金鑰產製與保管移交。</li>
+          <li><b>獨立年齡分級與內容申報（10）：</b>依社交博弈定位完成各平台之年齡分級問卷、模擬博弈內容申報、上架地區設定，並撰寫英文審查備註與測試帳號說明。</li>
+          <li><b>獨立雙語商店素材與封測送審（11）：</b>繁體中文與英文之商店標題、簡介、完整說明與截圖各一組；TestFlight 與 Google Play 封閉測試建置，及正式送審與審查往返處理。</li>
+          <li><b>跨 App 訂閱權益同步（12）：</b>同一組 VIP 訂閱可於 A、B 兩個 App 生效，權益由後端統一判定；本項銜接 A 案已建置之 App 無關權益系統。</li>
+          <li><b>繁體中文與英文雙語系（13）：</b>介面字串、錯誤訊息與系統通知之雙語版本，沿用 A 案已建置之 i18n 架構。</li>
+          <li><b>基礎美工（14）：</b>牌桌、牌具、籌碼與大廳之標準樣式、標準圖示組、App icon 一式；精緻美工不含於本案，須另行付費外包（界線比照 A 案 2.1 節）。</li>
+        </ul>
+      </article>
+      <article class="term-box">
+        <h3>不包含項目（需另行估價）</h3>
+        <ul>
+          <li>成熟反串通系統：跨場次行為建模、群組關聯分析、籌碼輸送偵測。</li>
+          <li>24 小時人工牌局覆核與爭議調查流程。</li>
+          <li>完整錦標賽系統（MTT、SNG、Spin）與 ICM 計算。</li>
+          <li>跨區多機房部署與大型高併發架構（超出第四節 Stage 1 規模）。</li>
+          <li>觀戰系統的延遲串流與轉播功能。</li>
+          <li>客服中心、人員排班與使用者申訴處理。</li>
+          <li>精緻美工：原創角色與立繪、3D 牌桌與材質、換膚主題、複雜動畫與特效。</li>
+          <li>第 3 種語言起之多語系（每種 NT$ 18,000 未稅另計）。</li>
+          <li>App 內以 IP 或註冊地判斷之地理封鎖機制（商店端上架地區選擇含於本案）。</li>
+          <li>錦標賽報名與獎勵發放系統、賽季通行證（Battle Pass）。</li>
+          <li>造型、頭像、桌布等外觀商城。</li>
+          <li>廣告變現 SDK 串接與廣告獎勵籌碼流程。</li>
+        </ul>
+      </article>
+    </section>
+    
+    <div class="notice avoid"><strong>驗收基準：</strong>本案定義為「可進行封閉測試並正式上架的基礎真人對戰 App」，併發驗收條件以第四節 Stage 1 規模（同時在線 50～150 人、同時牌桌 20～50 桌）為準。若甲方要求更高併發、成熟反串通或全時營運能力，屬另案範圍。</div>
+
+    <h2>三、開發費用明細</h2>
+    <table>
+      <thead><tr><th style="width:20%">項次</th><th>內容</th><th style="width:16%" class="num">金額（未稅）</th></tr></thead>
+      <tbody>
+        <tr><td>2-1</td><td>WebSocket 通訊與伺服器權威牌桌狀態機</td><td class="num">含於本案</td></tr>
+        <tr><td>2-2</td><td>大廳、配對、私人房與入離桌流程</td><td class="num">含於本案</td></tr>
+        <tr><td>2-3</td><td>逾時處理、斷線重連與牌局續行</td><td class="num">含於本案</td></tr>
+        <tr><td>2-4</td><td>牌局稽核紀錄與重播、基礎反作弊</td><td class="num">含於本案</td></tr>
+        <tr><td>2-5</td><td>Play Chips 籌碼帳本、每日免費籌碼、籌碼商店 IAP、牌桌台費（Rake）、私人房開房消耗</td><td class="num">含於本案</td></tr>
+        <tr><td>2-6</td><td><b>獨立 App 之商店項目建立、簽章金鑰產製與移交</b></td><td class="num">含於本案</td></tr>
+        <tr><td>2-7</td><td><b>獨立年齡分級、模擬博弈內容申報與上架地區設定</b></td><td class="num">含於本案</td></tr>
+        <tr><td>2-8</td><td><b>獨立雙語商店素材、封閉測試建置與正式送審往返</b></td><td class="num">含於本案</td></tr>
+        <tr><td>2-9</td><td><b>跨 App 訂閱權益同步</b>（銜接 A 案已建置之權益系統）</td><td class="num">含於本案</td></tr>
+        <tr><td>2-10</td><td>繁體中文與英文雙語系（沿用 A 案 i18n 架構）</td><td class="num">含於本案</td></tr>
+        <tr><td>2-11</td><td>基礎美工製作與介面整合（精緻美工另行外包，不含於本案）</td><td class="num">含於本案</td></tr>
+        <tr><td>2-12</td><td>多人連線環境部署、日誌監控與併發測試</td><td class="num">含於本案</td></tr>
+        <tr class="total-row"><td colspan="2">開發費用小計（未稅）</td><td class="num">NT$ 240,000</td></tr>
+        <tr class="total-row"><td colspan="2">營業稅 5%</td><td class="num">NT$ 12,000</td></tr>
+        <tr class="grand-total"><td colspan="2">含稅應付總額</td><td class="num">NT$ 252,000</td></tr>
+      </tbody>
+    </table>
+    <div class="notice avoid"><strong>關於獨立送審之工作量：</strong>第 2-6 至 2-9 項係<b>雙 App 架構所新增的工作</b>，若併入既有 App 則不需要。此部分工作量已納入本案報價，<b>不另外加價</b>；但相對地，本案的審查往返次數與時程風險高於一般 App，若因商店政策或審查結果須大幅調整功能或定位，屬範圍變更，另行評估。</div>
+
+    <h2>四、主機代管方案（伺服器）</h2>
+    <p class="lead">本案由工作室統一開設雲端帳號、建置環境並負責日常維運，甲方按月支付單一費用，不需自行處理雲端帳單、規格調整與備份作業。</p>
+    <div class="notice avoid"><strong>與 A 案伺服器之關係：</strong>本案之即時牌桌基礎設施<b>與 A 案的基礎伺服器為兩套獨立部署</b>——牌桌延遲敏感、須部署於接近玩家的機房且不得與批次工作共用機器，成本結構與 A 案完全不同；獨立部署亦符合雙 App 架構下的風險與事故隔離原則。帳號與訂閱權益服務共用 A 案環境，本案以內部 API 取用，<b>不另計費</b>。</div>
+
+    <h3>4.1 為何牌桌與模擬運算必須分開機器</h3>
+    <p>本專案同時存在三種性質相反的負載：<b>即時牌桌</b>（常駐連線、延遲敏感、不可抖動）、<b>模擬 Worker</b>（批次運算、長時間吃滿 CPU、可中斷重試）、<b>資料層</b>（隨機 IO 與記憶體敏感）。</p>
+    <div class="notice avoid"><strong>混跑的後果：</strong>若模擬工作與牌桌跑在同一台機器，一個 100 萬手的回測會把 CPU 佔滿，牌桌行程的事件迴圈被排擠，玩家端心跳逾時，伺服器將依規則<b>判定逾時自動 Fold</b>。這在真人牌局屬於帳務與信任事故——牌局紀錄上看起來完全合法，客服無從解釋。因此牌桌節點必須獨立，且該節點不得執行任何批次工作。</div>
+
+    <h3>4.2 機房位置配置</h3>
+    <table>
+      <thead><tr><th style="width:26%">節點</th><th style="width:30%">建議區域</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td>牌桌／WebSocket</td><td>台灣或東京</td><td>延遲敏感，必須靠近玩家；台灣約 5～15ms、東京約 35～45ms，美國區域超過 150ms 會明顯影響下注操作與斷線重連體驗。</td></tr>
+        <tr><td>API 與資料層</td><td>與牌桌同區</td><td>避免跨區查詢延遲疊加。</td></tr>
+        <tr><td>模擬 Worker</td><td>低價區域</td><td>批次工作完全不延遲敏感，結果晚數分鐘產出不影響體驗；移至低價區域並採可中斷機型，可大幅降低運算費用。</td></tr>
+      </tbody>
+    </table>
+
+    <h3>4.3 代管月費與機房方案（三選一）</h3>
+    <p>代管月費依甲方選定之<b>機房方案</b>與<b>當時所處的資源級距</b>兩項條件計價。三案的維運服務內容完全相同，差別在機房位置、延遲表現與供應商託管服務生態，詳見<b>附件 A</b>。</p>
+    <table>
+      <thead><tr><th style="width:26%">機房方案</th><th style="width:12%">機房位置</th><th style="width:15%" class="num">Stage 0 月費<br><span class="muted">未稅／含稅</span></th><th style="width:15%" class="num">Stage 1 月費<br><span class="muted">未稅／含稅</span></th><th class="num">首次支付<br><span class="muted">Stage 0 預儲 3 個月・含稅</span></th></tr></thead>
+      <tbody>
+        <tr><td><b>方案 A｜Google Cloud Platform</b><br><span class="muted">設施與頻寬</span></td><td>台灣</td><td class="num">NT$ 15,000<br>NT$ 15,750</td><td class="num">NT$ 31,000<br>NT$ 32,550</td><td class="num">NT$ 47,250</td></tr>
+        <tr><td><b>方案 B｜Akamai Cloud</b><br><span class="muted">主機與頻寬</span></td><td>日本東京</td><td class="num">NT$ 14,000<br>NT$ 14,700</td><td class="num">NT$ 30,000<br>NT$ 31,500</td><td class="num">NT$ 44,100</td></tr>
+        <tr><td><b>方案 C｜DigitalOcean</b><br><span class="muted">主機與頻寬</span></td><td>新加坡</td><td class="num">NT$ 13,000<br>NT$ 13,650</td><td class="num">NT$ 29,000<br>NT$ 30,450</td><td class="num">NT$ 40,950</td></tr>
+      </tbody>
+    </table>
+    <p class="fine">Stage 1 月費為 Stage 0 月費加計 <b>NT$ 16,000（未稅）</b>的級距差額。該差額對應第 4.4 節新增的第二台牌桌節點、獨立 API 節點、Worker 擴充至 8～16 vCPU、PostgreSQL 升級至 4 vCPU／8GB 並啟用 PITR、Redis 擴充、CDN 與儲存擴充。Stage 2 規模另行報價。</p>
+
+    <h3>4.3.1 基礎月費之明確含量</h3>
+    <p>為避免認知落差，基礎月費所含資源以下表為準；<b>超出下列含量之部分一律依第 4.5 節超量單價另計</b>，不因「已付月費」而視為無限使用。</p>
+    <table>
+      <thead><tr><th style="width:34%">含量項目</th><th style="width:33%" class="num">Stage 0 月費含量</th><th style="width:33%" class="num">Stage 1 月費含量</th></tr></thead>
+      <tbody>
+        <tr><td>牌桌／API 節點</td><td class="num">合併 1 台（4 vCPU／8GB）</td><td class="num">牌桌 2 台＋API 1 台</td></tr>
+        <tr><td>模擬 Worker</td><td class="num">4 vCPU（離峰關機）</td><td class="num">8～16 vCPU 彈性擴縮</td></tr>
+        <tr><td>PostgreSQL</td><td class="num">2 vCPU／4GB／50GB<br><span class="muted">每日備份保留 7 天</span></td><td class="num">4 vCPU／8GB／200GB<br><span class="muted">含 PITR 時間點還原</span></td></tr>
+        <tr><td>Redis</td><td class="num">1 GB</td><td class="num">2 GB</td></tr>
+        <tr><td>物件儲存</td><td class="num">100 GB</td><td class="num">300 GB</td></tr>
+        <tr><td>月頻寬</td><td class="num">500 GB</td><td class="num">2 TB</td></tr>
+        <tr><td>模擬運算</td><td class="num">300 核心·小時／月</td><td class="num">1,500 核心·小時／月</td></tr>
+        <tr><td>CDN</td><td class="num">未包含</td><td class="num">基礎方案</td></tr>
+        <tr><td>維運服務</td><td class="num" colspan="2">兩級距相同，詳見第 5 節「基礎設施代管」欄</td></tr>
+      </tbody>
+    </table>
+
+    <div class="notice avoid"><strong>首次支付方式：</strong>主機代管採<b>預儲制</b>。甲方於選定方案後，第一次支付需<b>先儲值 3 個月的 Stage 0 費用</b>，作為雲端資源預付款；第 4 個月起改為按月支付。儲值餘額專用於本案雲端資源與代管服務，乙方於每月請款單載明扣抵明細與剩餘餘額。合約終止時，未使用之儲值餘額依第 7.3 條全額退還。</div>
+
+    <h3>4.4 資源配置與容量級距</h3>
+    <table>
+      <thead><tr><th style="width:15%">級距</th><th style="width:22%">適用階段</th><th>資源配置與服務內容</th><th style="width:16%" class="num">計費</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><b>Stage 0</b><br>封測期</td>
+          <td>封閉測試至上線初期<br><span class="muted">同時在線 &lt; 30 人<br>同時牌桌 &lt; 10 桌</span></td>
+          <td>牌桌＋API 節點 4 vCPU／8GB／80GB SSD ×1；模擬 Worker 4 vCPU／8GB ×1（離峰自動關機）；託管 PostgreSQL 2 vCPU／4GB／50GB（每日備份保留 7 天）；託管 Redis 1GB；物件儲存 100GB；Uptime 監控與錯誤告警；OS 與套件安全更新、憑證更新、每月備份還原檢查</td>
+          <td class="num">Stage 0 月費<br><span class="muted">NT$ 13,000～15,000／月（未稅）</span></td>
+        </tr>
+        <tr>
+          <td><b>Stage 1</b><br>上線期</td>
+          <td>正式上線<br>100～500 付費會員<br><span class="muted">同時在線 50～150 人<br>同時牌桌 20～50 桌</span></td>
+          <td>牌桌節點 4 vCPU／8GB ×2（滾動更新與故障轉移）；API 節點 2 vCPU／4GB ×1；模擬 Worker 8～16 vCPU 彈性擴縮；託管 PostgreSQL 4 vCPU／8GB／200GB 含 PITR 時間點還原；託管 Redis 2GB；物件儲存 300GB；CDN 基礎方案；含 Stage 0 全部維運服務</td>
+          <td class="num">Stage 1 月費<br><span class="muted">NT$ 29,000～31,000／月（未稅）</span></td>
+        </tr>
+        <tr>
+          <td><b>Stage 2</b><br>成長期</td>
+          <td>1,000 付費會員以上<br><span class="muted">同時在線 300～500 人</span></td>
+          <td>牌桌節點 ×3～4、API ×2、Worker 24～48 vCPU、PostgreSQL 8 vCPU／16GB 含讀取副本、Redis 4GB、統計資料評估導入 ClickHouse</td>
+          <td class="num">另行報價<br><span class="muted">預估 NT$ 48,000～60,000／月（未稅）</span></td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="fine">Stage 1 配置兩台牌桌節點，是為了<b>版本更新不中斷牌局與單點故障轉移</b>，並非效能需求；單台 4 vCPU 節點的實務承載上限約為 200 桌／1,200 條連線。級距升降須經雙方書面確認後執行，自次月起適用新級距月費。</p>
+
+    <h3>4.5 代管條款</h3>
+    <section class="two-col avoid">
+      <article class="term-box">
+        <h3>計費與級距</h3>
+        <ul>
+          <li><b>起算時點：</b>環境建置完成、進入封閉測試當月起算。</li>
+          <li><b>首次支付：</b>選定機房方案後預儲 3 個月 Stage 0 費用，第 4 個月起按月支付。</li>
+          <li><b>最低簽約期：</b>6 個月，之後按月續約；終止與退款規則見第七節。</li>
+          <li><b>級距調整：</b>當第 4.6 節任一擴容指標達標時，乙方應於 7 日內以書面通知甲方；經甲方書面同意後執行升級，自<b>次月 1 日</b>起改按新級距月費計價。未經甲方同意，乙方不得逕行升級並請款。</li>
+          <li><b>降級：</b>甲方得於用量回落後要求降級，同樣自次月 1 日起適用；降級不退還已扣抵之當月費用。</li>
+          <li><b>機房變更：</b>選定後如需更換機房方案，需雙方確認並排定遷移作業，遷移費用依第 4.8 節上限規定；儲值餘額可全額轉入新方案。</li>
+          <li><b>帳號歸屬與終止移轉：</b>詳見第 4.8 節。</li>
+        </ul>
+      </article>
+      <article class="term-box">
+        <h3>超量與例外</h3>
+        <ul>
+          <li><b>頻寬：</b>Stage 0 含 500GB／月、Stage 1 含 2TB／月；超出部分每 TB NT$ 1,500（未稅）。</li>
+          <li><b>模擬運算：</b>Stage 0 含 300 核心·小時／月、Stage 1 含 1,500 核心·小時／月；超出部分每 100 核心·小時 NT$ 600（未稅）。</li>
+          <li><b>儲存：</b>超出方案容量部分每 100GB NT$ 400／月（未稅）。</li>
+          <li><b>單月超量上限：</b>單一月份之超量費用合計以該月月費之 50% 為上限；超過時乙方應先取得甲方書面同意，否則由乙方以任務排隊或限流方式控制，不得逕行產生超額費用。</li>
+          <li>超量費用於次月帳單一併請款，並於預估將超出含量時提前通知甲方。</li>
+          <li>Compute Credits 額度政策若由甲方調整而導致運算量顯著上升，超量費用由甲方負擔。</li>
+        </ul>
+      </article>
+    </section>
+
+    <h3>4.6 擴容觸發指標</h3>
+    <p>不憑感覺加機器，依下列指標決定升級時點，並於達標時主動通知甲方：</p>
+    <table>
+      <thead><tr><th style="width:38%">指標</th><th style="width:20%">門檻</th><th>動作</th></tr></thead>
+      <tbody>
+        <tr><td>牌桌節點 CPU（5 分鐘均值）</td><td>&gt; 60%</td><td>新增牌桌節點</td></tr>
+        <tr><td>單台 WebSocket 連線數</td><td>&gt; 1,200</td><td>新增牌桌節點</td></tr>
+        <tr><td>牌局動作 P95 回應時間</td><td>&gt; 300 ms</td><td>立即檢查，優先新增節點</td></tr>
+        <tr><td>模擬佇列 P95 等待時間</td><td>&gt; 10 分鐘</td><td>提高 Worker 併發</td></tr>
+        <tr><td>PostgreSQL 連線使用率</td><td>&gt; 70%</td><td>導入連線池，其次升級規格</td></tr>
+        <tr><td>資料庫 P95 查詢時間</td><td>&gt; 200 ms</td><td>檢查索引，其次新增讀取副本</td></tr>
+        <tr><td>磁碟使用率</td><td>&gt; 70%</td><td>擴充儲存容量</td></tr>
+      </tbody>
+    </table>
+
+    <h3>4.7 尚未獲利階段的成本控制原則</h3>
+    <p>本案於取得穩定營收前，刻意<b>不採用</b>下列常見但過度的配置，以將預算留在開發與商店送審：</p>
+    <table>
+      <thead><tr><th style="width:34%">不採用</th><th>替代作法與理由</th></tr></thead>
+      <tbody>
+        <tr><td>Kubernetes 叢集</td><td>改用容器化單機部署。K8s 的維運工時在此規模為純負擔，不產生對應價值。</td></tr>
+        <tr><td>異地備援與資料庫讀取副本</td><td>改用每日自動備份＋每季還原演練，接受 RTO 2～4 小時。Stage 2 再導入讀取副本。</td></tr>
+        <tr><td>Worker 常駐大規格機器</td><td>採可中斷機型＋任務佇列自動重試，並依佇列長度離峰縮至 0。</td></tr>
+        <tr><td>承諾用量長約折扣</td><td>營收未穩定前保持隨時可縮減的彈性，避免綁約風險。</td></tr>
+        <tr><td>模擬原始逐手牌局落庫</td><td>僅儲存彙總統計與可重現 Seed，需要重播時以同一 Seed 重算。此決策使資料庫規模降低一個數量級。</td></tr>
+      </tbody>
+    </table>
+    <div class="notice avoid"><strong>不建議省的部分：</strong>牌桌節點的獨立性、資料庫每日備份、真人牌局稽核紀錄的完整性。此三項省下的費用遠低於一次帳務爭議或資料遺失的處理成本。</div>
+
+    <h3>4.8 帳號歸屬、資料交付與終止移轉</h3>
+    <p>為避免甲方因帳號由乙方持有而產生鎖定疑慮，本節就資產歸屬與退場路徑明確約定。</p>
+    <table>
+      <thead><tr><th style="width:30%">項目</th><th>約定內容</th></tr></thead>
+      <tbody>
+        <tr><td><b>雲端帳號</b></td><td>由乙方開設與持有，甲方得隨時要求提供資源清單與雲端帳單影本核對。甲方亦得於任何時點要求改由甲方自行開設帳號、乙方僅提供代管服務，該情形下雲端費用直接由甲方支付，乙方改收管理費（金額另議）。</td></tr>
+        <tr><td><b>歸屬甲方之資產</b></td><td>網域、SSL 憑證、App Store 與 Google Play 開發者帳號、<b>App signing key 與上架憑證</b>、商標與品牌素材，均以<b>甲方名義</b>申請與持有；乙方僅取得必要之操作權限，不得以自身名義登記。乙方於本案期間取得之上述憑證與金鑰，應於終止時全數交還並移除自身存取權。</td></tr>
+        <tr><td><b>終止時的交付期限</b></td><td>合約終止或期滿之日起 <b>14 個日曆日</b>內，乙方應完成下列交付並以書面通知甲方接收。</td></tr>
+        <tr><td><b>交付內容與格式</b></td><td>① PostgreSQL 完整備份（<code>pg_dump</code> 自訂格式與純 SQL 各一份）；② 物件儲存內容打包下載；③ 部署設定文件、環境變數清單（敏感值另以安全管道交付）、容器映像與建置腳本；④ DNS 與憑證移轉所需資訊；⑤ 監控與備份排程設定。交付方式為甲方指定之雲端儲存空間或實體媒體。</td></tr>
+        <tr><td><b>移轉協助與費用上限</b></td><td>上列交付作業<b>不另收費</b>。若甲方另要求乙方將執行中環境完整搬遷至甲方自有雲端帳號（含重新部署、資料同步與切換演練），該作業以實際工時計價，<b>總額以 NT$ 60,000（未稅）為上限</b>。</td></tr>
+        <tr><td><b>預儲餘額</b></td><td>合約終止時，未使用之預儲餘額於交付完成後 <b>30 個日曆日</b>內全額無息退還甲方（詳見第 7.3 條）。</td></tr>
+        <tr><td><b>甲方資料刪除</b></td><td>甲方以書面確認接收交付內容後 <b>30 個日曆日</b>，乙方應刪除所有甲方資料（含備份與快照）並出具刪除確認書。法令要求保存之交易或稅務憑證不在此限。</td></tr>
+        <tr><td><b>與 A 案共用服務之解除</b></td><td>帳號與訂閱權益服務原共用 A 案環境。當 <b>A 案代管終止、甲方改為自建 A 案環境，或甲方要求解除共用</b>時，乙方應於收到書面通知後 <b>30 個日曆日</b>內，將該服務<b>獨立部署至本案環境</b>或移轉至甲方指定環境。<b>該次獨立部署之工程作業不另收費</b>（共用架構係乙方之設計選擇）。</td></tr>
+        <tr><td><b>獨立部署後之費用</b></td><td>獨立部署完成之次月起，本案主機代管月費<b>加計 NT$ 1,800（未稅）／ NT$ 1,890（含稅）</b>，對應新增之 API 與資料庫資源。<b>在共用關係存續期間，甲方無須因本案而另行支付 A 案之伺服器費用</b>；A 案伺服器費僅依 A 案報價單計收。</td></tr>
+        <tr><td><b>移轉期間之服務水準</b></td><td>乙方應以不中斷方式完成切換。確有停機必要者，須<b>事前 7 個日曆日書面通知</b>並安排於第六節之計畫性維護窗口，<b>單次停機不得逾 4 小時</b>；逾此部分計入可用率並適用第六節之未達標補償。移轉期間之資料完整性與帳務正確性由乙方負責。</td></tr>
+        <tr><td><b>服務不中斷義務</b></td><td>終止程序進行期間，乙方不得以任何理由關閉或封鎖服務、刪除資料或拒絕交付；甲方積欠款項之爭議，應循第 7.4 條處理，不得以停機作為催款手段。</td></tr>
+      </tbody>
+    </table>
+
+    <h3>4.9　開發與驗收環境之提供、費用起算與時程影響</h3>
+    <p>本案為即時連線 App，其牌桌、配對、籌碼帳本與稽核紀錄<b>全部依賴伺服器環境</b>，因此環境的提供方與費用起算時點必須先行界定。</p>
+    <table>
+      <thead><tr><th style="width:26%">項目</th><th>約定內容</th></tr></thead>
+      <tbody>
+        <tr><td><b>開發期內部環境</b></td><td>開發與單元測試所需之內部環境，由乙方於自有基礎設施提供，<b>費用含於開發報價，甲方不另負擔</b>。</td></tr>
+        <tr><td><b>驗收與封測環境</b></td><td>供甲方驗收、TestFlight 與 Google Play 封閉測試連線之環境，<b>即為正式代管環境</b>，須依第 4.3 節計費。</td></tr>
+        <tr><td><b>代管費起算時點</b></td><td>以<b>乙方完成環境建置並書面通知甲方之日</b>所屬月份起算，該月按整月計。通常落在多人連線開發之中段，早於 App 正式上架。</td></tr>
+        <tr><td><b>甲方不採購代管時</b></td><td>甲方須<b>於本案啟動後第 4 週結束前</b>自行開設雲端帳號，並提供乙方下列權限：專案／IAM 管理者權限、計費帳戶已完成綁定、網域 DNS 管理權、憑證申請權限。雲端費用全數由甲方直接支付。此情形下乙方<b>僅負責部署與設定</b>（含於開發費），第四節之維運服務、監控、備份檢查與第六節 SLA <b>均不適用</b>。</td></tr>
+        <tr><td><b>環境未就緒之效果</b></td><td>甲方未依前項期限提供可用環境或必要權限者，<b>專案時程按實際延誤天數順延</b>，該期間不計入乙方遲延，亦不構成違約。主結構款里程碑改以乙方內部環境展示認定，不因環境未就緒而延後請款。</td></tr>
+        <tr><td><b>驗收之環境前提</b></td><td>第十一節之驗收，須於甲方確認之正式環境執行。若甲方選擇自建環境而未如期完成，驗收改於乙方內部環境進行，其結果同具驗收效力。</td></tr>
+      </tbody>
+    </table>
+    <div class="notice avoid"><strong>建議：</strong>主機代管非開發範圍內之必要採購，但本案的牌桌、配對、籌碼帳本與牌局稽核紀錄皆為伺服器功能，<b>甲方必須於三個機房方案中擇一採購，或自行提供等效之雲端環境</b>，二者擇一，不得兩者皆缺，否則本案無法完成驗收。</div>
+
+    <div class="page-break"></div>
+    <h2>五、多人連線上線後之軟體維運費</h2>
+    <section class="two-col avoid">
+      <article class="term-box">
+        <h3>計費方式</h3>
+        <ul>
+          <li><b>前 2 個月免費：</b>本 App 正式對外上線之日起，<b>第 1、2 個月為免費維運期</b>，乙方提供完整軟體維運服務但<b>不收取費用</b>。</li>
+          <li><b>月費：</b>自第 <b>3 個月</b>起計費。<b>未稅 NT$ 36,000／月，營業稅 NT$ 1,800，含稅應付 NT$ 37,800／月。</b></li>
+          <li><b>起算前提：</b>本 App 未正式對外上線前，<b>不收取此費用</b>。</li>
+          <li><b>最低簽約期：</b>自開始計費之月份（第 3 個月）起 6 個月，即第 3～8 個月；第 9 個月起按月續約。合計最短服務期間為 8 個月，其中 6 個月付費。</li>
+          <li>本費用與第四節主機代管月費為兩筆獨立費用，性質不同，不互相抵充。</li>
+        </ul>
+      </article>
+      <article class="term-box">
+        <h3>服務內容與界線</h3>
+        <ul>
+          <li><b>服務時間：</b><b>週一至週五 09:00–17:00</b>（台北時間），國定假日與行政院人事行政總處公告之調整放假日除外。</li>
+          <li><b>服務時間外：</b>基礎設施之自動監控與告警仍持續運作，乙方將盡合理努力處理重大事故，但<b>不負第六節之回應時間承諾</b>；服務時間外之通報，回應時間自次一服務時間開始起算。</li>
+          <li><b>包含：</b>應用程式版本更新與發布、程式錯誤修復、應用層告警的判讀與處理、牌局連線品質調校、商店政策異動的必要配合調整。</li>
+          <li><b>不包含：</b>雲端資源用量與基礎設施維運（見第四節）、新增功能與玩法、重大改版、第三方服務費、客服人力、人工牌局審查、反作弊調查與帳號申訴處理。</li>
+          <li>新增功能與重大改版另行報價。</li>
+        </ul>
+      </article>
+    </section>
+    <h3>5.1 主機代管與軟體維運的分工</h3>
+    <p>兩筆月費常被誤認為重複收費，實際分屬<b>基礎設施層</b>與<b>應用程式層</b>，權責與工作內容不同：</p>
+    <table>
+      <thead><tr><th style="width:26%">工作項目</th><th style="width:37%">基礎設施代管（第四節月費）</th><th style="width:37%">軟體維運（本節月費）</th></tr></thead>
+      <tbody>
+        <tr><td>監控</td><td>主機存活、CPU／記憶體／磁碟、資料庫連線數、網路可用性</td><td>應用程式錯誤率、牌局動作延遲、佇列積壓、業務異常事件</td></tr>
+        <tr><td>告警處理</td><td>基礎設施層告警的判讀與資源調整（重啟節點、擴充磁碟、調整連線池）</td><td>應用層告警的根因分析與程式修正</td></tr>
+        <tr><td>備份</td><td>執行備份排程、驗證備份完整性、每季還原演練</td><td>不負責備份執行；負責資料結構變更時的遷移腳本與相容性</td></tr>
+        <tr><td>更新</td><td>作業系統、套件與 HTTPS 憑證更新</td><td>應用程式版本發布、商店送審與版本回滾</td></tr>
+        <tr><td>故障責任</td><td>因基礎設施設定或資源不足所致</td><td>因程式邏輯或版本發布所致</td></tr>
+      </tbody>
+    </table>
+    <p class="fine">未購買軟體維運方案期間，基礎設施代管仍照常提供，但程式錯誤修復不在代管範圍內，須以個案工時另行報價。</p>
+
+    <div class="page-break"></div>
+    <h2>六、服務水準（SLA）與責任界線</h2>
+    <p class="lead">本節適用於主機代管服務期間，以及軟體維運之服務期間（<b>含第五節之前 2 個月免費維運期</b>）。未採購對應方案期間，不適用本節服務水準承諾。</p>
+    <table>
+      <thead><tr><th style="width:26%">項目</th><th style="width:38%">承諾內容</th><th>說明與例外</th></tr></thead>
+      <tbody>
+        <tr><td><b>月可用率</b></td><td>核心服務（登入、大廳與快速配對、牌桌連線與進行中牌局、<b>Play Chips 籌碼帳本與底池結算</b>）<b>≥ 99.5%／月</b></td><td>換算每月容許不可用時間約 3 小時 39 分。不含計畫性維護窗口、甲方端網路問題、雲端供應商大規模事故與不可抗力。</td></tr>
+        <tr><td><b>事故回應時間</b></td><td>P1（服務全面不可用、進行中牌局中斷，或<b>籌碼帳本與結算資料異常</b>）：<b>4 小時</b>內回應並開始處理（服務時間內計算）<br>P2（部分功能異常）：<b>1 個工作日</b><br>P3（一般問題與詢問）：<b>3 個工作日</b></td><td><b>服務時間：<b>週一至週五 09:00–17:00</b>（台北時間），國定假日除外</b>——上列回應時間<b>僅於服務時間內計算</b>；服務時間外之通報或告警，回應時間自次一服務時間開始起算。服務時間外，基礎設施之自動監控與告警仍持續運作，乙方將盡合理努力處理重大事故，但不負回應時間承諾。回應時間指自通報或告警觸發起算至乙方確認受理並開始處理之時間，<b>非修復完成時間</b>。</td></tr>
+        <tr><td><b>計畫性維護窗口</b></td><td>每月第二週週二 02:00–06:00（台北時間）</td><td>需於 48 小時前通知甲方。緊急安全性修補得不受此限，但應事後 24 小時內說明。</td></tr>
+        <tr><td><b>資安事件通知</b></td><td>發現涉及甲方資料之資安事件後 <b>72 小時</b>內書面通知</td><td>通知內容包含事件範圍、已知影響、已採取措施與後續計畫。</td></tr>
+        <tr><td><b>備份與復原目標</b></td><td>RPO ≤ 24 小時（Stage 0）／≤ 1 小時（Stage 1，含 PITR）<br>RTO 2～4 小時</td><td>依第 4.7 節之成本控制原則，本案未採異地備援；如需更短的 RPO／RTO，須升級架構並另行報價。</td></tr>
+        <tr><td><b>未達標之補償</b></td><td>月可用率低於 99.5% 時，按當月主機代管月費之 <b>10%</b> 折抵次月費用；低於 99.0% 時折抵 <b>30%</b></td><td>折抵為甲方就可用率未達標之唯一救濟方式，須於事發次月底前提出。</td></tr>
+        <tr><td><b>責任上限</b><br><span class="muted">開發階段</span></td><td>因本案之開發、交付或瑕疵所生之損害，以<b>甲方實際已支付之開發費總額</b>為上限</td><td>與 A 案（單人策略模擬）之責任分別計算，不互相合併。</td></tr>
+        <tr><td><b>責任上限</b><br><span class="muted">代管與維運階段</span></td><td>因主機代管或軟體維運所生之損害，以<b>事故發生前 6 個月甲方就該項服務實際已支付之費用總額</b>為上限；不足 6 個月者按實際已付月數計算，並以 <b>NT$ 90,000</b> 為最低保障額</td><td>設最低保障額之目的，是避免事故發生於免費期或服務初期時上限趨近於零。</td></tr>
+        <tr><td><b>不適用責任上限之情形</b></td><td>下列情形<b>不受上列上限拘束</b>：① 乙方之故意或重大過失；② 可歸責於乙方之個人資料外洩；③ 違反第十二節保密義務；④ 因乙方交付物侵害第三人智慧財產權致甲方受請求</td><td>雙方均不就間接損失、營業損失、預期利益或商譽損失負責。</td></tr>
+        <tr><td><b>不可抗力</b></td><td>天災、戰爭、政府命令、電信或雲端供應商大規模中斷、法令變更、商店政策重大異動等非可控事由，暫停履約義務並不構成違約</td><td>受影響方應於 5 個工作日內通知他方；持續超過 30 日者，任一方得終止合約並依第 7.3 條結算。</td></tr>
+      </tbody>
+    </table>
+    <p class="fine">通報管道依第 12.3 節所列之有效通知 Email 與聯絡電話；緊急事故得先以電話通報，並於 24 小時內補送書面。商店審核結果、Apple／Google 政策異動與第三方服務中斷非乙方所能控制，不列入可用率計算。</p>
+
+    <h2>七、終止、續約與付款違約</h2>
+    <section class="two-col avoid">
+      <article class="term-box">
+        <h3>7.1　續約與提前終止</h3>
+        <ul>
+          <li><b>續約：</b>主機代管與軟體維運之最低簽約期均為 6 個月，期滿未於到期前 30 日以書面表示終止者，自動按月續約。</li>
+          <li><b>甲方提前終止：</b>得於 <b>30 日</b>前書面通知終止。最低簽約期內終止者，應支付至最低期滿之月費，或與乙方協議一次結清；最低期滿後終止者，無須支付違約金。</li>
+          <li><b>乙方提前終止：</b>應於 <b>60 日</b>前書面通知，並完成第 4.8 節之全部交付義務，且不得收取移轉費用。</li>
+          <li><b>重大違約終止：</b>一方重大違約且經他方書面催告 15 日內未改善者，他方得逕行終止。</li>
+        </ul>
+      </article>
+      <article class="term-box">
+        <h3>7.2　逾期付款與服務暫停</h3>
+        <ul>
+          <li>月費逾期未付達 <b>15 日</b>，乙方應再次書面催告；催告後仍逾 <b>15 日</b>（合計 30 日）未付者，乙方得暫停服務。</li>
+          <li>暫停期間乙方<b>仍須維持資料與備份完整</b>，不得刪除甲方資料。</li>
+          <li>暫停後 <b>60 日</b>內甲方結清欠款者，乙方應於 3 個工作日內恢復服務。逾 60 日仍未結清者，視為甲方終止合約，乙方仍應依第 4.8 節完成資料交付。</li>
+          <li>逾期利息以年利率 5% 計算，自應付日起算。</li>
+        </ul>
+      </article>
+    </section>
+    <section class="two-col avoid">
+      <article class="term-box">
+        <h3>7.3　預儲餘額與費用結算</h3>
+        <ul>
+          <li>合約終止時，未使用之預儲餘額<b>全額無息退還</b>，於第 4.8 節交付完成後 30 個日曆日內匯還甲方指定帳戶。</li>
+          <li>當月已啟用之服務按<b>整月</b>計費，不按日拆算。</li>
+          <li>已發生但尚未請款之超量費用，自預儲餘額扣抵後再行退還。</li>
+          <li>乙方應提供終止結算單，載明已扣抵明細、超量費用與退還金額。</li>
+        </ul>
+      </article>
+      <article class="term-box">
+        <h3>7.4　爭議期間之付款</h3>
+        <ul>
+          <li>甲方對特定請款項目有爭議時，應於收到請款單後 <b>7 個工作日</b>內以書面提出並敘明理由。</li>
+          <li>爭議期間，<b>僅該爭議項目得暫緩支付</b>，其餘無爭議項目仍應依約付款。</li>
+          <li>雙方應於爭議提出後 15 日內協商；未能達成共識者，得委由雙方同意之第三方技術人員認定。</li>
+          <li>乙方不得於爭議處理期間停止服務、刪除資料或拒絕交付。</li>
+        </ul>
+      </article>
+    </section>
+
+    <h2>八、本報價明確不包含項目</h2>
+    <table>
+      <thead><tr><th style="width:32%">項目</th><th>說明</th></tr></thead>
+      <tbody>
+        <tr><td>Apple Developer Program 與 Google Play 開發者帳號費</td><td>由甲方以自有名義申請並負擔，工作室協助設定。</td></tr>
+        <tr><td>第三方金流串接</td><td>VIP 訂閱與虛擬籌碼依 Apple／Google 現行政策必須使用平台內購，不得改用第三方金流，故本案不需亦不包含第三方金流申請。未來如另開發 App 外的網頁購買管道，屬加值項目。</td></tr>
+        <tr><td>撲克策略資料授權與專家顧問費</td><td>付費 Solver 的 Range 資料不得直接複製；如需採購授權資料或聘請職業牌手／數學顧問，費用另計。</td></tr>
+        <tr><td>法律意見、各國遊戲分級與牌照申請</td><td>含社交博弈相關法律意見與地區合規審查。</td></tr>
+        <tr><td>成熟反串通系統與人工審查</td><td>跨場次行為建模、群組關聯分析、人工覆核流程。</td></tr>
+        <tr><td>客服中心與爭議處理</td><td>客服人力、排班與使用者申訴流程。</td></tr>
+        <tr><td><b>單人策略模擬功能</b></td><td>策略庫、批次回測、結果儀表板、Hand Replayer、Compute Credits 與四級 VIP 之建置，均<b>不含於本案</b>，屬《單人策略模擬 App 開發報價單》（PSL-A-20260729-001）範圍。</td></tr>
+        <tr><td><b>第 3 種語言起之多語系</b></td><td>繁體中文與英文含於本案；第 3 種語言起每種 NT$ 18,000（未稅）另計。</td></tr>
+        <tr><td><b>App 內地理限制機制</b></td><td>商店端之上架地區選擇含於本案；<b>以 IP 或帳號註冊地判斷並封鎖特定地區使用之應用內機制</b>不含，須另行報價。</td></tr>
+        <tr><td><b>各地區資料保護法規因應</b></td><td>GDPR、CCPA 等地區性資料保護要求之評估與功能實作，見第 12.2 節跨境適用條款。</td></tr>
+        <tr><td><b>精緻美工</b></td><td>原創角色與立繪、3D 牌桌與材質、換膚主題、複雜動畫與特效、原創 Logo 與品牌識別、宣傳影片。界線比照 A 案 2.1 節；由甲方另行委託外包並直接支付，金額不列於本報價單。</td></tr>
+        <tr><td>廣告投放與大量行銷素材</td><td>超出基礎美工清單之新增素材另行報價。</td></tr>
+        <tr><td>商標註冊與品牌命名策略</td><td>—</td></tr>
+        <tr><td>錦標賽系統（MTT／SNG／Spin）與 ICM</td><td>屬後續版本規劃範圍，另案評估。</td></tr>
+        <tr><td>賽季通行證、外觀商城、廣告變現 SDK</td><td>另行報價。</td></tr>
+      </tbody>
+    </table>
+    <div class="notice avoid"><strong>合規邊界聲明：</strong>本 App 不提供真實金錢下注；虛擬籌碼<b>不可提領、兌現、轉讓、交易</b>，亦不得於平台外買賣，排行榜獎勵限於徽章、造型或無現金價值之免費籌碼。所有籌碼與訂閱之購買必須透過 Apple IAP 與 Google Play Billing。真人排名牌局禁止策略提示與自動操作，Bot 座位須明確標示。此為商店審核與平台政策的硬性前提，不得於開發期間變更。<b>本 App 具備可購買籌碼與牌桌台費，屬社交博弈定位，送審風險與地區限制均高於 A 案；乙方不就審查結果、法令適用或營運合法性負擔保責任。</b>若甲方日後要求加入真實金錢功能，須重新評估牌照、地理限制與整體架構，屬完全不同之專案。</div>
+
+    <h2>九、預估執行時程</h2>
+    <div class="timeline avoid">
+      <div class="phase">第 1–2 週</div><div><b>架構與規格：</b>牌桌狀態機規格、籌碼經濟參數（每日發放、台費比例、破產救濟）、跨 App 權益同步設計、獨立 App 之商店與分級策略確認。</div>
+      <div class="phase">第 3–6 週</div><div><b>核心牌桌開發：</b>WebSocket 通訊、伺服器權威發牌與規則引擎、CSPRNG 牌序、逾時處理、牌局稽核紀錄。</div>
+      <div class="phase">第 7–9 週</div><div><b>大廳與籌碼經濟：</b>大廳、快速配對、私人好友房、Play Chips 帳本與分帳、每日免費籌碼、籌碼商店 IAP、牌桌台費機制。</div>
+      <div class="phase">第 10–11 週</div><div><b>穩定性與反作弊：</b>斷線重連、基礎反作弊（多開偵測、竄改防護、異常告警）、日誌監控、併發與安全測試。</div>
+      <div class="phase">第 12–14 週</div><div><b>獨立上架與驗收：</b>商店項目建立、年齡分級與模擬博弈申報、雙語商店素材、跨 App 權益同步驗證、TestFlight 與 Google Play 封測、正式送審。<b>本案驗收於此階段完成。</b></div>
+    </div>
+    <p class="fine">本案預估 <b>12～14 週</b>，自 A 案驗收完成、本報價單簽認並支付訂金日起算。<b>時程未計入商店審查往返所需時間</b>——本 App 屬社交博弈定位，審查往返次數高於一般 App 且非乙方所能控制，不列入時程保證。甲方回饋時程、籌碼經濟參數確認速度與伺服器環境就緒時間亦將影響實際上線日期。</p>
+
+    <h2>十、付款條件與匯款帳戶</h2>
+    <section class="payment-grid avoid">
+      <article class="term-box">
+        <h3>付款條件</h3>
+        <p><b>開發費用 NT$ 240,000（未稅）／ NT$ 252,000（含稅）— 三段式</b></p>
+        <ul>
+          <li><b>訂金 40%：</b>甲方簽認後 7 日內支付未稅 <b>NT$ 96,000</b>（含稅 <b>NT$ 100,800</b>），作為專案啟動款。</li>
+          <li><b>主結構款 30%：</b>伺服器權威牌桌、大廳配對與籌碼帳本主結構完成、可進行內部多人對局測試後支付未稅 <b>NT$ 72,000</b>（含稅 <b>NT$ 75,600</b>）。<br><span class="muted">認定方式：乙方提交可操作之測試版本與里程碑對照表，甲方於 <b>5 個工作日</b>內書面確認；逾期未回覆且未提出具體異議者，視同確認。爭議時僅就爭議項目暫緩，其餘依第 7.4 條處理。</span></li>
+          <li><b>驗收款 30%：</b>完成封閉測試版、達成第十一節驗收基準（含 11.2 節量化指標）後支付未稅 <b>NT$ 72,000</b>（含稅 <b>NT$ 75,600</b>）。<br><span class="muted">驗收款之支付以<b>達成驗收基準</b>為條件，不以商店審查通過為條件；審查結果非乙方所能控制。</span></li>
+        </ul>
+        <p><b>經常性費用</b></p>
+        <ul>
+          <li><b>主機代管：</b>採預儲制，選定機房方案後<b>首次支付 3 個月 Stage 0 費用</b>（NT$ 40,950～47,250，含稅，依方案而定）；第 4 個月起每月月初請款、當月 10 日前支付。</li>
+          <li><b>軟體維運月費：</b>本 App 正式對外上線後<b>前 2 個月免費</b>，第 3 個月起每月月初請款、當月 10 日前支付。</li>
+          <li><b>付款方式：</b>銀行轉帳。</li>
+          <li><b>電子發票：</b>甲方應提供發票抬頭、統一編號與收件 Email；乙方依各請款階段金額先行開立電子發票並寄送甲方。</li>
+          <li><b>報價有效期：</b>自報價日起 14 日內有效，至 2026 / 08 / 12 止。</li>
+        </ul>
+      </article>
+      <article class="bank">
+        <span class="small-caps">Remittance information</span>
+        <h3>匯款帳戶</h3>
+        <p><b>收款銀行：</b>高雄銀行（016）台中分行</p>
+        <p><b>銀行帳號：</b>2291 0262 3611</p>
+        <p><b>帳戶名稱：</b>卉田國際有限公司<br>（海水不可斗量工作室）</p>
+        <p class="muted">匯款完成後請提供帳號後五碼，以利對帳與安排專案排程。</p>
+        <p class="muted" style="margin-top:14px"><b>費用一覽</b><br>開發費　未稅 NT$ 240,000<br>　　　　含稅 NT$ 252,000<br>主機代管　Stage 0<br>　　　　NT$ 13,650～15,750／月<br>　　　　Stage 1<br>　　　　NT$ 30,450～32,550／月<br>　　　　（含稅，首次預儲 3 個月）<br>軟體維運　前 2 個月免費<br>　　　　第 3 個月起<br>　　　　未稅 NT$ 36,000<br>　　　　含稅 NT$ 37,800／月<br>　　　　服務時間<br>　　　　週一～週五 09:00–17:00</p>
+      </article>
+    </section>
+
+    <h2>十一、驗收基準、保固、智慧財產權與變更</h2>
+
+    <h3>11.1　功能驗收清單</h3>
+    <section class="two-col avoid">
+      <article class="term-box">
+        <h3>功能項目</h3>
+        <ul>
+          <li>Android、iOS 版可安裝並完成封閉測試。</li>
+          <li>玩家可以既有帳號登入，<b>同一組 VIP 訂閱於 A、B 兩個 App 均正確生效</b>。</li>
+          <li>可建立與加入公開牌桌、完成快速配對。</li>
+          <li>可建立與加入私人好友房。</li>
+          <li>發牌、籌碼、行動合法性與勝負<b>全部由伺服器判定</b>，客戶端不具權威；牌序由 CSPRNG 產生。</li>
+          <li>逾時自動 Fold／Check、斷線重連後牌局狀態完整還原。</li>
+          <li>Play Chips 帳本正確：每日免費籌碼發放、破產救濟、籌碼商店 IAP 購買、台費回收、私人房開房消耗，且<b>平台購買籌碼與免費贈送籌碼分帳管理</b>。</li>
+          <li>每一手牌均有完整且可重播之稽核紀錄，籌碼結算與紀錄一致。</li>
+          <li>基礎反作弊可運作：多開偵測、客戶端竄改防護、異常行為告警。</li>
+          <li>管理端可查詢帳號、籌碼異動、牌局紀錄與異常告警。</li>
+          <li>具備 TestFlight 與 Google Play 封閉測試送審條件，並完成年齡分級與模擬博弈內容申報。</li>
+        </ul>
+      </article>
+      <article class="term-box">
+        <h3>測試裝置清單</h3>
+        <p>驗收於下列裝置與系統版本執行，甲方得於專案啟動時調整清單（數量不變）：</p>
+        <ul>
+          <li><b>iOS：</b>iPhone 上市 3 年內機型 1 款、上市 4～6 年機型 1 款，系統版本為送審時最新版與前一主要版本。</li>
+          <li><b>Android：</b>旗艦機 1 款、中階機 1 款、低階機（4GB RAM 以下）1 款，系統版本涵蓋 Android 12 以上之兩個主要版本。</li>
+          <li>螢幕比例至少涵蓋 19.5:9 與 20:9 兩種。</li>
+          <li>清單外之裝置、系統版本或客製化 ROM 所生之相容性問題，屬追加項目。</li>
+        </ul>
+      </article>
+    </section>
+
+    <h3>11.2　量化驗收指標</h3>
+    <table>
+      <thead><tr><th style="width:30%">指標</th><th style="width:26%">驗收標準</th><th>量測方式</th></tr></thead>
+      <tbody>
+        <tr><td>穩定性測試持續時間</td><td><b>連續 72 小時</b>無需人工重啟</td><td>以模擬客戶端維持第四節 Stage 1 規模之負載（同時在線 100 人、同時牌桌 30 桌）。</td></tr>
+        <tr><td>牌局動作 P95 回應時間</td><td><b>≤ 300 ms</b></td><td>自伺服器接收玩家行動至廣播結果，於測試機房內量測，不含玩家端網路。</td></tr>
+        <tr><td>牌局動作 P99 回應時間</td><td><b>≤ 800 ms</b></td><td>同上。</td></tr>
+        <tr><td>伺服器端錯誤率</td><td><b>&lt; 0.5%</b></td><td>測試期間所有牌局訊息中，伺服器回傳錯誤或逾時之比例。</td></tr>
+        <tr><td>非玩家端因素之斷線率</td><td><b>&lt; 1%</b></td><td>排除玩家端主動離線與網路中斷後，由伺服器或閘道造成之連線中斷比例。</td></tr>
+        <tr><td>斷線重連成功率</td><td><b>≥ 99%</b>，且牌局狀態完整還原</td><td>以模擬客戶端隨機中斷後重連驗證。</td></tr>
+        <tr><td>牌局稽核完整性</td><td><b>100%</b></td><td>測試期間每一手牌均有完整且可重播之稽核紀錄，籌碼結算與紀錄一致。</td></tr>
+      </tbody>
+    </table>
+
+    <h3>11.3　驗收程序、缺陷分級與視同驗收</h3>
+    <section class="two-col avoid">
+      <article class="term-box">
+        <h3>缺陷分級與允收標準</h3>
+        <ul>
+          <li><b>Blocker（阻斷）：</b>無法安裝或啟動、核心流程中斷、牌型或籌碼結算錯誤、資料遺失、金流或訂閱權益錯誤。<b>允收數量：0</b>。</li>
+          <li><b>Major（重大）：</b>單一功能無法使用但有替代路徑、統計數值明顯偏差、效能低於 11.2 節指標。<b>允收數量：0</b>。</li>
+          <li><b>Minor（次要）：</b>介面錯位、文字錯誤、非核心流程的操作不順。<b>允收數量：≤ 10 項</b>，且乙方應於保固期內免費修正。</li>
+          <li><b>Cosmetic（外觀建議）：</b>不影響功能之視覺偏好差異，不列入驗收條件。</li>
+        </ul>
+      </article>
+      <article class="term-box">
+        <h3>程序與時限</h3>
+        <ul>
+          <li>乙方提交驗收版本與<b>驗收清單對照表</b>，載明每一項目之測試結果。</li>
+          <li>甲方應於收到後 <b>7 個工作日</b>內以書面（含電子郵件）一次彙整回覆，逐項註明通過或不通過及理由。</li>
+          <li><b>修正輪次：</b>乙方就不通過項目免費修正，以 <b>2 輪</b>為限。第 3 輪起，若係甲方新增或變更需求所致，屬追加項目。</li>
+          <li><b>視同驗收：</b>甲方逾 7 個工作日未回覆，經乙方書面提醒後再逾 <b>5 個工作日</b>仍未回覆者，視同驗收通過，尾款依約支付。</li>
+          <li><b>部分驗收：</b>僅餘 Minor 缺陷時，甲方不得據以拒絕整體驗收；該等項目改列保固修正清單。</li>
+        </ul>
+      </article>
+    </section>
+
+    <h3>11.4　智慧財產權與交付物歸屬</h3>
+    <table>
+      <thead><tr><th style="width:30%">類別</th><th style="width:24%">歸屬</th><th>說明</th></tr></thead>
+      <tbody>
+        <tr><td><b>本案客製開發之程式原始碼</b></td><td>甲方</td><td>甲方付清<b>本案</b>全部款項後，即取得<b>著作財產權</b>；本案之著作權移轉不以他案（A 案或 B 案）之付款或簽署為條件。交付內容包含完整原始碼、Git 版本庫、資料庫 schema 與遷移腳本、部署腳本與環境設定範本、建置與測試腳本。</td></tr>
+        <tr><td><b>設計原始檔與商店素材</b></td><td>甲方</td><td>包含 UI 設計原始檔（Figma 或等效格式）、圖示與插畫之可編輯原始檔、商店截圖與宣傳素材。外包美術之著作財產權由乙方向外包方取得後轉讓甲方；<b>乙方應要求外包方簽署書面著作財產權讓與同意書，並提供所用字型、圖庫與付費素材之商用授權證明</b>，於交付時一併提供甲方存查。使用範圍與授權年限另於素材清單載明。</td></tr>
+        <tr><td><b>策略參數與模擬資料</b></td><td>甲方</td><td>本案產生之策略設定、回測結果與牌局稽核紀錄均屬甲方資料。</td></tr>
+        <tr><td><b>乙方通用框架與可重用元件</b></td><td>乙方</td><td>著作權由乙方保留，並授予甲方<b>永久、不可撤銷、全球、免權利金、可轉讓之使用、修改與再散布授權</b>，範圍限於本案 App、A 案單人策略模擬 App 及其後續版本。甲方無須因此支付額外費用。</td></tr>
+        <tr><td><b>「通用框架」之定義</b></td><td>—</td><td>指<b>於本案開始前已存在</b>、或<b>非為本案特定需求而開發</b>之共用程式庫、樣板與工具。乙方應於首次交付時提出<b>通用元件清單</b>並經甲方確認；<b>未列入清單者一律視為本案客製開發，歸屬甲方</b>。</td></tr>
+        <tr><td><b>第三方開源元件</b></td><td>依原授權</td><td>乙方應提供所使用之第三方套件清單與授權條款，並確保其授權允許商業使用與散布。<b>未經甲方書面同意，不得使用 GPL、AGPL、SSPL 等要求公開衍生程式原始碼之強制回饋（copyleft）授權套件</b>；MIT、Apache-2.0、BSD、ISC 等寬鬆授權不在此限。違反致甲方須公開原始碼者，乙方負責無償以替代方案置換。</td></tr>
+        <tr><td><b>交付時點</b></td><td>—</td><td>尾款付清後 <b>14 個日曆日</b>內完成上列交付，並協助甲方完成版本庫移轉。</td></tr>
+      </tbody>
+    </table>
+
+    <h3>11.5　保固、素材責任與變更</h3>
+    <section class="two-col avoid">
+      <article class="term-box">
+        <h3>保固</h3>
+        <ul>
+          <li><b>保固期：</b>驗收後 <b>60 個日曆日</b>。</li>
+          <li><b>範圍：</b>因本案程式實作造成之可重現技術瑕疵，乙方免費修正。Blocker 於 2 個工作日內、Major 於 5 個工作日內、Minor 於保固期內完成修正。</li>
+          <li><b>不在範圍：</b>商店審核政策異動、第三方服務中斷、甲方自行修改程式或設定、非本案範圍之新增需求、清單外裝置之相容性問題。</li>
+        </ul>
+      </article>
+      <article class="term-box">
+        <h3>素材責任與變更</h3>
+        <ul>
+          <li><b>素材責任：</b>甲方須確認其提供之文字、圖片、商標與策略資料具合法使用權，並負內容正確性責任。乙方不得使用來源不明或未授權之付費 Solver 範圍資料。</li>
+          <li><b>變更：</b>驗收後提出的新增功能、資料結構改動、設計方向重做，或超出約定修正輪次之調整，皆屬追加項目，另行報價。</li>
+          <li><b>本報價非不限功能、不限修改次數。</b>本報價單所載範圍之細節，以雙方書面確認之 PRD 與素材清單具體化；文件效力順位依第 12.5 節。</li>
+        </ul>
+      </article>
+    </section>
+
+    <div class="page-break"></div>
+    <h2>十二、保密、個人資料保護與一般條款</h2>
+
+    <h3>12.1　保密義務</h3>
+    <section class="two-col avoid">
+      <article class="term-box">
+        <h3>範圍與期間</h3>
+        <ul>
+          <li><b>保密資訊：</b>雙方於本案期間知悉之技術資料、原始碼、策略參數、營運數據、會員資料、財務資訊、商業計畫，以及<b>本報價單與合約之內容與金額</b>。</li>
+          <li><b>期間：</b>合約有效期間及終止或期滿後 <b>3 年</b>；涉及個人資料與營業秘密者，保密義務<b>無期限</b>。</li>
+          <li><b>使用限制：</b>僅得為履行本案之目的使用，不得為自身或第三人利益使用、重製或揭露。</li>
+          <li><b>例外：</b>已公開且非因違約所致、接收方於揭露前已合法持有、獨立自行開發、依法令或主管機關要求而揭露（應先通知他方）。</li>
+        </ul>
+      </article>
+      <article class="term-box">
+        <h3>人員與分包</h3>
+        <ul>
+          <li>乙方僅得使本案<b>必要之人員</b>接觸保密資訊，並應使其負擔同等保密義務。</li>
+          <li><b>外包美術、外部顧問及任何分包人員</b>，乙方應要求其簽署書面保密切結，並就其違反行為<b>負與自身相同之責任</b>。</li>
+          <li>乙方應留存接觸甲方會員資料之人員名單與存取紀錄，供甲方查核。</li>
+          <li>合約終止時，依第 4.8 節返還或刪除全部保密資訊並出具確認書。</li>
+        </ul>
+      </article>
+    </section>
+
+    <h3>12.2　個人資料之委託處理</h3>
+    <table>
+      <thead><tr><th style="width:26%">項目</th><th>約定內容</th></tr></thead>
+      <tbody>
+        <tr><td><b>當事人地位</b></td><td>就 App 會員之個人資料，<b>甲方為蒐集、處理及利用之主體</b>，乙方為受甲方委託之處理者，依《個人資料保護法》及其施行細則辦理。</td></tr>
+        <tr><td><b>處理範圍</b></td><td>乙方僅得於本案履約之必要範圍內處理個人資料，<b>不得為自身目的使用、分析、建模或提供第三人</b>；不得將資料移出雙方約定之機房區域。</td></tr>
+        <tr><td><b>安全措施</b></td><td>存取權限最小化並採帳號實名管理、傳輸與靜態儲存加密、留存存取與變更紀錄、定期檢視權限清單、離職或專案結束即撤銷權限。</td></tr>
+        <tr><td><b>分包之限制</b></td><td>乙方委由第三人（含外包美術、雲端供應商）處理涉及個人資料之作業，應<b>事前告知甲方</b>並使其負擔同等義務；乙方就其行為負同一責任。</td></tr>
+        <tr><td><b>事故通報與配合</b></td><td>發現個人資料遭竊取、竄改、毀損、滅失或洩漏時，乙方應於<b>知悉後 24 小時內</b>書面通知甲方（較第六節之 72 小時資安通知更嚴格者從嚴），並提供事故範圍、影響人數、已採取措施；<b>應全力配合甲方</b>履行對主管機關之通報與對當事人之通知義務，包含提供必要之技術資料與紀錄。</td></tr>
+        <tr><td><b>當事人權利之協助</b></td><td>會員行使查詢、閱覽、複製、補充更正、停止處理或刪除等權利時，乙方應於甲方要求後 <b>5 個工作日</b>內提供必要之技術協助。</td></tr>
+        <tr><td><b>終止後之處理</b></td><td>依第 4.8 節於甲方確認接收交付內容後 30 日內刪除全部個人資料（含備份與快照）並出具刪除確認書。</td></tr>
+        <tr><td><b>跨境適用</b></td><td>如 App 對歐盟、英國或其他有特別法制之地區提供服務，其資料保護要求（如 GDPR）之適用與因應措施，須另行評估，不含於本報價。</td></tr>
+      </tbody>
+    </table>
+
+    <h3>12.3　通知</h3>
+    <table>
+      <thead><tr><th style="width:16%">當事人</th><th style="width:42%">有效通知 Email</th><th style="width:42%">送達地址</th></tr></thead>
+      <tbody>
+        <tr><td><b>甲方</b></td><td>＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿<br><span class="muted"><b>簽認前必填，不得空白。</b>催告、驗收回覆與視同送達均以此 Email 為準；本欄未填列者，本報價單不生效力。</span></td><td>臺中市西屯區何仁里天水中街 56 之 3 號<br>收件人：郭子鼎</td></tr>
+        <tr><td><b>乙方</b></td><td>support@oceanads.org</td><td>台中市西區中興街 183 號 4 樓<br>收件人：Ivan Bai（白翼輔）</td></tr>
+      </tbody>
+    </table>
+    <p class="fine">本合約所稱「書面通知」，包含送達至上列 Email 之電子郵件，及以掛號郵寄至上列地址之文件。以 Email 發送者，於發送日之次一工作日視為送達；掛號郵寄者，於投遞日之次三日視為送達。任一方變更上列 Email 或地址，應於 7 日內書面通知他方，未通知者，向原地址或 Email 送達仍生效力。</p>
+
+    <h3>12.4　準據法與管轄</h3>
+    <p>本合約之成立、效力、解釋及履行，均以<b>中華民國法律</b>為準據法。因本合約所生之爭議，雙方應本誠信原則協商解決；協商不成時，合意以<b>臺灣臺中地方法院</b>為第一審管轄法院。</p>
+
+    <h3>12.5　一般條款</h3>
+    <section class="two-col avoid">
+      <article class="term-box">
+        <h3>合約效力</h3>
+        <ul>
+          <li><b>完整合意：</b>本報價單及其附件構成雙方就本案之完整合意，取代先前一切口頭或書面之提案、往來與承諾。</li>
+          <li><b>文件優先順位：</b>本案文件牴觸時，依下列順序適用：① <b>本報價單本體（含其附件）</b>；② 雙方書面確認之<b>變更單</b>（載明編號與日期）；③ 雙方書面確認之 <b>PRD 與素材清單</b>（確認時應載明文件名稱、版本與日期）；④ 提案書、建議書、簡報等前置文件，僅供參考，牴觸時<b>不生效力</b>。</li>
+          <li><b>PRD 之定位：</b>PRD 與素材清單係將本報價單所載範圍<b>具體化</b>，<b>不得據以擴張或縮減</b>本報價單之交付範圍；範圍變更一律以變更單為之，並載明對費用與時程之影響。</li>
+          <li><b>變更方式：</b>任何修改、補充或棄權，均須以書面或可追溯之電子方式為之並經雙方確認。</li>
+                    <li><b>「工作日」之定義：</b>指中華民國政府行政機關之<b>上班日</b>，不含週六、週日、國定假日，以及行政院人事行政總處公告之調整放假日與颱風停班日。本合約所稱「日曆日」則包含上列日期。以工作日計算之期間，自事件發生之次一工作日起算。</li>
+          <li><b>可分性：</b>本合約任一條款經認定無效者，不影響其餘條款之效力。</li>
+          <li><b>不棄權：</b>一方未行使或延遲行使權利，不構成對該權利之棄權。</li>
+        </ul>
+      </article>
+      <article class="term-box">
+        <h3>權利義務之移轉</h3>
+        <ul>
+          <li>任一方未經他方書面同意，不得將本合約之權利義務全部或一部讓與第三人；但因公司合併、分割或營業讓與所生之概括承受，不在此限。</li>
+          <li>乙方將部分工作委由外包或分包執行者，仍就該等工作之交付品質、保密與個資義務<b>負最終責任</b>。</li>
+          <li>本合約之解釋，如報價單本體與附件牴觸，以<b>本體</b>為準；如與任何建議書、提案書或簡報牴觸，以<b>本報價單</b>為準。本報價單與《單人策略模擬 App 開發報價單》（PSL-A-20260729-001）各自獨立，任一方之簽署或終止<b>不影響他方之效力</b>；惟兩案於帳號與訂閱權益服務上存在技術共用關係，<b>A 案終止或改為自建環境時，乙方仍負第 4.8 節之獨立部署與移轉義務</b>，不因合約獨立而免除。</li>
+        </ul>
+      </article>
+    </section>
+
+    <div class="page-break"></div>
+    <h2>十三、甲方簽認</h2>
+    <p><b>本報價單經甲方簽名、用印或以電子方式確認，並經乙方確認後，即視為雙方就本案所成立之合約，對雙方均具拘束力。</b>甲方支付首筆款項亦視為接受本報價單全部條款。單人策略模擬功能不含於本報價單，另訂《單人策略模擬 App 開發報價單》（PSL-A-20260729-001）。<b>本案應於 A 案驗收完成後啟動。</b>未載明之功能或服務，以及任何變更、補充或例外，均須經雙方另行以書面或可追溯之電子方式確認。</p>
+    <table class="avoid" style="margin-top:12px">
+      <thead><tr><th style="width:12%">勾選</th><th>簽認項目</th><th style="width:22%" class="num">金額</th></tr></thead>
+      <tbody>
+        <tr><td><b>☑ 已確認</b></td><td><b>多人連線 App 開發</b>（獨立 App、獨立送審；本次簽認即生效）</td><td class="num">未稅 NT$ 240,000<br>含稅 NT$ 252,000</td></tr>
+        <tr><td>☐ 確認</td><td><b>主機代管｜機房方案三選一（必選其一，或依 4.9 節自建環境）</b><br><span class="muted">本案之牌桌、配對與籌碼帳本均為伺服器功能，無伺服器環境即無法驗收。</span><br><br>☐ 方案 A　GCP・台灣　NT$ 15,750／月　　☐ 方案 B　Akamai Cloud・東京　NT$ 14,700／月　　☐ 方案 C　DigitalOcean・新加坡　NT$ 13,650／月<br>☐ 甲方自建雲端環境（不採購代管，SLA 與維運服務不適用）<br><span class="muted"><b>最低簽約期 6 個月</b>；首次支付為預儲 3 個月 Stage 0 費用（NT$ 40,950～47,250 含稅），第 4～6 個月仍屬最低承諾期，按月支付。升級 Stage 1 須另經書面同意。</span></td><td class="num">Stage 0　NT$ 13,650～15,750／月<br>Stage 1　NT$ 30,450～32,550／月<br><span class="muted">首付 NT$ 40,950～47,250</span></td></tr>
+        <tr><td>☐ 確認</td><td><b>軟體維運方案</b><br><span class="muted">本 App 正式上線後<b>第 1、2 個月免費</b>；<b>第 3～8 個月為 6 個月最低付費期</b>，第 9 個月起按月續約。<b>合計最短服務期間為 8 個月，其中 6 個月付費。</b>服務時間為<b>週一至週五 09:00–17:00</b>（台北時間），國定假日除外。</span></td><td class="num">第 1～2 個月　NT$ 0<br>第 3 個月起<br>未稅 NT$ 36,000<br>含稅 NT$ 37,800／月</td></tr>
+        <tr><td>☐ 加購</td><td><b>第 3 種語言起之多語系</b>（每種語言）<br>☐ 簡體中文　☐ 日文　☐ 韓文　☐ 其他：＿＿＿＿＿＿</td><td class="num">每語言<br>未稅 NT$ 18,000<br>含稅 NT$ 18,900</td></tr>
+      </tbody>
+    </table>
+    <section class="signature avoid">
+      <div class="signature-block"><span class="small-caps">甲方｜Client</span><div class="signature-line"></div><div class="signature-meta"><span>智流國際有限公司　負責人：郭子鼎</span><span>日期：______ / ______ / ______</span></div><div class="signature-meta"><span style="flex:1">有效通知 Email（必填）：＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿</span></div></div>
+      <div class="signature-block"><span class="small-caps">乙方｜Vendor</span><div class="signature-line"></div><div class="signature-meta"><span>卉田國際有限公司（統編 91093506）　負責人：劉苡妡</span><span>日期：______ / ______ / ______</span></div><div class="signature-meta"><span style="flex:1">有效通知 Email：support@oceanads.org</span></div></div>
+    </section>
+
+    <div class="page-break"></div>
+    <h2>附件 A｜主機（機房）方案比較與選擇</h2>
+    <p class="lead">本附件供甲方選定主機代管的機房方案。三案的<b>資源級距、維運服務與交付責任完全相同</b>（詳見第 4.4、4.5 節），差異僅在機房位置、對台灣玩家的網路延遲，以及各供應商的託管服務生態。請於簽認頁勾選其一。</p>
+
+    <table>
+      <thead><tr><th style="width:19%">比較項目</th><th style="width:27%">方案 A｜Google Cloud Platform</th><th style="width:27%">方案 B｜Akamai Cloud</th><th style="width:27%">方案 C｜DigitalOcean</th></tr></thead>
+      <tbody>
+        <tr><td><b>機房位置</b></td><td>台灣</td><td>日本．東京</td><td>新加坡</td></tr>
+        <tr><td><b>對台灣玩家延遲</b><br><span class="muted">RTT 典型值</span></td><td><b>約 5～15 ms</b><br>三案中最低</td><td>約 35～45 ms</td><td>約 50～70 ms</td></tr>
+        <tr><td><b>真人牌桌體驗</b></td><td>最佳。下注、翻牌與結算的即時感最接近本地連線。</td><td>良好。撲克單次決策時間為 15～30 秒，此延遲不影響操作判斷。</td><td>可接受。延遲仍遠低於撲克的決策時間窗，但斷線重連的恢復感略慢。</td></tr>
+        <tr><td><b>託管服務生態</b></td><td>最完整。Cloud SQL、Memorystore、負載平衡、監控與自動擴縮皆為原生託管，Stage 2 擴充路徑最平順。</td><td>提供 Managed PostgreSQL 與 Object Storage；Redis 依需求採其託管服務或自行架設。定價結構單純，單位運算成本低。</td><td>Managed PostgreSQL、Managed Redis 與 Spaces 物件儲存齊備，操作與計費結構單純。</td></tr>
+        <tr><td><b>頻寬計費特性</b></td><td>出口流量單價較高，故月費含頻寬的總額最高。</td><td>每台主機含固定流量額度，可跨主機合併計算，超量單價低。</td><td>各主機含固定流量額度，可合併計算，超量單價明確；三案中月費最低。</td></tr>
+        <tr><td><b>模擬 Worker 配置</b></td><td colspan="3" style="text-align:center">三案相同：Worker 可獨立部署於低價區域並採可中斷機型，不受牌桌機房選擇限制（見第 4.2 節）。</td></tr>
+        <tr><td><b>市場擴充考量</b></td><td>以台灣玩家為核心市場時最有利。</td><td>台灣、日本、韓國玩家的延遲表現均衡。</td><td>未來拓展新加坡、馬來西亞、印尼等東南亞市場時最有利。</td></tr>
+        <tr><td><b>Stage 0 月費</b><br><span class="muted">未稅／含稅</span></td><td class="num">NT$ 15,000<br><b>NT$ 15,750</b></td><td class="num">NT$ 14,000<br><b>NT$ 14,700</b></td><td class="num">NT$ 13,000<br><b>NT$ 13,650</b></td></tr>
+        <tr><td><b>Stage 1 月費</b><br><span class="muted">未稅／含稅</span></td><td class="num">NT$ 31,000<br><b>NT$ 32,550</b></td><td class="num">NT$ 30,000<br><b>NT$ 31,500</b></td><td class="num">NT$ 29,000<br><b>NT$ 30,450</b></td></tr>
+        <tr class="total-row"><td><b>首次支付</b><br><span class="muted">Stage 0 預儲 3 個月・含稅</span></td><td class="num">NT$ 47,250</td><td class="num">NT$ 44,100</td><td class="num">NT$ 40,950</td></tr>
+      </tbody>
+    </table>
+    <p class="fine">上列延遲數值為一般網路環境下的典型 RTT 範圍，實際值受電信業者、對外連線路由與時段影響。簽約後、正式部署前，乙方將以實機測試複核所選機房的延遲表現並回報甲方。</p>
+
+    <h3>三案共同包含項目</h3>
+    <table>
+      <thead><tr><th style="width:30%">類別</th><th>內容</th></tr></thead>
+      <tbody>
+        <tr><td>運算資源</td><td>牌桌節點、API 節點、模擬 Worker，依第 4.4 節 Stage 0 至 Stage 1 級距配置。</td></tr>
+        <tr><td>資料層</td><td>託管 PostgreSQL（含每日自動備份，Stage 1 起含 PITR 時間點還原）、託管 Redis。</td></tr>
+        <tr><td>儲存與頻寬</td><td>物件儲存 100GB（Stage 0）／300GB（Stage 1）；頻寬含量 500GB（Stage 0）／2TB（Stage 1）／月。</td></tr>
+        <tr><td>維運服務</td><td>Uptime 監控與錯誤告警、OS 與套件安全更新、HTTPS 憑證更新、每月備份還原檢查、擴容指標監測與通知。</td></tr>
+        <tr><td>帳務透明</td><td>雲端帳號由乙方持有；甲方得隨時要求提供資源清單與雲端帳單影本核對，每月請款單載明儲值扣抵明細與剩餘餘額。</td></tr>
+      </tbody>
+    </table>
+
+    <h3>選擇建議</h3>
+    <section class="two-col avoid">
+      <article class="term-box">
+        <h3>依市場定位建議</h3>
+        <ul>
+          <li><b>玩家以台灣為主，且重視真人牌桌手感 → 方案 A（GCP．台灣）。</b>延遲最低，託管服務最完整，成長至 Stage 2 時的擴充路徑最短。Stage 0 每月多 NT$ 2,100（含稅）換取約 30～55ms 的延遲優勢。</li>
+          <li><b>延遲與成本的平衡點 → 方案 B（Akamai Cloud．東京）。</b>比最低價方案每月多 NT$ 1,050（含稅），換得約 20ms 的延遲改善；35～45ms 對撲克這類回合制遊戲不構成體驗問題，且對台灣、日本、韓國玩家表現均衡。</li>
+          <li><b>預算優先或已規劃東南亞市場 → 方案 C（DigitalOcean．新加坡）。</b>三案中月費最低、計費結構最單純、託管服務齊備；若未來玩家分布以東南亞為主，可免去日後跨區搬遷。</li>
+        </ul>
+      </article>
+      <article class="term-box">
+        <h3>乙方建議</h3>
+        <p>以本案「尚未獲利、先進行封閉測試與早期付費驗證」的階段目標判斷，建議<b>封測期先採方案 B（Akamai Cloud．東京）</b>：每月僅比最低價方案多 NT$ 1,050，卻能明顯改善台灣玩家的連線表現，是延遲與成本的平衡點；待付費會員數與玩家地區分布明朗後，再依實際數據決定是否遷移。</p>
+        <p>若甲方已確定核心市場為台灣、且真人牌桌為主要賣點，則<b>直接採方案 A</b> 較為妥當——一次到位可省去日後遷移的停機與作業成本。若封測期以壓低現金支出為最高原則，則採<b>方案 C</b>，每月可省 NT$ 2,100。</p>
+        <p class="muted">機房遷移作業涉及資料庫轉移、DNS 切換與停機安排，遷移工時另行報價；儲值餘額可全額轉入新方案（見第 4.5 節）。</p>
+      </article>
+    </section>
+    <div class="notice avoid"><strong>本附件之定位：</strong>三案月費為固定基礎月費，已涵蓋第 4.4 節所列資源與全部維運服務；超出含量之頻寬、模擬運算與儲存，依第 4.5 節超量單價另計。成長至 Stage 2 規模（1,000 付費會員以上）時，三案均需另行報價。</div>
+
+    <footer>PSL-B-20260729-001 ｜ 智流國際有限公司｜多人連線 App 開發報價單（v1.0，2026/07/29）｜ 開發費 NT$240,000（未稅）／NT$252,000（含稅）；主機代管 Stage 0 NT$13,000～15,000／月（未稅）；軟體維運前 2 個月免費，第 3 個月起 NT$36,000／月（未稅），服務時間週一至週五 09:00–17:00｜ 單人策略模擬 App 另訂 PSL-A-20260729-001 ｜ 海水不可斗量工作室</footer>
+  </main>
+</body>
+</html>

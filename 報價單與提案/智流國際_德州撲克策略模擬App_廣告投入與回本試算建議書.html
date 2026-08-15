@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>智流國際有限公司｜德州撲克策略模擬 App 廣告投入與回本試算建議書</title>
+  <style>
+    :root {
+      --ink:#14213d; --ink-soft:#33415c; --muted:#687386; --line:#d9e0ea;
+      --line-strong:#aab7c9; --brand:#075985; --brand-deep:#063d61;
+      --brand-soft:#e8f3f8; --paper:#fff; --wash:#f7fafc;
+      --warm:#fff8e8; --warm-line:#ebd29a; --good:#e9f6ee; --good-ink:#17633a;
+    }
+    * { box-sizing:border-box; }
+    @page { size:A4; margin:10mm 9mm; }
+    body {
+      margin:0; color:var(--ink); background:#eef2f6;
+      font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",Arial,sans-serif;
+      font-size:13px; line-height:1.58;
+    }
+    .sheet {
+      width:min(1000px,calc(100% - 32px)); margin:20px auto; padding:42px 46px 36px;
+      border:1px solid var(--ink); background:var(--paper); box-shadow:0 8px 28px rgba(23,45,73,.1);
+    }
+    .topline { height:7px; margin:-42px -46px 27px; background:var(--brand-deep); }
+    .head {
+      display:grid; grid-template-columns:1fr auto; align-items:start; gap:26px;
+      padding-bottom:19px; border-bottom:2px solid var(--brand-deep);
+    }
+    .eyebrow,.label { color:var(--brand); font-size:10px; font-weight:800; letter-spacing:1.25px; text-transform:uppercase; }
+    .issuer-name { margin:4px 0 6px; font-size:22px; font-weight:800; }
+    .issuer-detail,.meta { margin:2px 0; color:var(--ink-soft); font-size:12px; }
+    .title { text-align:right; }
+    h1 { margin:3px 0 8px; font-size:25px; letter-spacing:1.2px; line-height:1.2; }
+    .doc-type { display:block; color:var(--brand); font-size:10px; font-weight:800; letter-spacing:1.5px; }
+    h2 { margin:25px 0 11px; padding:8px 12px; color:#fff; background:var(--brand-deep); font-size:15px; }
+    h3 { margin:15px 0 7px; font-size:13.5px; }
+    p { margin:7px 0; }
+    ul { margin:7px 0; padding-left:20px; }
+    li { margin:5px 0; }
+    .summary { display:grid; grid-template-columns:repeat(4,1fr); margin:22px 0 25px; border:1px solid var(--line-strong); }
+    .summary>div { min-height:82px; padding:12px 13px; border-right:1px solid var(--line); }
+    .summary>div:last-child { border-right:0; }
+    .summary .label { display:block; margin-bottom:5px; }
+    .summary strong { display:block; font-size:18px; }
+    .summary small { color:var(--muted); }
+    .notice { margin:11px 0; padding:12px 14px; border:1px solid var(--warm-line); background:var(--warm); }
+    .result { margin:11px 0; padding:14px; border:1px solid #a9d8bb; background:var(--good); color:var(--good-ink); }
+    .two-col { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    .card { padding:14px 15px; border:1px solid var(--line-strong); background:var(--wash); }
+    .card h3 { margin-top:0; color:var(--brand-deep); }
+    table { width:100%; border-collapse:collapse; margin:10px 0 7px; font-size:12.2px; }
+    th,td { padding:9px 10px; border:1px solid var(--line); vertical-align:top; }
+    th { color:var(--brand-deep); background:var(--brand-soft); font-weight:800; text-align:left; }
+    tbody tr:nth-child(even) { background:#fafcff; }
+    .num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .total td { border-top:2px solid var(--brand-deep); background:#eef7fb; font-weight:800; }
+    .formula { padding:12px 14px; background:#f1f5f9; border:1px solid var(--line); font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:12px; }
+    .muted,.fine { color:var(--muted); }
+    .fine { font-size:11px; }
+    footer { margin-top:28px; padding-top:11px; border-top:1px solid var(--line-strong); color:var(--muted); font-size:10.5px; text-align:center; }
+    .avoid { break-inside:avoid; page-break-inside:avoid; }
+    @media print {
+      body { background:#fff; font-size:11.4px; line-height:1.47; }
+      .sheet { width:100%; margin:0; padding:8mm 9mm 7mm; border:1.4px solid var(--ink); box-shadow:none; }
+      .topline { height:5px; margin:-8mm -9mm 6mm; }
+      .issuer-name { font-size:18px; } h1 { font-size:21px; }
+      h2 { margin:17px 0 8px; padding:6px 9px; font-size:13px; }
+      table { font-size:10.6px; } th,td { padding:6px 7px; }
+      .summary { margin:14px 0 17px; } .summary>div { min-height:64px; padding:8px 9px; }
+      .summary strong { font-size:14px; }
+      .avoid,.summary,.two-col,.notice,.result { break-inside:avoid; page-break-inside:avoid; }
+      thead { display:table-header-group; } tr,th,td { break-inside:avoid; page-break-inside:avoid; }
+      * { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    }
+    @media (max-width:720px) {
+      .sheet { width:100%; margin:0; padding:28px 20px; border:0; box-shadow:none; }
+      .topline { margin:-28px -20px 21px; }
+      .head,.two-col { grid-template-columns:1fr; }
+      .title { text-align:left; }
+      .summary { grid-template-columns:1fr 1fr; }
+      .summary>div:nth-child(2) { border-right:0; }
+      .summary>div:nth-child(-n+2) { border-bottom:1px solid var(--line); }
+    }
+  </style>
+</head>
+<body>
+  <main class="sheet">
+    <div class="topline"></div>
+    <header class="head">
+      <section>
+        <span class="eyebrow">Issued by</span>
+        <p class="issuer-name">海水不可斗量工作室</p>
+        <p class="issuer-detail">登記實體：卉田國際有限公司（統編 91093506）</p>
+        <p class="issuer-detail">專案窗口：Ivan Bai（白翼輔）｜0912-305-910</p>
+        <p class="issuer-detail">support@oceanads.org ｜ Oceanads.org</p>
+      </section>
+      <section class="title">
+        <span class="doc-type">Profitability advisory</span>
+        <h1>廣告投入與回本試算建議書</h1>
+        <p class="meta">文件日期　2026 / 07 / 29</p>
+        <p class="meta">文件編號　PSL-20260729-C</p>
+        <p class="meta">致　智流國際有限公司</p>
+      </section>
+    </header>
+
+    <div class="notice avoid" style="margin-top:20px">
+      <strong>文件性質：</strong>本試算以既有報價與建議售價建立財務模型，加入每月 NT$20,000 廣告預算。
+      本文件為營運預估，不構成營收、下載量、付費轉換率或回本期限之保證；正式預算應於 Beta 期依實際 CAC、留存率及運算成本每月校正。
+    </div>
+
+    <section class="summary avoid">
+      <div><span class="label">多人版基準回本</span><strong>約第 14 個月</strong><small>獨立 App 營運起算</small></div>
+      <div><span class="label">穩定付費會員</span><strong>400 人</strong><small>第 8 個月達成</small></div>
+      <div><span class="label">穩定月利潤率</span><strong>約 32.6%</strong><small>所得稅前</small></div>
+      <div><span class="label">Stage 1 損益兩平</span><strong>約 256 人</strong><small>含每月廣告 NT$20,000</small></div>
+    </section>
+
+    <h2>一、試算前提</h2>
+    <table>
+      <thead><tr><th>項目</th><th>採用數值</th><th>說明</th></tr></thead>
+      <tbody>
+        <tr><td>單人版開發投資</td><td class="num"><b>NT$252,000</b></td><td>主案 NT$240,000 未稅，作為一款獨立 App 計算。</td></tr>
+        <tr><td>多人版開發投資</td><td class="num"><b>NT$252,000</b></td><td>多人選配案 NT$240,000 未稅，作為另一款獨立 App 計算。</td></tr>
+        <tr><td>每月廣告費</td><td class="num"><b>NT$20,000</b></td><td>自營運第 1 個月開始，每月持續投入。</td></tr>
+        <tr><td>單人版 Stage 0 主機</td><td class="num">NT$14,700／月</td><td>採三案中間值 Akamai Cloud 東京。</td></tr>
+        <tr><td>多人版 Stage 1 主機</td><td class="num">NT$31,500／月</td><td>多人 App 自上線起獨立計算。</td></tr>
+        <tr><td>多人版軟體維運</td><td class="num">NT$45,000／月</td><td>多人 App 上線首月免費，第 2 個月起計費。</td></tr>
+        <tr><td>平台手續費</td><td class="num">15%</td><td>以符合 Apple／Google 15% 費率資格為基準。</td></tr>
+        <tr><td>退款與帳務準備</td><td class="num">3%</td><td>自平台扣款後收入再提列。</td></tr>
+        <tr><td>運算與變動成本</td><td class="num">實收收入 10%</td><td>Compute、額外頻寬、儲存及變動客服成本之預算上限。</td></tr>
+        <tr><td>會員組合</td><td class="num">Lite 40%／VIP 45%／SVIP 15%</td><td>依月費 NT$190／590／1,290 加權。</td></tr>
+      </tbody>
+    </table>
+    <p class="fine">本模型尚未計入籌碼包、Compute Credits 加購及廣告變現收入，因此收入面偏保守；亦未計入公司人事、辦公室、所得稅及融資成本。</p>
+
+    <h2>二、單一付費會員的平均貢獻</h2>
+    <div class="formula avoid">
+      平均消費者月費 = 40%×190 + 45%×590 + 15%×1,290 = NT$535<br>
+      平台後平均月實收 = 535 ÷ 1.05 × 85% × 97% = 約 NT$420.10<br>
+      扣除 10% 變動成本後，每位付費會員月貢獻 = 約 NT$378.09
+    </div>
+    <p>此處「實收收入」已估計扣除台灣 5% 稅額、15% 平台手續費及 3% 退款準備。實際入帳仍應以 App Store Connect 與 Play Console 財務報表為準。</p>
+
+    <h2>三、依報價單拆分的兩種計算方式</h2>
+    <p>報價單所稱「單機版」實際仍包含帳號、資料庫、API、訂閱驗證及雲端模擬 Worker，因此以下稱為<b>單人策略模擬版</b>。兩種版本不可共用同一組固定成本：多人版必須另外納入 Stage 1 主機及每月軟體維運費。</p>
+
+    <section class="two-col avoid">
+      <article class="card">
+        <h3>A. 單人策略模擬版｜主案</h3>
+        <ul>
+          <li>一次性開發費：NT$240,000 未稅，<b>NT$252,000 含稅</b>。</li>
+          <li>Stage 0 主機：NT$13,650～15,750／月；基準採 NT$14,700。</li>
+          <li>廣告費：NT$20,000／月。</li>
+          <li>不計多人版每月 NT$45,000 軟體維運費。</li>
+          <li>基準每月固定成本：14,700＋20,000＝<b>NT$34,700</b>。</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>B. 多人連線版｜主案＋選配案</h3>
+        <ul>
+          <li>一次性開發費：NT$240,000 未稅，<b>NT$252,000 含稅</b>。</li>
+          <li>Stage 1 主機：NT$30,450～32,550／月；基準採 NT$31,500。</li>
+          <li>軟體維運：首月免費，第 2 個月起<b> NT$45,000／月</b>。</li>
+          <li>廣告費：NT$20,000／月。</li>
+          <li>穩定營運固定成本：31,500＋45,000＋20,000＝<b>NT$96,500／月</b>。</li>
+        </ul>
+      </article>
+    </section>
+
+    <h3>3.1　單人策略模擬版公式</h3>
+    <div class="formula avoid">
+      單人版平台後月實收 = 付費會員數 × NT$420.10<br>
+      單人版月變動成本 = 平台後月實收 × 10%<br>
+      單人版月利潤 = 平台後月實收 − 月變動成本 − Stage 0 主機費 − NT$20,000 廣告費<br>
+      單人版月利潤率 = 單人版月利潤 ÷ 平台後月實收<br>
+      單人版完整回本月數 = NT$252,000 ÷ 單人版月利潤
+    </div>
+    <table>
+      <thead><tr><th>單人版付費會員</th><th class="num">平台後月實收</th><th class="num">預估月利潤</th><th class="num">月利潤率</th><th class="num">穩定後回本時間</th></tr></thead>
+      <tbody>
+        <tr><td>100 人</td><td class="num">NT$42,010</td><td class="num">NT$3,109</td><td class="num">7.4%</td><td class="num">約 81.1 個月</td></tr>
+        <tr class="total"><td>200 人</td><td class="num">NT$84,020</td><td class="num">NT$40,918</td><td class="num">48.7%</td><td class="num">約 6.2 個月</td></tr>
+        <tr><td>300 人</td><td class="num">NT$126,031</td><td class="num">NT$78,728</td><td class="num">62.5%</td><td class="num">約 3.2 個月</td></tr>
+      </tbody>
+    </table>
+    <p class="fine">採 Stage 0 中間值 NT$14,700。單人版每月損益兩平約需 92 名付費會員；主機若選最低／最高方案，約需 89／95 名。</p>
+
+    <h3>3.2　多人連線版公式｜納入維運費</h3>
+    <div class="formula avoid">
+      多人版平台後月實收 = 付費會員數 × NT$420.10 ＋ 籌碼包／Credits 平台後實收<br>
+      多人版月變動成本 = 平台後月實收 × 10%<br>
+      多人版月利潤 = 平台後月實收 − 月變動成本 − Stage 1 主機費 − NT$45,000 維運費 − NT$20,000 廣告費<br>
+      多人版月利潤率 = 多人版月利潤 ÷ 平台後月實收<br>
+      多人版完整回本月數 = NT$252,000 ÷ 多人版月利潤
+    </div>
+    <table>
+      <thead><tr><th>多人版付費會員</th><th class="num">平台後月實收</th><th class="num">預估月利潤</th><th class="num">月利潤率</th><th class="num">穩定後回本時間</th></tr></thead>
+      <tbody>
+        <tr><td>300 人</td><td class="num">NT$126,031</td><td class="num">NT$16,928</td><td class="num">13.4%</td><td class="num">約 14.9 個月</td></tr>
+        <tr class="total"><td>400 人</td><td class="num">NT$168,041</td><td class="num">NT$54,737</td><td class="num">32.6%</td><td class="num">約 4.6 個月</td></tr>
+        <tr><td>500 人</td><td class="num">NT$210,051</td><td class="num">NT$92,546</td><td class="num">44.1%</td><td class="num">約 2.7 個月</td></tr>
+      </tbody>
+    </table>
+    <p class="fine">採 Stage 1 中間值 NT$31,500，並明確納入軟體維運 NT$45,000。尚未把籌碼包與 Credits 加購列入收入，因此多人版收入估算偏保守。多人版每月損益兩平約需 256 名付費會員；主機若選最低／最高方案，約需 253／259 名。</p>
+
+    <h3>3.3　兩款獨立 App 的成本歸屬</h3>
+    <div class="formula avoid">
+      單人 App 投資回收 = 單人 App 累計淨利 − NT$252,000<br>
+      多人 App 投資回收 = 多人 App 累計淨利 − NT$252,000<br>
+      同時製作兩款 App 的公司總投資 = NT$252,000 ＋ NT$252,000 = NT$504,000<br>
+      但每款 App 的回本計算均以各自 NT$252,000 為基礎，不得將 NT$504,000 全部歸入多人版
+    </div>
+    <div class="notice avoid"><strong>成本分攤原則：</strong>即使兩款 App 共用程式結構、後端模組或僅更換 App icon 上架，財務上仍應建立兩個獨立損益表。若共用同一組伺服器，主機與維運費應依活躍會員、運算量或連線量分攤；本建議書暫以各 App 使用其對應報價方案獨立計算。</div>
+
+    <h2>四、多人版每月損益與利潤率</h2>
+    <table>
+      <thead>
+        <tr><th>穩定付費會員數</th><th class="num">平台後月實收</th><th class="num">每月總成本</th><th class="num">預估月利潤</th><th class="num">月利潤率</th><th class="num">達穩定人數後回收開發費</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>300 人｜保守</td><td class="num">NT$126,031</td><td class="num">NT$109,103</td><td class="num">NT$16,928</td><td class="num">13.4%</td><td class="num">約 14.9 個月</td></tr>
+        <tr class="total"><td>400 人｜基準</td><td class="num">NT$168,041</td><td class="num">NT$113,304</td><td class="num">NT$54,737</td><td class="num">32.6%</td><td class="num">約 4.6 個月</td></tr>
+        <tr><td>500 人｜樂觀</td><td class="num">NT$210,051</td><td class="num">NT$117,505</td><td class="num">NT$92,546</td><td class="num">44.1%</td><td class="num">約 2.7 個月</td></tr>
+      </tbody>
+    </table>
+    <p class="fine">月利潤率＝月利潤 ÷ 平台後月實收。每月總成本包含 Stage 1 主機 NT$31,500、維運 NT$45,000、廣告 NT$20,000，以及實收收入 10% 的變動成本。</p>
+
+    <div class="result avoid">
+      <strong>基準結論：</strong>穩定維持 400 名付費會員時，每月預估實收約 NT$168,041、所得稅前利潤約 NT$54,737，月利潤率約 32.6%。若付費會員少於約 256 人，Stage 1 將無法損益兩平。
+    </div>
+
+    <h2>五、多人版基準情境的完整回本進度</h2>
+    <p>此處將多人版視為獨立 App：開發投資 NT$252,000，從上架第 1 個月即採 Stage 1 主機；軟體維運首月免費，第 2 個月起支付 NT$45,000。假設付費會員每月淨增加 50 人，第 8 個月達到 400 人，之後維持 400 人。</p>
+    <table>
+      <thead><tr><th>月份</th><th class="num">付費會員</th><th class="num">平台後實收</th><th class="num">當月利潤／虧損</th><th class="num">含開發費累計損益</th></tr></thead>
+      <tbody>
+        <tr><td>第 1 月</td><td class="num">50</td><td class="num">NT$21,005</td><td class="num">−NT$32,595</td><td class="num">−NT$284,595</td></tr>
+        <tr><td>第 2 月</td><td class="num">100</td><td class="num">NT$42,010</td><td class="num">−NT$58,691</td><td class="num">−NT$343,286</td></tr>
+        <tr><td>第 3 月</td><td class="num">150</td><td class="num">NT$63,015</td><td class="num">−NT$39,786</td><td class="num">−NT$383,072</td></tr>
+        <tr><td>第 4 月</td><td class="num">200</td><td class="num">NT$84,020</td><td class="num">−NT$20,882</td><td class="num">−NT$403,954</td></tr>
+        <tr><td>第 5 月</td><td class="num">250</td><td class="num">NT$105,026</td><td class="num">−NT$1,977</td><td class="num">−NT$405,931</td></tr>
+        <tr><td>第 6 月</td><td class="num">300</td><td class="num">NT$126,031</td><td class="num">NT$16,928</td><td class="num">−NT$389,003</td></tr>
+        <tr><td>第 7 月</td><td class="num">350</td><td class="num">NT$147,036</td><td class="num">NT$35,832</td><td class="num">−NT$353,171</td></tr>
+        <tr><td>第 8 月</td><td class="num">400</td><td class="num">NT$168,041</td><td class="num">NT$54,737</td><td class="num">−NT$298,434</td></tr>
+        <tr><td>第 12 月</td><td class="num">400</td><td class="num">NT$168,041</td><td class="num">NT$54,737</td><td class="num">約 −NT$79,487</td></tr>
+        <tr class="total"><td>第 14 月</td><td class="num">400</td><td class="num">NT$168,041</td><td class="num">NT$54,737</td><td class="num">約 NT$29,987</td></tr>
+      </tbody>
+    </table>
+    <div class="result avoid"><strong>多人版完全回本時間：</strong>在上述會員成長假設成立的情況下，累計損益預計於多人 App 營運第 14 個月由負轉正，亦即約 1 年 2 個月完全回收 NT$252,000 開發投資及前期營運虧損。</div>
+
+    <h2>六、風險與經營門檻</h2>
+    <section class="two-col avoid">
+      <article class="card">
+        <h3>廣告投放門檻</h3>
+        <ul>
+          <li>每位付費會員月貢獻約 NT$378，因此單月 NT$20,000 廣告至少需帶來約 <b>53 個仍有效的付費會員月</b>，才足以覆蓋當月廣告成本。</li>
+          <li>若平均付費生命週期為 6 個月，單一新付費會員可承受的損益兩平 CAC 約為 <b>NT$2,269</b>；實務建議將 CAC 控制在 NT$1,100～1,500，以保留回本與流失風險空間。</li>
+          <li>應分別追蹤 Apple／Google、素材、廣告渠道與方案等級的 CAC、轉換率與 30／90 日留存。</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>主要風險</h3>
+        <ul>
+          <li>若 Stage 1 付費會員長期停在 250 人左右，每月仍約虧損 NT$2,000，尚無法回收開發費。</li>
+          <li>若平台實際費率為 30%，Stage 1 損益兩平將提高至約 <b>310 名</b>；400 名會員的月利潤率降至約 <b>20.4%</b>。</li>
+          <li>Free 用戶量、即時在線人數或 Solver 使用量高於預期時，10% 變動成本假設可能不足。</li>
+          <li>本模型未把籌碼包與 Credits 加購列入收入；上線後應分開觀測訂閱與消耗性 IAP 毛利。</li>
+        </ul>
+      </article>
+    </section>
+
+    <h2>七、建議決策</h2>
+    <ul>
+      <li><b>多人正式上線門檻：</b>至少確認 300 名付費會員或等值月實收，再長期承擔 Stage 1 與維運成本。</li>
+      <li><b>健康營運目標：</b>400 名以上付費會員，使所得稅前月利潤率維持約 30% 以上。</li>
+      <li><b>廣告停損：</b>連續兩個月 CAC 高於 NT$1,500 或 90 日回收率不足時，降低預算並更換素材、受眾或渠道。</li>
+      <li><b>每月重算：</b>使用商店實收、退款、實際 Compute 成本、免費會員成本與流失率取代本文件假設。</li>
+    </ul>
+
+    <footer>PSL-20260729-C ｜ 智流國際有限公司｜德州撲克策略模擬 App 廣告投入與回本試算建議書（v1.0，2026/07/29）｜ 本文件為營運建議，不構成營收或回本保證 ｜ 海水不可斗量工作室</footer>
+  </main>
+</body>
+</html>

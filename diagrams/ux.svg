@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1040" role="img" aria-labelledby="title desc">
+  <title id="title">9-max 本機平台使用流程</title>
+  <desc id="desc">使用者先設定本機 Bot 桌與策略，再選擇互動 Play 或批次模擬，最後查看統計、熱力圖與逐手重播並回到相同節點調整參數。</desc>
+  <defs>
+    <style>
+      .bg{fill:#f4f7fb}.box{fill:#fff;stroke:#47677e;stroke-width:1.7}.primary{fill:#e7f3f8;stroke:#176b87;stroke-width:2}.play{fill:#eef3ff;stroke:#4c65a0;stroke-width:1.7}.batch{fill:#eff8f0;stroke:#4f7f59;stroke-width:1.7}.data{fill:#f4efff;stroke:#7357a5;stroke-width:1.7}.decision{fill:#fff7e6;stroke:#a36b00;stroke-width:2}
+      .title{font:700 27px "Microsoft JhengHei",sans-serif;fill:#102a43}.h{font:700 15px "Microsoft JhengHei",sans-serif;fill:#102a43}.s{font:500 12px "Microsoft JhengHei",sans-serif;fill:#526b7a}
+      .edge{fill:none;stroke:#43657b;stroke-width:2;marker-end:url(#arrow)}.dash{fill:none;stroke:#7357a5;stroke-width:2;stroke-dasharray:7 6;marker-end:url(#arrow2)}
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#43657b"/></marker>
+    <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#7357a5"/></marker>
+  </defs>
+  <rect class="bg" width="1400" height="1040"/>
+  <text class="title" x="700" y="40" text-anchor="middle">9-max 本機平台使用流程</text>
+
+  <rect class="primary" x="510" y="70" width="380" height="55" rx="12"/><text class="h" x="700" y="103" text-anchor="middle">開啟 Windows App</text>
+  <rect class="primary" x="510" y="150" width="380" height="62" rx="12"/><text class="h" x="700" y="177" text-anchor="middle">建立或載入本機桌型</text><text class="s" x="700" y="198" text-anchor="middle">3–9 人・1 User + 2–8 Bot</text>
+  <rect class="primary" x="510" y="237" width="380" height="62" rx="12"/><text class="h" x="700" y="264" text-anchor="middle">調整牌桌／Persona／Level／覆寫</text><text class="s" x="700" y="285" text-anchor="middle">參數是主要操作中心</text>
+  <rect class="primary" x="510" y="324" width="380" height="62" rx="12"/><text class="h" x="700" y="351" text-anchor="middle">編輯或選擇使用者策略</text><text class="s" x="700" y="372" text-anchor="middle">169 格 × Action・Postflop 規則</text>
+  <path class="edge" d="M700 125V150M700 212V237M700 299V324"/>
+
+  <polygon class="decision" points="700,420 820,480 700,540 580,480"/><text class="h" x="700" y="475" text-anchor="middle">執行模式</text><text class="s" x="700" y="497" text-anchor="middle">互動／批次</text>
+  <path class="edge" d="M700 386V420"/>
+
+  <rect class="play" x="110" y="580" width="420" height="68" rx="12"/><text class="h" x="320" y="608" text-anchor="middle">互動 Play：使用者手動選合法行動</text><text class="s" x="320" y="631" text-anchor="middle">本機 Bot 回應・動畫可 off／fast／normal</text>
+  <rect class="batch" x="870" y="580" width="420" height="68" rx="12"/><text class="h" x="1080" y="608" text-anchor="middle">批次模擬：使用者策略自動決策</text><text class="s" x="1080" y="631" text-anchor="middle">背景執行・無動畫・ETA／暫停／續跑／取消</text>
+  <path class="edge" d="M580 480H320V580"/><path class="edge" d="M820 480H1080V580"/>
+  <text class="s" x="430" y="468">互動 Play</text><text class="s" x="920" y="468">批次模擬</text>
+
+  <rect class="data" x="510" y="700" width="380" height="60" rx="12"/><text class="h" x="700" y="727" text-anchor="middle">SQLite 全量事件 Log</text><text class="s" x="700" y="748" text-anchor="middle">RunManifest・決策 trace・聚合資料</text>
+  <path class="edge" d="M320 648V680H650V700"/><path class="edge" d="M1080 648V680H750V700"/>
+
+  <rect class="data" x="70" y="820" width="360" height="72" rx="12"/><text class="h" x="250" y="848" text-anchor="middle">統計儀表板</text><text class="s" x="250" y="871" text-anchor="middle">樣本・CI・Estimator・可判定狀態</text>
+  <rect class="data" x="520" y="820" width="360" height="72" rx="12"/><text class="h" x="700" y="848" text-anchor="middle">位置／169 格熱力圖</text><text class="s" x="700" y="871" text-anchor="middle">EV・勝率・頻率・探索性標示</text>
+  <rect class="data" x="970" y="820" width="360" height="72" rx="12"/><text class="h" x="1150" y="848" text-anchor="middle">逐手重播</text><text class="s" x="1150" y="871" text-anchor="middle">行動順序・決策修正鏈・範圍估計</text>
+  <path class="edge" d="M700 760V790H250V820"/><path class="edge" d="M700 760V820"/><path class="edge" d="M700 790H1150V820"/>
+
+  <rect class="primary" x="470" y="950" width="460" height="58" rx="12"/><text class="h" x="700" y="976" text-anchor="middle">回到相同節點調整一項參數</text><text class="s" x="700" y="997" text-anchor="middle">相同 Run 設定與 Seed 做配對比較</text>
+  <path class="edge" d="M250 892V925H610V950"/><path class="edge" d="M700 892V950"/><path class="edge" d="M1150 892V925H790V950"/>
+  <path class="dash" d="M470 979H35V268H510"/>
+</svg>
+

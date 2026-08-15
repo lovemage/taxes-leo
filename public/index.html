@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>文件存取驗證</title>
+<style id="pagecss"></style>
+<style id="gatecss">
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;color:#14213d;background:#eef2f6;
+ font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",Arial,sans-serif;font-size:13px;line-height:1.6}
+.gate{width:min(430px,100%);border:1px solid #14213d;background:#fff;box-shadow:0 8px 28px rgba(23,45,73,.1)}
+.gate .bar{height:7px;background:#063d61}
+.gate .in{padding:34px 34px 30px}
+.gate .eyebrow{color:#075985;font-size:10px;font-weight:800;letter-spacing:1.25px;text-transform:uppercase}
+.gate h1{margin:8px 0 4px;font-size:19px;letter-spacing:.5px}
+.gate .sub{margin:0 0 22px;color:#687386;font-size:12px}
+.gate label{display:block;margin-bottom:5px;font-size:11.5px;font-weight:700;color:#33415c}
+.gate input{width:100%;padding:10px 12px;border:1px solid #aab7c9;border-radius:0;font-family:inherit;
+ font-size:14px;letter-spacing:2px;color:#14213d;background:#fff}
+.gate input:focus{outline:2px solid #075985;outline-offset:-2px}
+.gate button{width:100%;margin-top:14px;padding:11px;color:#fff;background:#063d61;border:1px solid #063d61;
+ border-radius:0;font-family:inherit;font-size:13px;font-weight:800;letter-spacing:.5px;cursor:pointer}
+.gate button:hover{background:#075985}
+.gate button:disabled{opacity:.55;cursor:progress}
+.gate .err{margin-top:12px;padding:9px 11px;border:1px solid #e8c3a4;background:#fdf1e7;color:#9a3412;font-size:12px;display:none}
+.gate .err.on{display:block}
+.gate .foot{margin-top:20px;padding-top:13px;border-top:1px solid #d9e0ea;color:#687386;font-size:10.5px;line-height:1.55}
+</style>
+</head>
+<body>
+<div class="gate" id="gate">
+  <div class="bar"></div>
+  <div class="in">
+    <span class="eyebrow">Protected document</span>
+    <h1>專案文件</h1>
+    <p class="sub">請輸入存取密碼以開啟</p>
+    <form id="f">
+      <label for="pw">存取密碼</label>
+      <input type="password" id="pw" autocomplete="current-password" autofocus placeholder="請輸入密碼">
+      <button type="submit" id="go">開啟</button>
+    </form>
+    <div class="err" id="err"></div>
+    <p class="foot">本文件內容經 AES-256-GCM 加密，未輸入正確密碼無法取得內容。<br>
+      密碼由卉田國際有限公司（海水不可斗量工作室）提供。</p>
+  </div>
+</div>
+<script>
+const BLOB="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", ITER=200000, SS="pf-doc";
+function b2a(b){return Uint8Array.from(atob(b),c=>c.charCodeAt(0));}
+async function open_(pw){
+  const raw=b2a(BLOB), salt=raw.slice(0,16), iv=raw.slice(16,28), data=raw.slice(28);
+  const km=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveKey']);
+  const key=await crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:ITER,hash:'SHA-256'},km,
+    {name:'AES-GCM',length:256},false,['decrypt']);
+  return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv},key,data)));
+}
+function mount(p){
+  document.title=p.title;
+  document.getElementById('pagecss').textContent=p.css;
+  const g=document.getElementById('gatecss'); if(g)g.remove();
+  document.body.innerHTML=p.html;
+  document.body.querySelectorAll('script').forEach(sc=>{try{(0,eval)(sc.textContent);}catch(e){console.error(e);}});
+}
+async function attempt(pw,silent){
+  try{ mount(await open_(pw)); if(!silent)sessionStorage.setItem(SS,pw); return true; }
+  catch(e){ if(silent)sessionStorage.removeItem(SS); return false; }
+}
+document.getElementById('f').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const btn=document.getElementById('go'), err=document.getElementById('err'), pw=document.getElementById('pw').value;
+  err.classList.remove('on'); btn.disabled=true; btn.textContent='驗證中…';
+  if(!await attempt(pw,false)){ err.textContent='密碼不正確，請再試一次。'; err.classList.add('on');
+    btn.disabled=false; btn.textContent='開啟'; document.getElementById('pw').select(); }
+});
+(async()=>{
+  if(!window.crypto||!crypto.subtle){
+    const err=document.getElementById('err');
+    err.textContent='此瀏覽器環境不支援解密（需 HTTPS 或較新的瀏覽器）。'; err.classList.add('on'); return;
+  }
+  const saved=sessionStorage.getItem(SS);
+  if(saved)await attempt(saved,true);
+})();
+</script>
+</body>
+</html>

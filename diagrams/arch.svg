@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 860" role="img" aria-labelledby="title desc">
+  <title id="title">9-max Windows 本機平台架構</title>
+  <desc id="desc">一名本機使用者操作 React UI，經 Tauri IPC 使用 Rust 權威引擎與 SQLite；不含真人連線、帳號、雲端或伺服器牌局。</desc>
+  <defs>
+    <style>
+      .bg{fill:#f4f7fb}.frame{fill:#fff;stroke:#17324d;stroke-width:2}.group{fill:#eef5fa;stroke:#55748f;stroke-width:1.5}
+      .ui{fill:#e8f3f8;stroke:#176b87;stroke-width:1.5}.engine{fill:#edf3ff;stroke:#425f9c;stroke-width:1.5}
+      .data{fill:#f4efff;stroke:#7357a5;stroke-width:1.5}.warn{fill:#fff7e6;stroke:#a36b00;stroke-width:1.5}
+      .title{font:700 26px "Microsoft JhengHei",sans-serif;fill:#102a43}.h{font:700 17px "Microsoft JhengHei",sans-serif;fill:#102a43}
+      .t{font:500 14px "Microsoft JhengHei",sans-serif;fill:#243b53}.s{font:500 12px "Microsoft JhengHei",sans-serif;fill:#526b7a}
+      .edge{fill:none;stroke:#43657b;stroke-width:2;marker-end:url(#arrow)}
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#43657b"/></marker>
+  </defs>
+  <rect class="bg" width="1440" height="860"/>
+  <text class="title" x="720" y="42" text-anchor="middle">9-max Windows 本機平台架構</text>
+
+  <rect class="warn" x="30" y="320" width="145" height="90" rx="10"/>
+  <text class="h" x="102" y="352" text-anchor="middle">本機使用者</text>
+  <text class="s" x="102" y="376" text-anchor="middle">手動 Play</text>
+  <text class="s" x="102" y="396" text-anchor="middle">參數／報表／重播</text>
+
+  <rect class="frame" x="195" y="75" width="1215" height="695" rx="16"/>
+  <text class="h" x="220" y="106">Windows 桌面應用（完全本機）</text>
+
+  <rect class="group" x="220" y="130" width="350" height="530" rx="14"/>
+  <text class="h" x="395" y="162" text-anchor="middle">React／TypeScript UI</text>
+  <rect class="ui" x="245" y="185" width="300" height="62" rx="9"/><text class="t" x="395" y="212" text-anchor="middle">3–9 人牌桌</text><text class="s" x="395" y="234" text-anchor="middle">1 User + 2–8 Bot</text>
+  <rect class="ui" x="245" y="265" width="300" height="62" rx="9"/><text class="t" x="395" y="291" text-anchor="middle">牌桌／Bot／策略參數中心</text><text class="s" x="395" y="313" text-anchor="middle">搜尋・繼承・覆寫・驗證</text>
+  <rect class="ui" x="245" y="345" width="300" height="62" rx="9"/><text class="t" x="395" y="371" text-anchor="middle">互動 Play／批次執行</text><text class="s" x="395" y="393" text-anchor="middle">進度・暫停・續跑・取消</text>
+  <rect class="ui" x="245" y="425" width="300" height="62" rx="9"/><text class="t" x="395" y="451" text-anchor="middle">統計儀表板／熱力圖</text><text class="s" x="395" y="473" text-anchor="middle">樣本・CI・Estimator・FDR</text>
+  <rect class="ui" x="245" y="505" width="300" height="62" rx="9"/><text class="t" x="395" y="531" text-anchor="middle">全量 Log／逐手重播</text><text class="s" x="395" y="553" text-anchor="middle">決策 trace・RunManifest</text>
+  <rect class="ui" x="245" y="585" width="300" height="50" rx="9"/><text class="t" x="395" y="616" text-anchor="middle">動畫 off／fast／normal</text>
+
+  <rect class="warn" x="600" y="315" width="130" height="96" rx="12"/>
+  <text class="h" x="665" y="350" text-anchor="middle">Tauri IPC</text>
+  <text class="s" x="665" y="377" text-anchor="middle">型別化</text>
+  <text class="s" x="665" y="397" text-anchor="middle">Schema codegen</text>
+
+  <rect class="group" x="760" y="130" width="620" height="530" rx="14"/>
+  <text class="h" x="1070" y="162" text-anchor="middle">Rust 單一權威引擎</text>
+  <rect class="engine" x="785" y="185" width="270" height="70" rx="9"/><text class="t" x="920" y="212" text-anchor="middle">牌局核心／合法行動</text><text class="s" x="920" y="235" text-anchor="middle">Side Pot・Rake・固定點籌碼</text>
+  <rect class="engine" x="1080" y="185" width="275" height="70" rx="9"/><text class="t" x="1217" y="212" text-anchor="middle">DecisionView</text><text class="s" x="1217" y="235" text-anchor="middle">逐座隱藏資訊隔離</text>
+  <rect class="engine" x="785" y="285" width="270" height="70" rx="9"/><text class="t" x="920" y="312" text-anchor="middle">使用者策略引擎</text><text class="s" x="920" y="335" text-anchor="middle">Preflop／Postflop／Fallback</text>
+  <rect class="engine" x="1080" y="285" width="275" height="70" rx="9"/><text class="t" x="1217" y="312" text-anchor="middle">Bot 決策</text><text class="s" x="1217" y="335" text-anchor="middle">Persona × Level × 覆寫</text>
+  <rect class="engine" x="785" y="385" width="270" height="70" rx="9"/><text class="t" x="920" y="412" text-anchor="middle">Equity Engine</text><text class="s" x="920" y="435" text-anchor="middle">Exact／Deterministic Sampling</text>
+  <rect class="engine" x="1080" y="385" width="275" height="70" rx="9"/><text class="t" x="1217" y="412" text-anchor="middle">統計層</text><text class="s" x="1217" y="435" text-anchor="middle">CI・Estimator・FDR</text>
+  <rect class="data" x="785" y="495" width="570" height="70" rx="9"/><text class="t" x="1070" y="522" text-anchor="middle">事件 Log／RunManifest／Checkpoint</text><text class="s" x="1070" y="545" text-anchor="middle">重播以保存事件為主，不重新執行策略</text>
+  <rect class="data" x="785" y="585" width="570" height="50" rx="9"/><text class="t" x="1070" y="616" text-anchor="middle">SQLite・策略・事件・聚合報表</text>
+
+  <path class="edge" d="M175 365H220"/><path class="edge" d="M570 365H600"/><path class="edge" d="M730 365H760"/>
+  <path class="edge" d="M1055 220H1080"/><path class="edge" d="M1217 255V285"/><path class="edge" d="M920 255V285"/>
+  <path class="edge" d="M920 355V385"/><path class="edge" d="M1055 420H1080"/><path class="edge" d="M1070 455V495"/><path class="edge" d="M1070 565V585"/>
+
+  <rect class="warn" x="300" y="700" width="1000" height="42" rx="8"/>
+  <text class="t" x="800" y="726" text-anchor="middle">產品邊界：不含真人多人連線・帳號・雲端同步・伺服器牌局</text>
+</svg>
+

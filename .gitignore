@@ -1,0 +1,17 @@
+# 部署工具
+.netlify/
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Rust
+target/
+
+# 圖表渲染暫存（render.js 產生）
+diagrams/.*.padded.mmd
+
+# 系統
+.DS_Store
+Thumbs.db

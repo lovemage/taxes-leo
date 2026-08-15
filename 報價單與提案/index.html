@@ -1,0 +1,847 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="德州撲克策略模擬與 VIP 商業模式的 Android、iOS App 開發提案，含 16～24 週開發時程（App 上線）、美術外包、會員規模損益及可選多人連線說明。">
+  <title>德州撲克策略模擬 App｜開發與 VIP 商業提案</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f7f5;
+      --surface: #ffffff;
+      --surface-2: #f0f1ed;
+      --line: rgba(20, 20, 20, .12);
+      --text: #1a1f1c;
+      --muted: #63706a;
+      --green: #1f8a54;
+      --gold: #9c6b12;
+      --red: #b6392b;
+      --shadow: 0 18px 44px rgba(20, 30, 25, .06);
+      --radius: 0;
+      --max: 1140px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+      line-height: 1.7;
+    }
+
+    a { color: inherit; }
+    figure { margin: 0; }
+    .print-watermark, .print-confidential { display: none; }
+    .wrap { width: min(calc(100% - 36px), var(--max)); margin-inline: auto; }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      border-bottom: 1px solid var(--line);
+      background: rgba(247, 247, 245, .86);
+      backdrop-filter: blur(18px);
+    }
+
+    .topbar-inner {
+      min-height: 66px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .brand { display: flex; align-items: center; gap: 11px; font-weight: 800; letter-spacing: .02em; }
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: 0;
+      background: var(--surface-2);
+      color: var(--green);
+    }
+
+    nav { display: flex; flex-wrap: wrap; gap: 18px; color: var(--muted); font-size: 13.5px; }
+    nav a { text-decoration: none; }
+    nav a:hover { color: var(--text); }
+
+    .hero { padding: 88px 0 60px; }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 20px;
+      color: var(--green);
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+    .eyebrow::before { content: ""; width: 34px; height: 1px; background: var(--green); }
+
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { max-width: 880px; margin-bottom: 23px; font-size: clamp(38px, 6.4vw, 70px); line-height: 1.08; letter-spacing: -.04em; }
+    h1 span { color: var(--green); }
+    .lead { max-width: 760px; margin-bottom: 34px; color: var(--text); font-size: clamp(18px, 2.2vw, 21px); }
+
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+    .button {
+      min-height: 48px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 20px;
+      border: 1px solid var(--line);
+      border-radius: 0;
+      text-decoration: none;
+      font-weight: 750;
+    }
+    .button.primary { border-color: transparent; background: var(--green); color: var(--surface); }
+    .button.secondary { background: var(--surface); color: var(--text); }
+
+    .quote-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      margin-top: 55px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .quote-stat { padding: 25px 28px; }
+    .quote-stat + .quote-stat { border-left: 1px solid var(--line); }
+    .quote-label { color: var(--muted); font-size: 13px; }
+    .quote-value { margin-top: 5px; color: var(--gold); font-size: clamp(24px, 4vw, 34px); font-weight: 900; line-height: 1.2; }
+
+    section { padding: 70px 0; }
+    section + section { border-top: 1px solid var(--line); }
+    .section-head { display: grid; grid-template-columns: .7fr 1.3fr; gap: 32px; margin-bottom: 36px; }
+    .kicker { color: var(--green); font-size: 13px; font-weight: 800; letter-spacing: .12em; }
+    h2 { margin-bottom: 12px; font-size: clamp(28px, 3.6vw, 42px); line-height: 1.18; letter-spacing: -.025em; }
+    h3 { font-size: 19px; }
+    .section-copy { max-width: 720px; color: var(--muted); }
+
+    .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+    .card {
+      padding: 26px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+    .card-number { color: var(--green); font-size: 13px; font-weight: 900; letter-spacing: .12em; }
+    .card h3 { margin: 12px 0 10px; }
+    .card p { color: var(--muted); }
+    .clean { margin: 16px 0 0; padding-left: 19px; color: var(--text); }
+    .clean li + li { margin-top: 8px; }
+    .clean.muted-list { color: var(--muted); }
+
+    .principles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .principle { padding: 21px; border: 1px solid var(--line); border-radius: 0; background: var(--surface); }
+    .principle strong { display: block; margin-bottom: 6px; color: var(--green); }
+    .principle span { color: var(--muted); font-size: 14px; }
+
+    .principle.two-col, .cards.two-col { grid-template-columns: repeat(2, 1fr); }
+    .principles.four { grid-template-columns: repeat(4, 1fr); }
+
+    .callout {
+      padding: 22px 24px;
+      border: 1px solid var(--line);
+      border-radius: 0;
+      background: var(--surface);
+    }
+    .callout.warn { border-color: rgba(156, 107, 18, .3); }
+    .callout.risk { border-color: rgba(182, 57, 43, .3); }
+    .callout .label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 800; letter-spacing: .06em; color: var(--green); text-transform: uppercase; }
+    .callout.warn .label { color: var(--gold); }
+    .callout.risk .label { color: var(--red); }
+    .callout p { color: var(--text); margin: 0; }
+    .callout p + p { margin-top: 10px; }
+    .callout-stack { display: grid; gap: 14px; }
+
+    .table-shell { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); }
+    table { width: 100%; min-width: 810px; border-collapse: collapse; }
+    th, td { padding: 15px 17px; border-bottom: 1px solid var(--line); text-align: center; white-space: nowrap; font-size: 14.5px; }
+    th:first-child, td:first-child { position: sticky; left: 0; z-index: 1; background: var(--surface-2); text-align: left; }
+    thead th { color: var(--green); background: var(--surface-2); }
+    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr:hover td { background-color: rgba(31, 138, 84, .05); }
+    tbody tr:hover td:first-child { background-color: var(--surface-2); }
+
+    .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 22px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); }
+    .flow-step { padding: 10px 16px; border: 1px solid var(--line); border-radius: 0; background: var(--surface-2); font-size: 13.5px; font-weight: 700; white-space: nowrap; }
+    .flow-arrow { color: var(--muted); font-weight: 900; }
+    .flow-loop { color: var(--green); font-size: 13px; font-weight: 800; margin-left: 6px; }
+
+    .timeline { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; }
+    .month { min-height: 176px; padding: 23px; border: 1px solid var(--line); border-radius: 0; background: var(--surface); }
+    .month b { display: inline-block; margin-bottom: 10px; color: var(--green); }
+    .month p { color: var(--muted); font-size: 14px; }
+
+    .phase-list { display: grid; gap: 12px; }
+    .phase-row { display: grid; grid-template-columns: 190px 1fr; gap: 18px; padding: 18px 20px; border: 1px solid var(--line); border-radius: 0; background: var(--surface); align-items: start; }
+    .phase-row b { color: var(--green); }
+    .phase-row .weeks { color: var(--muted); font-size: 13px; display: block; margin-top: 3px; }
+    .phase-row ul { margin: 0; padding-left: 18px; color: var(--text); font-size: 14px; }
+
+    .quote-panel { display: grid; grid-template-columns: 1.05fr .95fr; border: 1px solid var(--line); border-radius: 0; background: var(--surface); box-shadow: var(--shadow); overflow: hidden; }
+    .quote-main { padding: clamp(30px, 5vw, 58px); }
+    .quote-main .price { margin: 15px 0; color: var(--gold); font-size: clamp(42px, 6.6vw, 66px); font-weight: 950; line-height: 1; letter-spacing: -.04em; }
+    .quote-main .price small { font-size: 16px; letter-spacing: 0; }
+    .quote-side { padding: clamp(30px, 5vw, 50px); border-top: 1px solid var(--line); background: var(--surface-2); }
+    .formula { padding: 15px 18px; border: 1px solid var(--line); border-radius: 0; background: var(--surface); color: var(--text); font-weight: 800; text-align: center; }
+    .note { margin-top: 18px; color: var(--muted); font-size: 13px; }
+
+    .scope-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .scope { padding: 27px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+    .scope h3 { color: var(--green); }
+    .scope.excluded h3 { color: var(--red); }
+
+    .mockup-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 28px; }
+    .mockup-card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); overflow: hidden; }
+    .mockup-card img { display: block; width: 100%; height: auto; }
+    .mockup-caption { padding: 16px 18px; }
+    .mockup-caption b { display: block; margin-bottom: 4px; color: var(--green); }
+    .mockup-caption span { color: var(--muted); font-size: 13px; }
+
+    .ref-list { columns: 2; column-gap: 32px; color: var(--muted); font-size: 13.5px; }
+    .ref-list li { margin-bottom: 8px; break-inside: avoid; }
+    .ref-list a { text-decoration: underline; text-decoration-color: var(--line); }
+
+    footer { padding: 42px 0 60px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+    .footer-inner { display: flex; justify-content: space-between; gap: 20px; }
+
+    @media (max-width: 820px) {
+      nav { display: none; }
+      .hero { padding-top: 67px; }
+      .quote-strip, .cards, .principles, .timeline, .scope-grid, .mockup-grid { grid-template-columns: 1fr; }
+      .cards.two-col, .principle.two-col, .principles.four { grid-template-columns: 1fr; }
+      .quote-stat + .quote-stat { border-left: 0; border-top: 1px solid var(--line); }
+      .section-head, .quote-panel, .documents { grid-template-columns: 1fr; }
+      .phase-row { grid-template-columns: 1fr; }
+      .ref-list { columns: 1; }
+      .footer-inner { flex-direction: column; }
+    }
+
+    @media print {
+      body { background: #fff; }
+      .topbar, .hero-actions { display: none; }
+      section, .hero { padding: 26px 0; }
+      section + section { border-top: 1px solid var(--line); }
+      .card, .quote-strip, .quote-panel, .table-shell, .month, .scope, .flow, .phase-row, .principle, .callout, .mockup-card { box-shadow: none; break-inside: avoid; }
+      .table-shell { overflow: visible; }
+      table { width: 100%; min-width: 0; }
+      th, td { white-space: normal; word-break: break-word; padding: 6px 5px; font-size: 9.5px; }
+      th:first-child, td:first-child { position: static; }
+
+      /* CSS Grid rows don't paginate reliably when printed — Chrome can split
+         a grid row mid-item instead of honoring break-inside:avoid, which
+         causes overlapping/duplicated card fragments across pages. CSS
+         multi-column layout (column-count) doesn't have that bug — items
+         flow in source order and each respects break-inside:avoid — so use
+         it instead of block-stacking, keeping cards at 2–3 per row instead
+         of one full-width block per row. */
+      .cards, .principles, .scope-grid, .quote-strip { display: block; column-count: 2; column-gap: 14px; }
+      .principles.four { display: block; column-count: 2; column-gap: 12px; }
+      .timeline { display: block; column-count: 3; column-gap: 12px; }
+      .phase-list { display: block; }
+
+      .cards > *, .principles > *, .scope-grid > *, .quote-strip > *, .timeline > *, .phase-list > * {
+        break-inside: avoid;
+        margin-bottom: 10px;
+      }
+      .quote-stat { border: 1px solid var(--line); padding: 14px 16px; }
+      .quote-stat + .quote-stat { border-left: 1px solid var(--line); border-top: 1px solid var(--line); }
+
+      /* Keep the mockup grid multi-column in print instead — each item is a
+         single fixed-ratio image, short enough to stay within one page, and
+         a 3-up grid keeps any single screenshot from filling a whole sheet. */
+      .mockup-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; break-inside: avoid; }
+      .mockup-card img { max-height: 300px; width: 100%; object-fit: contain; }
+
+      .print-watermark, .print-confidential { display: block; }
+      .print-watermark {
+        position: fixed;
+        top: 45%;
+        left: 50%;
+        transform: translate(-50%, -50%) rotate(-32deg);
+        font-size: 52px;
+        font-weight: 900;
+        letter-spacing: .04em;
+        color: rgba(20, 20, 20, .07);
+        white-space: nowrap;
+        pointer-events: none;
+        z-index: 999;
+      }
+      .print-confidential {
+        position: fixed;
+        bottom: 8px;
+        left: 24px;
+        right: 24px;
+        text-align: center;
+        font-size: 8px;
+        line-height: 1.4;
+        color: rgba(20, 20, 20, .5);
+        pointer-events: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="print-watermark" aria-hidden="true">智流國際有限公司・機密文件</div>
+  <div class="print-confidential" aria-hidden="true">本文件為智流國際有限公司機密資料，僅供本提案指定業主內部評估使用；未經智流國際有限公司書面同意，不得複製、轉發、揭露予第三方，或用於委託其他對象開發。</div>
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <div class="brand"><span class="brand-mark">♠</span> POKER STRATEGY LAB</div>
+      <nav aria-label="提案導覽">
+        <a href="#product">產品</a>
+        <a href="#economy">會員與經濟</a>
+        <a href="#strategy">策略引擎</a>
+        <a href="#fairness">真人公平性</a>
+        <a href="#ux">畫面草稿</a>
+        <a href="#roadmap">時程</a>
+        <a href="#quote">報價</a>
+        <a href="#compliance">合規風險</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="wrap">
+        <div class="eyebrow">Android × iOS｜直向手機體驗</div>
+        <h1>德州撲克<span>策略模擬</span><br>與 VIP 訂閱 App</h1>
+        <p class="lead">開發人力由工作室安排，美術採外包；策略自動模式聚焦策略回測與四級 VIP，多人連線功能為另行評估的選配項目，策略自動模式預估 16～24 週完成 App 上線。</p>
+        <div class="hero-actions">
+          <a class="button primary" href="#quote">查看報價</a>
+          <a class="button secondary" href="#compliance">查看合規風險</a>
+        </div>
+
+        <div class="quote-strip" aria-label="提案摘要">
+          <div class="quote-stat"><div class="quote-label">策略自動模式｜自動打牌機制</div><div class="quote-value">NT$24萬</div></div>
+          <div class="quote-stat"><div class="quote-label">選配｜多人連線功能</div><div class="quote-value">＋NT$24萬</div></div>
+          <div class="quote-stat"><div class="quote-label">多人連線月維護</div><div class="quote-value">NT$6萬／月</div></div>
+          <div class="quote-stat"><div class="quote-label">預估月營運貢獻（500～1,000 付費會員）</div><div class="quote-value">NT$19～38萬</div></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="product">
+      <div class="wrap">
+        <div class="section-head">
+          <div class="kicker">01｜PRODUCT</div>
+          <div><h2>一個 App，三種清楚分流的體驗</h2><p class="section-copy">真人牌局保持公平；策略自動化留在研究環境；玩家需要練習時，則進入有清楚 Bot 標示的訓練場。</p></div>
+        </div>
+
+        <div class="cards">
+          <article class="card">
+            <div class="card-number">MODE 01</div>
+            <h3>真人對戰 Play Mode｜選配</h3>
+            <p>不含於基礎報價；確認需要後另行開發即時公開牌桌、私人好友房與快速配對。</p>
+            <ul class="clean"><li>玩家全程手動操作，禁止策略提示與自動代打</li><li>Heads-up、6-max，後續加入 9-max</li><li>Cash Table、Sit &amp; Go，後續錦標賽</li><li>斷線重連、觀戰延遲與牌局歷史</li><li>獨立真人技術排名</li></ul>
+          </article>
+          <article class="card">
+            <div class="card-number">MODE 02</div>
+            <h3>策略實驗室 Strategy Lab</h3>
+            <p>讓不同策略 Bot 自動執行數萬至百萬手回測。</p>
+            <ul class="clean"><li>籌碼、位置與桌型設定</li><li>策略 A／B 比較（同發牌 Seed）</li><li>EV、bb/100 與重播分析</li><li>不得讀取或介入進行中的真人牌局</li></ul>
+          </article>
+          <article class="card">
+            <div class="card-number">MODE 03</div>
+            <h3>Bot Arena</h3>
+            <p>玩家與明確標示身分的策略機器人練習。</p>
+            <ul class="clean"><li>與真人排名完全分開</li><li>不同難度與策略風格</li><li>不產生現實價值獎勵</li></ul>
+          </article>
+        </div>
+
+        <div class="flow" style="margin-top:22px" aria-label="策略實驗室核心循環">
+          <span class="flow-step">設定牌局條件</span><span class="flow-arrow">→</span>
+          <span class="flow-step">選擇玩家與機器人策略</span><span class="flow-arrow">→</span>
+          <span class="flow-step">自動模擬大量手牌</span><span class="flow-arrow">→</span>
+          <span class="flow-step">產生策略數據</span><span class="flow-arrow">→</span>
+          <span class="flow-step">比較、篩選與重播關鍵牌局</span>
+          <span class="flow-loop">↺ 循環回到設定牌局條件</span>
+        </div>
+
+        <div class="callout" style="margin-top:18px">
+          <span class="label">產品定位</span>
+          <p>策略實驗室的定位為研究工具：玩家設定牌桌條件、籌碼深度、座位與策略，多個機器人自動進行大量對局，以數據比較不同策略的長期表現，降低短期牌運對策略判斷的干擾。</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="economy">
+      <div class="wrap">
+        <div class="section-head">
+          <div class="kicker">02｜ECONOMY</div>
+          <div><h2>把遊戲籌碼與模擬額度分開</h2><p class="section-copy">Play Chips 支持每天回來玩牌；Simulation Credits 控制策略運算成本，兩者由後端分帳管理；兌現與轉讓限制統一說明於下方「籌碼經濟與平台規則」。</p></div>
+        </div>
+        <div class="principles">
+          <div class="principle"><strong>Play Chips</strong><span>用於娛樂型真人牌局與免費錦標賽，每日登入免費領取，不作為競技實力排名的唯一依據。</span></div>
+          <div class="principle"><strong>Simulation Credits</strong><span>用於策略回測與大量模擬，例如每 1 點執行 1 萬手模擬；VIP 等級可增加每日／每月額度，大型工作依會員等級安排不同任務優先序。</span></div>
+          <div class="principle"><strong>公平排名</strong><span>技術榜依 bb/100、對手強度與最低有效手數計算，而不是單純依持有籌碼排名。</span></div>
+        </div>
+
+        <h3 style="margin-top:32px">籌碼經濟與平台規則</h3>
+        <ul class="clean" style="margin-top:14px">
+          <li>籌碼不可兌換現金、禮品卡、加密貨幣或實物；不提供玩家間籌碼轉帳。</li>
+          <li>私人房主不可販售籌碼；此規則需搭配後端異常交易監控，防止玩家私下用真錢買賣籌碼（社交撲克類 App 常見的場外灰色交易）。</li>
+          <li>排行榜獎勵限於徽章、造型或無現金價值的免費籌碼。</li>
+          <li>平台購買的遊戲幣與免費贈送籌碼應分帳管理；Apple 平台購買的遊戲幣不可過期。</li>
+          <li>VIP、遊戲幣及數位功能一律使用 Apple／Google 平台內購（IAP），不得繞過平台金流。</li>
+          <li>商店頁面及 App 內需正確申報模擬賭博（Simulated Gambling）內容與年齡分級。</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="membership">
+      <div class="wrap">
+        <div class="section-head">
+          <div class="kicker">03｜MEMBERSHIP</div>
+          <div><h2>Free、Lite、VIP、SVIP 四級會員</h2><p class="section-copy">訂閱價值由雲端同步、分析深度、模擬額度與匯出功能構成。多人牌局籌碼不作為策略自動模式的付費核心，私人房亦屬多人連線選配功能。</p></div>
+        </div>
+        <div class="table-shell">
+          <table>
+            <thead><tr><th>會員權益</th><th>Free</th><th>Lite</th><th>VIP</th><th>SVIP</th></tr></thead>
+            <tbody>
+              <tr><td>儲存策略</td><td>2 組</td><td>3 組</td><td>5 組</td><td>10 組</td></tr>
+              <tr><td>建議月費</td><td>NT$0</td><td>NT$190</td><td>NT$590</td><td>NT$1,290</td></tr>
+              <tr><td>建議年費</td><td>NT$0</td><td>NT$1,890</td><td>NT$5,900</td><td>NT$12,900</td></tr>
+              <tr><td>每月規則型模擬額度</td><td>20 萬手</td><td>100 萬手</td><td>500 萬手</td><td>2,000 萬手</td></tr>
+              <tr><td>基本統計</td><td>有</td><td>有</td><td>有</td><td>有</td></tr>
+              <tr><td>進階 EV 分析</td><td>—</td><td>部分</td><td>完整</td><td>完整</td></tr>
+              <tr><td>Hand Replayer</td><td>最近 10 手</td><td>最近 100 手</td><td>完整</td><td>完整</td></tr>
+              <tr><td>策略雲端同步</td><td>—</td><td>有</td><td>有</td><td>有</td></tr>
+              <tr><td>報告匯出（CSV／JSON）</td><td>—</td><td>—</td><td>有</td><td>有</td></tr>
+              <tr><td>私人房</td><td>選配</td><td>選配</td><td>選配</td><td>選配</td></tr>
+              <tr><td>模擬任務優先序</td><td>標準</td><td>標準</td><td>快速</td><td>最高</td></tr>
+              <tr><td>廣告</td><td>有</td><td>無</td><td>無</td><td>無</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 style="margin-top:32px">策略儲存機制</h3>
+        <p class="section-copy" style="margin-bottom:14px">策略不應只存在手機本機，否則重灌或換機會遺失。建議採「本機加密快取＋雲端主版本」：離線仍可查看及編輯已下載策略，登入後自動同步雲端版本，儲存上限由後端依會員等級控制，每次修改保留版本紀錄，並支援匯入、匯出與備份。</p>
+        <div class="callout">
+          <span class="label">降級處理範例</span>
+          <p>VIP 原有 5 組策略，降為 Free 後保留全部策略為唯讀，玩家可選擇其中 2 組繼續編輯；再次升級即可恢復完整權限。降級不直接刪除超額策略。</p>
+        </div>
+
+        <h3 style="margin-top:32px">訂閱設計原則</h3>
+        <p class="section-copy">策略儲存空間、雲端同步、每月 Compute Credits、分析工具與優先運算是訂閱核心。規則型模擬可用手數呈現，但 Solver／CFR 工作應依複雜度扣點。訂閱頁必須清楚標示付款金額、計費週期、自動續訂、退款、升降級與資料保留方式。</p>
+      </div>
+    </section>
+
+    <section id="strategy">
+      <div class="wrap">
+        <div class="section-head">
+          <div class="kicker">04｜STRATEGY ENGINE</div>
+          <div><h2>策略系統與機器人引擎</h2><p class="section-copy">核心功能為策略對策略的大量自動回測、各座位可用不同策略、同發牌條件下的 A/B 比較，以及面向專業玩家的完整統計與資料匯出，而非單純的 AI 對局。</p></div>
+        </div>
+
+        <h3>官方策略包</h3>
+        <div class="cards" style="margin-top:14px">
+          <article class="card"><div class="card-number">01</div><h3>GTO Baseline</h3><p>混合行動頻率，追求相對平衡、不容易被針對。</p></article>
+          <article class="card"><div class="card-number">02</div><h3>Tight Aggressive</h3><p>較窄進池範圍，進池後採取主動下注。</p></article>
+          <article class="card"><div class="card-number">03</div><h3>Loose Aggressive</h3><p>較寬進池範圍，以高頻率加注與持續施壓。</p></article>
+          <article class="card"><div class="card-number">04</div><h3>Defensive / Low Variance</h3><p>降低邊緣局面與大底池頻率，控制策略波動。</p></article>
+          <article class="card"><div class="card-number">05</div><h3>Exploitative</h3><p>針對過度棄牌、過度跟注或下注頻率失衡的對手調整。</p></article>
+          <article class="card"><div class="card-number">06</div><h3>Custom Strategy</h3><p>玩家自行調整 Range、下注尺度與行動頻率。</p></article>
+        </div>
+
+        <h3 style="margin-top:32px">策略可檢視參數</h3>
+        <p class="section-copy" style="margin-bottom:14px">每個策略都必須能展開查看實際設定，不能只有「進攻」或「防守」等名稱：</p>
+        <ul class="clean two-col" style="columns:2;column-gap:32px">
+          <li>各位置 Open Range</li>
+          <li>Call、3-bet、4-bet 頻率</li>
+          <li>Flop／Turn／River C-bet 頻率</li>
+          <li>Check-raise、Fold to C-bet</li>
+          <li>Bluff／Value 比例</li>
+          <li>不同牌面類型的行動頻率</li>
+          <li>不同 SPR 的策略調整</li>
+          <li>不同籌碼深度的 Range 變化</li>
+          <li>支援的下注尺度</li>
+        </ul>
+
+        <div class="callout warn" style="margin-top:22px">
+          <span class="label">策略資料來源</span>
+          <p>網路資料可用於建立策略分類與研究方向，但不應直接複製付費 Solver 的 Range 資料。正式產品應使用自行計算、撲克顧問設計、合法授權或開放研究成果。</p>
+        </div>
+
+        <h3 style="margin-top:32px">三層 Bot／Solver 架構</h3>
+        <p class="section-copy" style="margin-bottom:14px">完整多人 No-Limit Texas Hold'em 的搜尋空間非常龐大，第一版不在手機上即時計算完整 GTO Solution。</p>
+        <div class="principles">
+          <div class="principle"><strong>規則型 Bot</strong><span>依預設 Range、行動頻率與牌面規則執行，適合 MVP 快速建立不同風格機器人，結果容易說明、測試及重現。</span></div>
+          <div class="principle"><strong>預計算策略</strong><span>後端提前計算常見籌碼、位置與牌面情境，App 執行時查詢已完成資料，兼顧速度、品質與運算成本。</span></div>
+          <div class="principle"><strong>雲端 Solver Bot</strong><span>後續以 CFR、MCCFR 或 Depth-Limited Solving 運算，適合高級訂閱方案，工作由雲端 Worker 執行，不占用手機資源。</span></div>
+        </div>
+
+        <h3 style="margin-top:32px">模擬設定與結果分析</h3>
+        <p class="section-copy" style="margin-bottom:14px">建立模擬時可設定牌桌人數、籌碼深度、Blind／Ante／Rake、Button 位置、各座位策略、Bot 鬆緊與侵略度、下注尺度樹（25%／33%／50%／75%／100% Pot、Overbet、All-in）、模擬手數、批次桌數與隨機 Seed。「牌桌規格」（Heads-up／6-max／9-max）與「批次桌數」（同時執行 1／10／100 張模擬桌）拆成兩個獨立概念。比較兩種策略時建議使用相同發牌 Seed，降低純粹牌運造成的比較誤差。</p>
+        <div class="principles">
+          <div class="principle"><strong>結果摘要</strong><span>總模擬手數、總盈虧、bb/100、Chip EV、勝率、標準差與變異程度、最大回撤、統計可信區間、各策略排名。</span></div>
+          <div class="principle"><strong>策略指標</strong><span>VPIP、PFR、3-bet／4-bet、Aggression Frequency、Flop／Turn／River C-bet、Fold to C-bet、Check-raise、WTSD、W$SD、Bluff 成功率、各位置 bb/100。</span></div>
+          <div class="principle"><strong>進階分析</strong><span>不同籌碼深度表現、各位置損益、起手牌矩陣、牌面類型分析、策略 A／B 差異、最大 EV Loss 牌局、逐街重播、CSV／JSON 匯出。</span></div>
+        </div>
+
+        <h3 style="margin-top:32px">市場產品參考</h3>
+        <p class="section-copy">GTO Wizard 提供從 Preflop 到 River 的情境訓練、特定決策 Drill、多桌練習與策略漏洞統計；PokerSnowie 提供 Range Advice、GTO Balance 與自訂範圍；DTO Poker 等行動產品顯示專業玩家願意在手機上使用 GTO 訓練工具。功能規劃聚焦於策略對策略的大量自動回測，而非一般 AI 對局。</p>
+      </div>
+    </section>
+
+    <section id="fairness">
+      <div class="wrap">
+        <div class="section-head">
+          <div class="kicker">05｜FAIRNESS</div>
+          <div><h2>真人對戰公平性與產品必須守住的底線</h2><p class="section-copy">這些規則同時保護玩家公平性、產品品牌與雙平台上架可行性。</p></div>
+        </div>
+
+        <div class="principles">
+          <div class="principle"><strong>沒有現實金錢價值</strong><span>籌碼無現金價值，詳細兌換與轉讓限制見「02 經濟」章節。</span></div>
+          <div class="principle"><strong>真人牌局沒有即時輔助</strong><span>策略實驗室不能讀取或介入進行中的真人牌局；禁止儲存策略自動替玩家操作。</span></div>
+          <div class="principle"><strong>Bot 身分完全透明</strong><span>玩家面對機器人時必須清楚知情，相關數據與排名獨立。</span></div>
+        </div>
+
+        <h3 style="margin-top:32px">排名設計</h3>
+        <div class="principles">
+          <div class="principle"><strong>財富榜</strong><span>顯示虛擬籌碼，不代表技術實力。</span></div>
+          <div class="principle"><strong>技術榜</strong><span>依 bb/100、對手強度及最低有效手數計算。</span></div>
+          <div class="principle"><strong>賽季榜</strong><span>限制每日有效計分場次，降低付費遊玩量帶來的優勢；Heads-up、6-max、真人與 Bot Arena 分開排名。</span></div>
+        </div>
+
+        <h3 style="margin-top:32px">真人對戰技術原則</h3>
+        <div class="flow" aria-label="真人對戰資料流">
+          <span class="flow-step">Android／iOS 玩家</span><span class="flow-arrow">→</span>
+          <span class="flow-step">WebSocket Gateway</span><span class="flow-arrow">→</span>
+          <span class="flow-step">牌桌伺服器</span><span class="flow-arrow">→</span>
+          <span class="flow-step">伺服器端發牌／規則引擎</span><span class="flow-arrow">→</span>
+          <span class="flow-step">不可修改的牌局紀錄</span><span class="flow-arrow">→</span>
+          <span class="flow-step">統計、重播與爭議調查</span>
+        </div>
+        <ul class="clean" style="margin-top:18px">
+          <li>發牌、籌碼、行動合法性及勝負均由伺服器判定，使用密碼學安全亂數（CSPRNG）產生牌序。</li>
+          <li>每一局保留完整稽核紀錄；支援斷線重連及逾時自動 Fold／Check。</li>
+          <li>防止多開帳號、Bot、自動點擊與客戶端竄改；分析異常合作、軟打及籌碼輸送。</li>
+          <li>觀戰資料延遲，避免洩漏尚未結束的資訊。</li>
+        </ul>
+
+        <div class="callout warn" style="margin-top:22px">
+          <span class="label">反作弊範圍界定</span>
+          <p>16～24 週策略自動模式內建的是「基礎反作弊」：多開偵測、客戶端竄改防護、基本異常行為告警。若需要成熟的反串通系統（跨場次行為建模、群組關聯分析、24 小時人工覆核流程），屬於加值範圍，需另外估價與排期，避免被誤解為報價區間已含完整反串通系統。</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="ux">
+      <div class="wrap">
+        <div class="section-head">
+          <div class="kicker">06｜MOBILE UX</div>
+          <div><h2>直向手機 UX 規劃</h2><p class="section-copy">主要操作與篩選器放在螢幕下半部，方便單手使用；專業統計以可收合資訊卡呈現，不直接縮小桌面版 Solver 的大型表格。</p></div>
+        </div>
+        <ul class="clean two-col" style="columns:2;column-gap:32px">
+          <li><strong>首頁</strong>：最近模擬、快速建立、策略排行及收藏情境</li>
+          <li><strong>建立實驗</strong>：桌型、籌碼、座位、策略、下注尺度及模擬手數</li>
+          <li><strong>直向牌桌</strong>：上方對手、中央公共牌與底池、下方主視角</li>
+          <li><strong>模擬進度</strong>：目前手數、執行速度、初步結果及背景執行狀態</li>
+          <li><strong>結果儀表板</strong>：圖表、篩選條件及策略比較</li>
+          <li><strong>Hand Replayer</strong>：逐街查看 Range、行動、EV 與策略頻率</li>
+          <li><strong>策略庫</strong>：官方策略、自訂策略及版本紀錄</li>
+          <li><strong>學習中心</strong>：策略概念、統計指標及使用方法說明</li>
+        </ul>
+
+        <h3 style="margin-top:32px">畫面草稿</h3>
+        <p class="section-copy" style="margin-bottom:14px">以下為手機直向版面的初步視覺草稿，供風格與版面討論，非最終美術規格；正式美術由第三階段 UI 美術團隊產出。</p>
+        <div class="mockup-grid">
+          <figure class="mockup-card">
+            <img src="mockups/01-strategy-select.png" alt="策略庫畫面草稿：策略清單與展開的 Range 矩陣" loading="lazy">
+            <figcaption class="mockup-caption"><b>策略庫</b><span>官方策略清單，展開檢視 Range 矩陣與行動頻率</span></figcaption>
+          </figure>
+          <figure class="mockup-card">
+            <img src="mockups/02-home.png" alt="首頁畫面草稿：籌碼、快速建立模擬與策略排行" loading="lazy">
+            <figcaption class="mockup-caption"><b>首頁</b><span>每日籌碼、快速建立模擬、策略排行與 VIP 額度</span></figcaption>
+          </figure>
+          <figure class="mockup-card">
+            <img src="mockups/03-table.png" alt="牌桌對打畫面草稿：直向真人牌桌與操作列" loading="lazy">
+            <figcaption class="mockup-caption"><b>牌桌對打</b><span>直向真人牌桌、Bot 身分標示與操作列</span></figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section id="roadmap">
+      <div class="wrap">
+        <div class="section-head">
+          <div class="kicker">07｜ROADMAP</div>
+          <div><h2>16～24 週開發時程（App 上線）</h2><p class="section-copy">開發人力由工作室安排，依序完成跨平台 App、後端、策略模擬、VIP 與送審準備；本時程不包含多人即時對戰，實際週數依需求範圍於正式合約確認。</p></div>
+        </div>
+
+        <div class="callout warn">
+          <span class="label">遊戲流程規劃需要較長前期時間</span>
+          <p>核心遊戲流程（玩法迴圈、籌碼與會員互動邏輯、關卡與 Bot 難度曲線等）一旦確定即直接影響產品方向；開發中後期才發現需要調整，修改成本遠高於前期規劃階段，且會牽動已完成工作重做、影響整體進度。建議階段 1（定義與核心引擎）預留較長時程，優先把遊戲流程規劃確認清楚，再進入後續開發，避免中途大改。</p>
+        </div>
+
+        <div class="timeline">
+          <div class="month"><b>階段 1</b><h3>定義與核心引擎</h3><p>需求、直向UX、撲克規則引擎、牌局狀態與策略格式。</p></div>
+          <div class="month"><b>階段 2</b><h3>策略實驗室</h3><p>基本牌桌、Bot、策略回測與統計模型。</p></div>
+          <div class="month"><b>階段 3</b><h3>模擬服務</h3><p>策略庫、批次模擬、任務佇列與結果資料。</p></div>
+          <div class="month"><b>階段 4</b><h3>分析體驗</h3><p>儀表板、Hand Replayer、匯出與雲端同步。</p></div>
+          <div class="month"><b>階段 5</b><h3>商業功能</h3><p>VIP、Apple／Google IAP、額度控制、基礎管理與外包美術整合。</p></div>
+          <div class="month"><b>階段 6</b><h3>測試與送審</h3><p>封閉測試、效能、安全、商店素材與雙平台送審準備。</p></div>
+        </div>
+
+        <h3 style="margin-top:32px">美術外包與整合</h3>
+        <p class="section-copy" style="margin-bottom:14px">品牌視覺、圖示、插畫、角色、商店截圖與必要動畫由外包專業人員製作；需求規格、素材驗收、切圖與程式整合由工作室安排負責。正式合約需列明素材數量、尺寸、格式、修改次數、原始檔、字型及商用授權，未列出的新增素材另行報價。</p>
+        <div class="principles">
+          <div class="principle"><strong>關卡設計</strong><span>新手引導、難度分級與情境式練習關卡，銜接學習中心與策略庫。</span></div>
+          <div class="principle"><strong>AI 策略分析師動畫</strong><span>陪伴式角色，將 EV、bb/100 等數據解讀轉譯為口語化策略建議與動畫呈現。</span></div>
+          <div class="principle"><strong>UI 美術專業團隊</strong><span>整體視覺風格、圖示系統與介面動畫美術，提升商店素材與品牌質感。</span></div>
+        </div>
+
+        <div class="callout" style="margin-top:22px">
+          <span class="label">人力規模與報價的關係</span>
+          <p>開發人力由工作室安排；功能會依序開發，不承諾多人團隊的平行產能。美術外包費已列入基礎估價區間，但以雙方確認的素材清單為上限。</p>
+        </div>
+
+        <h3 style="margin-top:32px">詳細開發階段（供時程對照）</h3>
+        <p class="section-copy" style="margin-bottom:14px">以下 Phase 0～4 為策略自動模式的內部開發順序，與前述費用拆分項目為不同分類，僅供時程對照；多人連線不在 Phase 0～4 內。</p>
+        <div class="phase-list" style="margin-top:14px">
+          <div class="phase-row">
+            <div><b>Phase 0｜產品定義與合規</b><span class="weeks">第 1～2 週</span></div>
+            <ul><li>鎖定非現金策略模擬定位</li><li>確認 MVP 桌型和籌碼範圍</li><li>完成 Poker Game State 與策略格式</li><li>建立商店合規清單</li></ul>
+          </div>
+          <div class="phase-row">
+            <div><b>Phase 1｜技術與 UX 原型</b><span class="weeks">第 3～5 週</span></div>
+            <ul><li>直向操作 Prototype</li><li>Hand Evaluator</li><li>發牌與牌局狀態機</li><li>規則型 Bot 原型與基本模擬統計</li></ul>
+          </div>
+          <div class="phase-row">
+            <div><b>Phase 2｜MVP 開發</b><span class="weeks">第 6～13 週</span></div>
+            <ul><li>Flutter Android／iOS App</li><li>Rust Poker Engine</li><li>後端與任務佇列</li><li>策略庫與版本系統、大量模擬工作</li><li>使用者帳號與雲端同步</li></ul>
+          </div>
+          <div class="phase-row">
+            <div><b>Phase 3｜分析與 Beta</b><span class="weeks">第 14～17 週</span></div>
+            <ul><li>結果儀表板、策略比較、Hand Replayer</li><li>資料匯出、訂閱系統</li><li>封閉測試</li></ul>
+          </div>
+          <div class="phase-row">
+            <div><b>Phase 4｜上架準備</b><span class="weeks">第 18～20 週</span></div>
+            <ul><li>統計正確性驗證、裝置及效能測試</li><li>隱私政策與使用條款</li><li>年齡分級及商店素材</li><li>TestFlight 與 Google Play 封閉測試、正式送審</li></ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="quote">
+      <div class="wrap">
+        <div class="quote-panel">
+          <div class="quote-main">
+            <div class="kicker">INITIAL ESTIMATE</div>
+            <h2>初始報價</h2>
+            <div class="price"><small>NT$</small>24萬</div>
+            <p class="section-copy">策略自動模式（自動打牌機制）固定報價 NT$24萬，分兩期支付：簽約訂金 NT$12萬、驗收尾款 NT$12萬。範圍包含 VIP 四級會員、IAP、雲端同步、額度控管、外包美術整合與送審準備，<strong>不包含多人連線功能</strong>。</p>
+            <p class="section-copy" style="margin-top:14px"><strong>多人連線功能為選配項目，固定加價 NT$24萬</strong>；可選擇一次付清，或以每月 NT$6萬、分 4 個月支付完成開發。兩項皆選時，總開發費為 NT$48萬。</p>
+            <p class="section-copy" style="margin-top:14px">多人連線上線後每月維護費 NT$6萬；雲端用量、客服及反作弊監控等其他項目皆另計，不包含在上述開發報價內。</p>
+          </div>
+          <div class="quote-side">
+            <h3>費用計算</h3>
+            <div class="formula">NT$24萬＋NT$24萬（選配）＝NT$48萬</div>
+            <ul class="clean">
+              <li>幣別暫以新台幣計算</li>
+              <li>策略自動模式：訂金 NT$12萬（簽約）＋尾款 NT$12萬（驗收）</li>
+              <li>多人連線功能（選配）：一次付清 NT$24萬，或每月 NT$6萬×4 期</li>
+              <li>多人連線上線後每月維護費 NT$6萬</li>
+              <li>付款節點依里程碑及驗收條件於正式合約確認</li>
+              <li>稅額與發票方式於正式合約確認</li>
+              <li>維護、營運與新增功能另行報價</li>
+              <li>雲端用量、客服及反作弊另計</li>
+            </ul>
+            <p class="note">本頁為初步產品與費用提案，不取代正式合約、法律意見或最終工作說明書。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="scope">
+      <div class="wrap">
+        <div class="section-head">
+          <div class="kicker">08｜SCOPE</div>
+          <div><h2>報價範圍與外部成本</h2><p class="section-copy">NT$24萬為策略自動模式固定報價（16～24 週，App 上線），開發人力由工作室安排，美術採外包；多人連線功能為選配，固定加價 NT$24萬。報價並非不限功能、修改次數或第三方支出，最終以 PRD、素材清單及驗收條件確認。</p></div>
+        </div>
+        <div class="scope-grid">
+          <div class="scope">
+            <h3>完整方案目標</h3>
+            <ul class="clean">
+              <li>Android／iOS 直向策略模擬測試版</li>
+              <li>策略建立、儲存、Bot與基本回測</li>
+              <li>雲端模擬、結果儀表板與 Hand Replayer</li>
+              <li>帳號、雲端同步與基礎管理能力</li>
+              <li>VIP 四級會員（Free／Lite／VIP／SVIP）權限控管與 Apple／Google 平台內購（IAP）串接</li>
+              <li>外包美術：視覺風格、圖示、必要插畫／動畫與商店素材</li>
+              <li>封閉測試及送審準備</li>
+            </ul>
+          </div>
+          <div class="scope excluded">
+            <h3>初估未包含</h3>
+            <ul class="clean">
+              <li>Apple／Google開發者帳號費</li>
+              <li>雲端、流量、簡訊及第三方服務費（詳見下方每月規模估算）</li>
+              <li>多人即時對戰、WebSocket 牌桌、大廳與私人房</li>
+              <li>策略資料授權與專家顧問費</li>
+              <li>各國法律、分級與牌照申請，含社交博弈相關法律意見</li>
+              <li>成熟反串通系統（跨場次行為建模、人工覆核流程）</li>
+              <li>反作弊監控服務、人工牌局審查與帳號申訴流程</li>
+              <li>客服中心、人員排班與使用者爭議處理</li>
+              <li>廣告投放及大量行銷素材</li>
+              <li>App 上線後之營運維護與新增功能</li>
+            </ul>
+          </div>
+        </div>
+
+        <h3 style="margin-top:32px">VIP 規模、伺服器與每月損益預估</h3>
+        <p class="section-copy" style="margin-bottom:14px">試算假設 Lite／VIP／SVIP 占付費會員 45%／40%／15%，加權月費約 NT$515；平台抽成 15%、退款及帳務調整 3%，可認列收入暫按月費收入的 82%。月活躍率 70%、尖峰同時使用率 5%，每位活躍付費會員每月約 200 萬手規則型 Bot 等值運算。</p>
+        <div class="table-shell">
+          <table>
+            <thead><tr><th>付費會員</th><th>尖峰同時使用</th><th>建議資源</th><th>月頻寬</th><th>雲端月費</th><th>月費收入</th><th>扣平台／退款後</th><th>營運貢獻</th></tr></thead>
+            <tbody>
+              <tr><td>100</td><td>約 5 人</td><td>API 2 vCPU、Worker 4 vCPU、DB 2～4GB</td><td>100～200GB</td><td>NT$8,000</td><td>NT$51,500</td><td>NT$42,230</td><td>NT$34,230</td></tr>
+              <tr><td>500</td><td>約 25 人</td><td>API 4 vCPU、Worker 8～12 vCPU、DB 8GB</td><td>0.5～1TB</td><td>NT$22,000</td><td>NT$257,500</td><td>NT$211,150</td><td>NT$189,150</td></tr>
+              <tr><td>1,000</td><td>約 50 人</td><td>API 雙節點、Worker 16～24 vCPU、DB 16GB</td><td>1～2TB</td><td>NT$40,000</td><td>NT$515,000</td><td>NT$422,300</td><td>NT$382,300</td></tr>
+              <tr><td>10,000</td><td>約 500 人</td><td>API 4～6 節點、Worker 64～96 vCPU、DB 32GB HA</td><td>8～12TB</td><td>NT$200,000</td><td>NT$5,150,000</td><td>NT$4,223,000</td><td>NT$4,023,000</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout" style="margin-top:14px">
+          <span class="label">財務數字的解讀方式</span>
+          <p>營運貢獻僅扣除平台費、退款準備與基礎雲端，尚未扣除稅、人力、美術、行銷、法務、客服及反作弊。退款率基準為 3%，建議觀察 1%～5%；月訂閱流失率可先以 6%～10% 作為 Beta 監控區間。若實際運算量較高，必須以 Compute Credits、任務排隊及超額加購控制成本。10,000 名付費會員可能超過 Apple Small Business Program 門檻；若 iOS／Android 收入各半且 Apple 費率升至 30%，混合平台費約 22.5%，該情境扣退款與雲端後的營運貢獻約降為 NT$3,636,750／月。</p>
+        </div>
+        <div class="callout warn" style="margin-top:14px">
+          <span class="label">多人連線另計</span>
+          <p>上表不包含 WebSocket 常駐連線及真人牌桌流量。多人連線功能固定加價 NT$24萬（可選一次付清，或每月 NT$6萬分 4 期支付），上線後月維護費 NT$6萬；雲端用量、反作弊監控與客服仍另外計算。</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="compliance">
+      <div class="wrap">
+        <div class="section-head">
+          <div class="kicker">09｜COMPLIANCE &amp; LEGAL RISK</div>
+          <div><h2>上架合規與法律風險</h2><p class="section-copy">第一版必須遵守以下原則，且應在正式開發前額外確認兩項這份提案本身無法取代的法律風險。</p></div>
+        </div>
+
+        <ul class="clean">
+          <li>不提供真實金錢下注；籌碼兌換與轉讓限制比照「02 經濟」章節規則辦理。</li>
+          <li>不連接或控制 PokerStars、GGPoker 等真實牌局；不讀取外部牌室畫面並即時建議 Call、Fold、Raise；不宣稱可在牌局進行中使用。</li>
+          <li>App 內明確標示策略工具僅供學習與模擬，且不得存取進行中的真人牌局；商店資料如實申報內容及年齡分級。</li>
+          <li>避免投放或導流至真實金錢賭博服務。</li>
+          <li>PokerStars 明確禁止讀取目前牌局並提供即時行動建議的 Bot；GGPoker 禁止 RTA、Bot、Solver、Chart 及 HUD 影響進行中的牌局。</li>
+        </ul>
+
+        <div class="callout-stack" style="margin-top:24px">
+          <div class="callout risk">
+            <span class="label">風險一：付費取得籌碼的社交博弈訴訟風險（美國）</span>
+            <p>即使籌碼不可兌現，只要玩家能用真錢購買遊戲內籌碼、再用這些籌碼參與有機率成分的競技（撲克），美國部分州法院曾在社交賭場集體訴訟中（例如 <em>Kater v. Churchill Downs</em>、<em>Mason v. Machine Zone</em> 等案）認定籌碼仍構成該州法律定義下「有價之物（something of value）」，使產品落入該州賭博相關法規的爭議範圍，與能否兌現現金無關。VIP／SVIP 訂閱的本質正是「付費取得更多每日籌碼與模擬額度」，直接落在這類爭議模式上。</p>
+            <p><strong>建議</strong>：正式開發與上架美國市場前，另外委任熟悉社交博弈（social casino）法規的律師出具專項法律意見，不能只依賴 Apple／Google 商店審核政策自保。</p>
+          </div>
+          <div class="callout warn">
+            <span class="label">風險二：Google Play「模擬賭博」政策，不只是「真錢賭博」政策</span>
+            <p>本產品性質上更接近 Google Play 政策中心裡「模擬賭博（Simulated Gambling）」規範的適用範圍，而不只是「Real-Money Gambling」政策——即使完全無法兌現，模擬博弈類 App 仍可能被要求特定國家封鎖、18+ 年齡分級與 App 內明確揭露「僅供娛樂、無法獲得真實金錢或獎品」。部分地區（如比利時）曾對含機率成分的虛擬付費機制採取行動，即使無法兌現。</p>
+            <p><strong>建議</strong>：上架前於 Google Play Console 政策中心的 Gambling／Simulated Gambling 分類逐項核對，並確認目標市場清單是否需要額外排除特定國家。</p>
+          </div>
+        </div>
+
+        <h3 style="margin-top:32px">若未來加入真實金錢</h3>
+        <p class="section-copy">Apple 要求相關牌照、地理限制並免費上架；Google Play 同樣要求指定市場牌照、未成年保護與地理限制。第一版應完全避開真實金錢業務。</p>
+
+        <h3 style="margin-top:32px">金流方式：VIP 與籌碼僅能採用平台內購</h3>
+        <p class="section-copy" style="margin-bottom:14px">VIP 訂閱與籌碼屬於「App 內消費的數位商品／服務」，依 Apple 與 Google 現行政策，必須透過平台內建的 In-App Purchase（Apple IAP／Google Play Billing）處理，不能改用第三方金流（例如綠界、藍新、TapPay 等）繞過，否則會被拒審或下架。因此本案<strong>不需要另外申請第三方金流</strong>來處理 VIP／籌碼購買；第三方金流只有在未來另外開發 App 外的網頁購買管道，或有 App 之外的收費項目時才需要考慮，屬本報價範圍外的加值項目。</p>
+        <div class="callout warn">
+          <span class="label">例外與後續變動</span>
+          <p>Apple、Google 近年在歐盟（DMA）、美國（訴訟後的規則調整）、南韓等地區針對部分應用開放有限度的替代付款或連結外部網頁購買，但適用範圍、條件與流程持續變動，多數情況仍要求保留平台內購作為選項之一。是否可在特定市場採用替代方案，建議上架前直接查證 Apple／Google 當時的最新政策，不宜以本提案內容作為定案依據。</p>
+        </div>
+
+        <h3 style="margin-top:32px">業主須準備資料（平台內購串接）</h3>
+        <p class="section-copy" style="margin-bottom:14px">Apple Developer Program 與 Google Play Console 皆須以「組織帳號」申請，才能以公司名義收款並開立稅務文件；以下資料建議及早準備，避免延誤上架時程。</p>
+        <div class="principles two-col">
+          <div class="principle"><strong>Apple Developer Program</strong><span>公司完整登記資料、D-U-N-S Number（向 Dun &amp; Bradstreet 免費申請，需數天至數週）、具簽署權限之法定代表人資訊、官方網域與聯絡 Email、年費 US$99、App Store Connect 內簽署 Paid Applications Agreement、銀行收款帳戶與稅務文件（如 W-8BEN-E 或當地稅籍資料）、公司統一編號。</span></div>
+          <div class="principle"><strong>Google Play Console</strong><span>公司登記資料與 D-U-N-S Number、官方網域 Email 驗證、開發者帳號一次性註冊費 US$25、Google Payments merchant 帳戶設定（收款銀行帳戶與稅務資訊）、具簽署權限之聯絡人資訊。</span></div>
+        </div>
+        <p class="section-copy" style="margin-top:14px">兩平台皆須提供隱私權政策與使用者條款網址，並依模擬賭博內容規範完成年齡分級申報；VIP 各級與籌碼包的 Product ID 規劃由工作室於串接 IAP SDK 時一併建立。</p>
+
+        <h3 style="margin-top:32px">參考資料</h3>
+        <ul class="ref-list">
+          <li><a href="https://help.gtowizard.com/practice-mode-overview/">GTO Wizard Practice Mode</a></li>
+          <li><a href="https://help.gtowizard.com/how-to-use-the-trainer/">GTO Wizard Trainer</a></li>
+          <li><a href="https://www.pokersnowie.com/blog/pokerSnowie-4">PokerSnowie</a></li>
+          <li><a href="https://play.google.com/store/apps/details?id=com.dtopoker.app">DTO MTT</a></li>
+          <li><a href="https://doi.org/10.1126/science.aay2400">Superhuman AI for Multiplayer Poker — Pluribus</a></li>
+          <li><a href="https://arxiv.org/abs/1407.5042">Solving Large Imperfect-Information Games Using CFR+</a></li>
+          <li><a href="https://arxiv.org/abs/1805.08195">Depth-Limited Solving for Imperfect-Information Games</a></li>
+          <li><a href="https://arxiv.org/abs/2201.11580">DecisionHoldem</a></li>
+          <li><a href="https://www.pokerstars.com/poker/room/prohibited/">PokerStars 禁用工具政策</a></li>
+          <li><a href="https://www.pokerstars.com/poker/learn/news/detecting-real-time-assistance-pokerstars/">PokerStars RTA 說明</a></li>
+          <li><a href="https://legal.ggpoker.com/network/security-ecology-policy/">GGPoker Security &amp; Ecology Policy</a></li>
+          <li><a href="https://developer.apple.com/app-store/review/guidelines/">Apple App Review Guidelines</a></li>
+          <li><a href="https://developer.apple.com/programs/enroll/">Apple Developer Program Enrollment</a></li>
+          <li><a href="https://developer.apple.com/support/D-U-N-S/">Apple：D-U-N-S Number 說明</a></li>
+          <li><a href="https://developer.apple.com/help/app-store-connect/reference/app-information/age-ratings-values-and-definitions/">Apple 年齡分級說明</a></li>
+          <li><a href="https://support.google.com/googleplay/android-developer/answer/9877032?hl=en">Google Play Real-Money Gambling Policy</a></li>
+          <li><a href="https://support.google.com/googleplay/android-developer/answer/9858738?hl=en">Google Play Payments Policy</a></li>
+          <li><a href="https://support.google.com/googleplay/android-developer/answer/17105854?hl=en-GB_ALL">Google Play Subscription Policy</a></li>
+          <li><a href="https://support.google.com/googleplay/android-developer/answer/112622?hl=en-CA">Google Play Service Fees</a></li>
+          <li><a href="https://developer.apple.com/app-store/small-business-program/">Apple App Store Small Business Program</a></li>
+          <li><a href="https://developers.cloudflare.com/r2/pricing/">Cloudflare R2 Pricing</a></li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="future">
+      <div class="wrap">
+        <div class="section-head">
+          <div class="kicker">10｜FUTURE VERSIONS</div>
+          <div><h2>後續版本與成功指標</h2><p class="section-copy">完成市場驗證後，再逐步加入 9-max、MTT、ICM、自訂 Range 與 CFR Solver。</p></div>
+        </div>
+
+        <div class="principles">
+          <div class="principle"><strong>Version 1.1</strong><span>Heads-up、9-max、更多籌碼深度、自訂 Range Editor、多策略批次矩陣比較。</span></div>
+          <div class="principle"><strong>Version 1.2</strong><span>MTT、Ante 與 Blind Level、ICM 與 Final Table 模擬、延遲匯入 Hand History 分析、教練分享與報告。</span></div>
+          <div class="principle"><strong>Version 2.0</strong><span>雲端 CFR Solver、對手模型學習、策略市場與授權內容、團隊研究空間、更完整的多桌模擬及研究 API。</span></div>
+        </div>
+
+        <h3 style="margin-top:32px">第一階段成功指標</h3>
+        <ul class="clean two-col" style="columns:2;column-gap:32px">
+          <li>使用者可在 60 秒內建立第一個模擬工作</li>
+          <li>同一 Seed 與策略版本可完整重現結果</li>
+          <li>使用者能清楚比較至少兩種策略</li>
+          <li>統計結果可以追溯至原始牌局</li>
+          <li>專業測試玩家認為數據足以支持策略研究</li>
+          <li>Beta 期間沒有重大牌型、Side Pot 或統計錯誤</li>
+          <li>Android、iOS 均可順利完成商店測試流程</li>
+        </ul>
+
+        <h3 style="margin-top:32px">App 上線驗收方向</h3>
+        <ul class="clean two-col" style="columns:2;column-gap:32px">
+          <li>Android、iOS 直向版可安裝測試</li>
+          <li>玩家可註冊、登入及管理訂閱狀態</li>
+          <li>玩家可建立、儲存並回測策略</li>
+          <li>Free、Lite、VIP、SVIP 權益可以配置</li>
+          <li>平台內購可於測試環境驗證</li>
+          <li>管理端可查詢帳號、訂閱、額度及模擬工作紀錄</li>
+          <li>完成基本安全、效能與規則測試</li>
+          <li>具備 TestFlight 與 Google Play 封閉測試送審條件</li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap footer-inner">
+      <span>德州撲克策略模擬與 VIP App｜開發與商業提案</span>
+      <span>版本 v2.2｜2026-07-23｜策略自動模式 NT$24萬（訂金／尾款）＋多人連線選配 NT$24萬、開發人力由工作室安排、美術外包與 VIP 規模損益</span>
+    </div>
+  </footer>
+</body>
+</html>

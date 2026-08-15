@@ -1,0 +1,57 @@
+flowchart TD
+    USER[本機使用者]
+
+    subgraph DESKTOP [Windows 本機桌面應用]
+        direction LR
+
+        subgraph UI [React／TypeScript UI]
+            direction TB
+            TABLE[3–9 人牌桌・1 User + 2–8 Bot]
+            PARAM[牌桌・Bot・策略參數中心]
+            RUN[互動 Play・批次執行]
+            DASH[統計儀表板・13×13 熱力圖]
+            REPLAY[全量 Log・逐手重播]
+            ANIM[牌局動畫・off／fast／normal]
+        end
+
+        IPC[Tauri 型別化 IPC]
+
+        subgraph RUST [Rust 單一權威引擎]
+            direction TB
+            CORE[牌局規則・合法行動・Side Pot・Rake]
+            VIEW[每座 DecisionView・隱藏資訊隔離]
+            STRAT[使用者策略引擎]
+            BOT[Bot 決策・Persona × Level × 覆寫]
+            EQUITY[Equity・Exact／Deterministic Sampling]
+            STATS[統計・CI・Estimator・FDR]
+            EVENTS[事件 Log・RunManifest・Checkpoint]
+        end
+
+        DB[(SQLite・策略・事件・聚合報表)]
+
+        PARAM --> IPC
+        RUN --> IPC
+        IPC --> CORE
+        CORE --> VIEW
+        VIEW --> STRAT
+        VIEW --> BOT
+        CORE --> EQUITY
+        CORE --> EVENTS
+        EQUITY --> STATS
+        EVENTS --> STATS
+        STRAT --> EVENTS
+        BOT --> EVENTS
+        EVENTS --> DB
+        STATS --> DB
+        DB --> DASH
+        DB --> REPLAY
+        CORE --> TABLE
+        TABLE --> ANIM
+    end
+
+    USER --> PARAM
+    USER --> RUN
+    USER --> DASH
+    USER --> REPLAY
+    BOUNDARY[不含真人多人連線・帳號・雲端・伺服器牌局]
+    BOUNDARY -.-> DESKTOP
