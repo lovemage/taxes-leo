@@ -53,7 +53,7 @@
 
 | # | 功能 | 驗收條件 |
 |---|---|---|
-| 1 | **牌桌設定** | 盲注、籌碼深度（20／50／100BB 三檔，每手重置）、抽水（rake %、cap、no flop no drop）、ante（`none`／逐人／BB／BTN 四種模式）、straddle（含 double）、手數、亂數種子，全可調 |
+| 1 | **牌桌設定** | 盲注、籌碼深度（20／50／100BB 三檔起始深度，破產離桌）、抽水（rake %、cap、no flop no drop）、ante（`none`／逐人／BB／BTN 四種模式）、straddle（含 double）、手數、亂數種子，全可調 |
 | 2 | **可變座位（3–9 人）** | 1 個「自身座位」＋ 2～8 個 Bot，可任意增減（最少 3-max）；每個 Bot 可獨立選人格（7 種）× 等級（L1–L5）、可套預設、複製、交換座位；自身座位以醒目底色標示 |
 | 3 | **Bot 參數（三層 schema）** | 等級參數（10 欄）＋人格參數（11 欄）＋逐座位覆寫，全部可調（見面板 C） |
 | 4 | **自身策略編輯器** | preflop 13×13 範圍矩陣、postflop 規則、下注尺度樹、fallback 全可調（見面板 D，GTO Wizard 風格） |
@@ -117,8 +117,9 @@
 
 - 依 [`9max平台核心規格.md`](9max平台核心規格.md) 第二章與 [`德州撲克規則細則.md`](德州撲克規則細則.md) 建立完整規則：3–9 個位置、逐座籌碼、straddle（含 double）、ante（`none`／`perPlayer`／`bbAnte`／`btnAnte` 四種模式）、rake（%＋cap＋布林 no-flop-no-drop）、side pot、split pot 與 odd chip
 - **合法行動產生器**依規則細則第一章實作：最小加注額、短額全下不重開加注權（增額不累加）、straddle 後的行動順序與 option
+- **破產離桌與位置輪轉**依規則細則 8.3／8.4 實作：桌次生命週期、dead small blind、dead button、BB 不被跳過
 - Hand evaluator，對照公開測試向量驗證
-- **規則測試向量 R1–R14**（規則細則第九章）全數通過
+- **規則測試向量 R1–R20**（規則細則第九章）全數通過
 - **完整狀態與資訊集分型**：`StrategyProvider` 只接受 `(DecisionView, OwnRange, OpponentRangeEstimates) → ActionDistribution`；完整 `GameState` 不得進入 Bot API
 - **驗收（鐵則，不過不准往上蓋）**：
   - 籌碼、rake、side pot、odd chip、ante/straddle 一律以**最小籌碼單位（整數）或 fixed-point** 精確計算；**每手籌碼守恆誤差必須為 0**（不做浮點容差）；浮點只出現在統計輸出（bb/100、CI）
@@ -144,7 +145,7 @@
 
 | 交付物 | 格式 | 時點 |
 |---|---|---|
-| 3–9 人 preflop baseline 表（逐位置 × **20／50／100BB 三檔深度** × 169 格頻率） | JSON（策略 schema 相容） | M2 起前 |
+| 3–9 人 preflop baseline 表（逐位置 × **全部有效籌碼 bucket** × 169 格頻率） | JSON（策略 schema 相容） | M2 起前 |
 | postflop heuristic 規則集初版 | 規則清單（面板 D.5 欄位） | M2 中期 |
 | 35 組 BOT 人格／等級參數校準 | bot-config schema 值 | M2 中期 |
 | 報表判讀標準與簽核 | 文字規格 | M2 末 |
@@ -180,8 +181,9 @@
 | 群組 | 參數 |
 |---|---|
 | 盲注 | SB／BB 金額 |
-| 籌碼深度 | 20／50／100BB 三檔滑桿；預設全桌同檔，可逐座覆寫為不同檔（side pot 驗收需要） |
-| 籌碼政策 | 固定 `resetEachHand`：每手開始重置為設定深度，不補碼、不破產離桌 |
+| 籌碼深度 | 20／50／100BB 三檔滑桿，為桌次開局起始深度；預設全桌同檔，可逐座覆寫 |
+| 籌碼政策 | 固定 `bustOut`：籌碼歸零者離桌、籌碼跨手結轉、人數只減不增 |
+| 桌次結束條件 | 使用者破產／降至 2 人／達手數上限，任一即結束並開新桌次 |
 | 抽水 | rake %、每手 cap、`noFlopNoDrop` 布林開關；未發 flop 時是否不抽水 |
 | Ante | `none`／逐人 ante／BB ante／BTN ante（四種模式），金額 |
 | Straddle | 無／單 straddle／double straddle，金額與位置；後段須為前段 2 倍 |
@@ -352,7 +354,8 @@ apps/
 | 12 | 效能驗收機 | 258V／32GB 筆電為上限，只可使用同級或更低規格 |
 | 13 | 規格來源 | 只採現行 `9max平台核心規格.md` 與配套現行文件；過期決議不具規範力 |
 | 14 | 牌局規則 | **完全比照現實德州撲克**（TDA 標準），細則見 [`德州撲克規則細則.md`](德州撲克規則細則.md) |
-| 15 | 籌碼政策 | **每手重置**（`resetEachHand`）；深度為 20／50／100BB 三檔，可逐座覆寫。不做補碼與破產離桌 |
+| 15 | 籌碼政策 | **破產離桌**（`bustOut`）；20／50／100BB 三檔為桌次開局深度，籌碼跨手結轉。不做補碼與中途加入 |
+| 16 | run 結構 | 多桌次串接。桌次於使用者破產／降至 2 人／達手數上限時結束並重開；統計以桌次為 cluster |
 
 **產品方向尚待拍板**：無。M0 仍須以實測凍結 exact/sampling 門檻、Bot 參數數值、schema、RunManifest 與 log encoding；這些是已指定產出，不得回頭引用過期文件。
 

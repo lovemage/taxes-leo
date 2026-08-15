@@ -59,7 +59,7 @@
 |---|---|---|
 | players | 3–9 | 座位數 |
 | blind | struct | SB／BB；顯示可用 bb 正規化，保存為最小籌碼整數 |
-| stackBySeatBb | map[seat, 20\|50\|100] | 每座初始籌碼深度，三檔擇一；每手開始重置為此值。策略 applicability 依英雄與相關對手有效籌碼 bucket 判定 |
+| stackBySeatBb | map[seat, 20\|50\|100] | 每座**桌次開局**的起始深度，三檔擇一。破產離桌後籌碼跨手漂移，策略 applicability 依英雄與相關對手的**有效籌碼 bucket**（規則細則 8.5）判定，不依起始檔位 |
 | ante | enum | none／perPlayer（逐人）／bbAnte（BB ante）／btnAnte（BTN ante）＋ 金額 |
 | straddle | struct | none／single／double ＋座位與金額 |
 | rake | struct | pct ＋每手 cap ＋ `noFlopNoDrop: boolean` |
@@ -200,7 +200,7 @@
 
 | 資料／比較 | 顯示方法 |
 |---|---|
-| 一般 EV／bb100 | batch means 或 cluster bootstrap，顯示 estimator 名稱 |
+| 一般 EV／bb100 | **以桌次為 cluster** 的 cluster bootstrap，顯示 estimator 名稱；不得以固定手數切 batch |
 | CRN／duplicate A/B | 對配對差值做 CI，不顯示兩次獨立區間相減 |
 | Win Rate／VPIP／PFR 等比例 | 分子／分母＋Wilson interval；有 cluster 時改用 cluster bootstrap |
 | Exact Equity | 標示「模型內精確」，不製造 sampling CI |
@@ -210,7 +210,8 @@
 ### H.4 版面與視覺（GTO Wizard 式）
 
 - **整體卡**：先顯示「可判定／無法判定／樣本不足」，再顯示勝率的分子／分母與區間、EV／bb100＋CI、estimator、All-in EV、σ、最大回撤及樣本數。
-- **逐位置表**：列 = 位置，欄 = 勝率／EV／bb/100／VPIP／PFR。
+- **逐位置表**：列 = 位置，欄 = 勝率／EV／bb/100／VPIP／PFR。**必須依當手在桌人數切片**；9 人桌的 BTN 與 4 人桌的 BTN 是不同母體，不得合併為同一列。切片的有效樣本以桌次數計。
+- **桌次卡**：桌次數、平均存活手數、結束原因分佈（使用者破產／降至 2 人／達手數上限）。桌次存活手數本身是策略強弱的觀測值。
 - **13×13 EV 熱力圖**：每格可切換 EV／勝率／使用頻率；顯示值、樣本數、CI 狀態與探索性標示；提供色階圖例及非紅綠的色盲可辨識方案。
 - **逐街分解**：preflop／flop／turn／river 的 EV 與頻率長條。
 - **對照**：自身 vs 全桌 Bot 平均的 EV 差距與剝削幅度。

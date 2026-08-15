@@ -44,8 +44,9 @@
 |---|---|
 | `players` | 3～9；恆為 1 名使用者，其餘為 Bot |
 | `smallBlind` / `bigBlind` | 以最小籌碼單位保存的正整數；`SB < BB` |
-| `stackBySeat` | 每座從 **20／50／100 BB** 三檔選一；預設全桌同檔，可逐座覆寫為不同檔。開始一手後不可改當手籌碼 |
-| `stackPolicy` | 固定為 `resetEachHand`：每手開始時所有座位重置為 `stackBySeat`。不實作補碼與破產離桌，桌上人數在整個 run 中固定 |
+| `stackBySeat` | 每座從 **20／50／100 BB** 三檔選一，為**桌次開局**的起始深度；預設全桌同檔，可逐座覆寫。開始一手後不可改當手籌碼 |
+| `stackPolicy` | 固定為 `bustOut`：籌碼歸零者離桌，籌碼跨手結轉，桌上人數只減不增。不實作補碼與中途加入 |
+| 桌次結束條件 | 使用者破產／在桌人數降至 2／達手數上限，三者任一即結束並開新桌次（見 [`德州撲克規則細則.md`](德州撲克規則細則.md) 8.3） |
 | `ante.mode` | `none`／`perPlayer`／`bbAnte`／`btnAnte` |
 | `ante.amount` | 最小籌碼單位的非負整數；`none` 時必須為 0 |
 | `straddle.mode` | `none`／`single`／`double` |
@@ -60,7 +61,7 @@ Rake 以整手可抽水底池計算，先依比例向下取整至最小籌碼單
 ### 2.2 位置與行動順序
 
 - 3-max 為 BTN、SB、BB 三個獨立位置。BTN 翻前第一個行動、翻後最後行動。
-- 4～9 人依按鈕順時針映射座位；每手結束後按鈕移至下一個仍在桌座位。
+- 4～9 人依按鈕順時針映射座位。位置輪轉以 **BB 位每手前進一個在桌玩家**為基準，SB 與按鈕依序回推；玩家離桌時可能出現 dead small blind 與 dead button，任何玩家不得跳過 BB。規則見 [`德州撲克規則細則.md`](德州撲克規則細則.md) 8.4。
 - Straddle、double straddle、ante、all-in、短額加注是否重新開放行動及最小加注額，必須由引擎的合法行動產生器統一決定；規則內容依 [`德州撲克規則細則.md`](德州撲克規則細則.md) 第一～三章，完全比照現實德州撲克規則。
 - UI 不得自行推導可下注金額、最小加注額、底池或 side pot。
 
@@ -102,7 +103,8 @@ Rake 以整手可抽水底池計算，先依比例向下取整至最小籌碼單
 
 - engine、schema、log format、RNG 演算法與版本；
 - master seed、每手 stream 派生規則、執行模式；
-- 完整桌型與每座初始籌碼快照；
+- 完整桌型與每座初始籌碼快照；`stackPolicy` 與桌次結束條件；
+- 桌次邊界索引（每個桌次的起訖手序、結束原因、存活手數）；
 - 使用者策略、Bot persona、level、逐座覆寫的完整快照與內容 hash；
 - 基準策略與內容包版本；
 - 建立時間、完成狀態、checkpoint 版本。
@@ -161,6 +163,7 @@ Bot 決策管線固定如下：
 - Complete-hand evaluator 必須精確。
 - Range Equity 使用混合計算：狀態空間低於門檻時精確枚舉；多人或大型 range 節點使用可重現的分層 Monte Carlo。
 - M0 必須在 3／6／9-max、preflop／flop／turn／river 代表節點量測時間與誤差後，凍結 exact/sampling 門檻、每種模式樣本預算及 cache key。
+- M0 同時凍結 `effectiveStackBucket` 的分檔邊界。破產離桌使籌碼跨手漂移，起始的 20／50／100BB 三檔只約束開局，中局需依 bucket 索引策略（見 [`德州撲克規則細則.md`](德州撲克規則細則.md) 8.5）。
 - 取樣模式必須顯示 Monte Carlo 樣本數與計算誤差；不得把取樣值標示為「精算」。
 - 聯合範圍必須套用 reach weight、card removal、活躍玩家與各 pot eligibility；多人平手按實際並列人數分配。
 
@@ -176,7 +179,9 @@ Bot 決策管線固定如下：
 
 | 指標／情境 | 現行方法 |
 |---|---|
-| 獨立批次的 bb/100／EV | 依手序相關性使用 batch means 或 cluster bootstrap |
+| 獨立批次的 bb/100／EV | **以桌次為 cluster** 做 cluster bootstrap；同一桌次內手牌高度相關，不得以固定手數切 batch |
+| 逐位置切片 | 位置定義隨在桌人數改變，必須**依當手在桌人數切片**；9 人桌與 4 人桌的同名位置不得合併 |
+| 有效樣本 | 以桌次數計，不以手數計；手數多而桌次少時標示樣本不足 |
 | CRN／duplicate 策略比較 | 對配對差值估計 CI；不得用兩次獨立 CI 相減 |
 | Win Rate、VPIP、PFR 等比例 | 顯示分子／分母；獨立近似用 Wilson interval，有 cluster 時對 cluster bootstrap |
 | 精確枚舉 Equity | 標示「模型內精確」，不顯示虛構 sampling CI |
@@ -252,9 +257,10 @@ CI 跨 0 只能標示「本樣本無法判定優劣」，不得直接等同「�
 ## 八、最低驗收矩陣
 
 - 桌型：3／4／6／9-max。
-- 籌碼：統一深度與逐座不等深度；至少三人 all-in 的多層 side pot。**全桌同深度時 side pot 不會形成**，因此多層 side pot 與 odd chip 的驗收必須使用逐座不同檔位（見 [`德州撲克規則細則.md`](德州撲克規則細則.md) 8.3）。
+- 籌碼：統一深度與逐座不等深度；至少三人 all-in 的多層 side pot；桌次全生命週期的籌碼守恆。
+- 破產離桌：dead small blind、dead button、BB 不被跳過、降至 2 人時桌次結束、使用者破產時桌次結束（測試向量 R15–R20）。
 - Forced bets：四種 ante 模式、無／單／double straddle、rake 開關、cap 與 no-flop-no-drop。
-- 規則：fold、check、call、完整加注、短額 all-in、split pot、odd chip、showdown；[`德州撲克規則細則.md`](德州撲克規則細則.md) 第九章的測試向量 R1–R14 全數通過。
+- 規則：fold、check、call、完整加注、短額 all-in、split pot、odd chip、showdown；[`德州撲克規則細則.md`](德州撲克規則細則.md) 第九章的測試向量 R1–R20 全數通過。
 - 資訊隔離：每種街別驗證 DecisionView 不含未公開牌。
 - 可重現：完成、暫停續跑、不同平行度三條路徑逐事件一致。
 - 統計：用可人工計算的合成資料驗證每種 estimator、CI、比例分母、FDR 與 All-in EV。
