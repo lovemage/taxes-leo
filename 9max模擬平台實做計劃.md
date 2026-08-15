@@ -1,6 +1,7 @@
 # 9-max 德州撲克模擬平台 — 實做計劃（Windows 桌面版）
 
 **現行規格依據**：[`9max平台核心規格.md`](9max平台核心規格.md)（產品、牌局、策略、統計、UX 與效能的權威基線）  
+**牌局規則附則**：[`德州撲克規則細則.md`](德州撲克規則細則.md)（完全比照現實德州撲克規則）  
 **配套 UI 規格**：[`UI面板詳細規格.md`](UI面板詳細規格.md)  
 **版本**：v2.3（本機單人 3–9 人 Bot 桌）  
 **日期**：2026-08-15
@@ -52,7 +53,7 @@
 
 | # | 功能 | 驗收條件 |
 |---|---|---|
-| 1 | **牌桌設定** | 盲注、籌碼深度（100–500BB）、抽水（rake %、cap、no flop no drop）、ante（逐人／BB／BTN 三種）、straddle（含 double）、手數、亂數種子，全可調 |
+| 1 | **牌桌設定** | 盲注、籌碼深度（100–500BB）、抽水（rake %、cap、no flop no drop）、ante（`none`／逐人／BB／BTN 四種模式）、straddle（含 double）、手數、亂數種子，全可調 |
 | 2 | **可變座位（3–9 人）** | 1 個「自身座位」＋ 2～8 個 Bot，可任意增減（最少 3-max）；每個 Bot 可獨立選人格（7 種）× 等級（L1–L5）、可套預設、複製、交換座位；自身座位以醒目底色標示 |
 | 3 | **Bot 參數（三層 schema）** | 等級參數（10 欄）＋人格參數（11 欄）＋逐座位覆寫，全部可調（見面板 C） |
 | 4 | **自身策略編輯器** | preflop 13×13 範圍矩陣、postflop 規則、下注尺度樹、fallback 全可調（見面板 D，GTO Wizard 風格） |
@@ -114,8 +115,10 @@
 
 ### M1 — 引擎 Layer 0（約 4–6 週）
 
-- 依 [`9max平台核心規格.md`](9max平台核心規格.md) 第二章建立完整規則：3–9 個位置、逐座籌碼、straddle（含 double）、三種 ante、rake（%＋cap＋布林 no-flop-no-drop）、side pot、split pot 與 odd chip
+- 依 [`9max平台核心規格.md`](9max平台核心規格.md) 第二章與 [`德州撲克規則細則.md`](德州撲克規則細則.md) 建立完整規則：3–9 個位置、逐座籌碼、straddle（含 double）、ante（`none`／`perPlayer`／`bbAnte`／`btnAnte` 四種模式）、rake（%＋cap＋布林 no-flop-no-drop）、side pot、split pot 與 odd chip
+- **合法行動產生器**依規則細則第一章實作：最小加注額、短額全下不重開加注權（增額不累加）、straddle 後的行動順序與 option
 - Hand evaluator，對照公開測試向量驗證
+- **規則測試向量 R1–R14**（規則細則第九章）全數通過
 - **完整狀態與資訊集分型**：`StrategyProvider` 只接受 `(DecisionView, OwnRange, OpponentRangeEstimates) → ActionDistribution`；完整 `GameState` 不得進入 Bot API
 - **驗收（鐵則，不過不准往上蓋）**：
   - 籌碼、rake、side pot、odd chip、ante/straddle 一律以**最小籌碼單位（整數）或 fixed-point** 精確計算；**每手籌碼守恆誤差必須為 0**（不做浮點容差）；浮點只出現在統計輸出（bb/100、CI）
@@ -179,8 +182,8 @@
 | 盲注 | SB／BB 金額 |
 | 籌碼深度 | 100–500BB；統一或逐座位不等額 |
 | 抽水 | rake %、每手 cap、`noFlopNoDrop` 布林開關；未發 flop 時是否不抽水 |
-| Ante | 無／逐人 ante／BB ante／BTN ante（三種），金額 |
-| Straddle | 無／單 straddle／double straddle，金額與位置 |
+| Ante | `none`／逐人 ante／BB ante／BTN ante（四種模式），金額 |
+| Straddle | 無／單 straddle／double straddle，金額與位置；後段須為前段 2 倍 |
 | 手數 | 批次模擬手數（10¹–10⁶） |
 | 亂數 | 種子（seed），固定或隨機 |
 

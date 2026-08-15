@@ -49,7 +49,7 @@
 | `ante.amount` | 最小籌碼單位的非負整數；`none` 時必須為 0 |
 | `straddle.mode` | `none`／`single`／`double` |
 | `straddle.seats` | 指定合法座位與順序；double 必須有兩個不同座位 |
-| `straddle.amounts` | 每段為最小籌碼單位正整數，後一段必須大於前一段 |
+| `straddle.amounts` | 每段為最小籌碼單位正整數；首段為 2×BB，後一段必須為前一段的 **2 倍**（現實規則） |
 | `rake.pct` | 0～100% 之固定點數值 |
 | `rake.cap` | 每手總抽水上限，以最小籌碼單位或 BB 顯示、整數保存 |
 | `rake.noFlopNoDrop` | **布林值**；開啟時，該手未發出 flop 即不抽水 |
@@ -60,13 +60,13 @@ Rake 以整手可抽水底池計算，先依比例向下取整至最小籌碼單
 
 - 3-max 為 BTN、SB、BB 三個獨立位置。BTN 翻前第一個行動、翻後最後行動。
 - 4～9 人依按鈕順時針映射座位；每手結束後按鈕移至下一個仍在桌座位。
-- Straddle、double straddle、ante、all-in、短額加注是否重新開放行動及最小加注額，必須由引擎的合法行動產生器統一決定。
+- Straddle、double straddle、ante、all-in、短額加注是否重新開放行動及最小加注額，必須由引擎的合法行動產生器統一決定；規則內容依 [`德州撲克規則細則.md`](德州撲克規則細則.md) 第一～三章，完全比照現實德州撲克規則。
 - UI 不得自行推導可下注金額、最小加注額、底池或 side pot。
 
 ### 2.3 籌碼、side pot 與 odd chip
 
 - 所有牌局金額使用整數最小籌碼單位或等價 fixed-point；規則層不得使用浮點籌碼。
-- 每手必須滿足：开始籌碼總額 = 結束籌碼總額 + 該手 rake，誤差為 0。
+- 每手必須滿足：開始籌碼總額 = 結束籌碼總額 + 該手 rake，誤差為 0。
 - Main pot 與每個 side pot 都保存參與資格；folded 玩家已投入籌碼留在底池，但不得取得分配。
 - Split pot 先按份額整除，odd chip 依按鈕左側起、在該 pot 有資格的最近座位順時針分配。每個 odd chip 的去向必須寫入事件 log。
 
@@ -77,6 +77,7 @@ Rake 以整手可抽水底池計算，先依比例向下取整至最小籌碼單
 - `StrategyProvider` 的唯一輸入是 `DecisionView`、自身 range 與由公開資訊推導的對手 range estimates，不得接收完整 `GameState`。
 - 測試必須證明：只改變不可見牌、保持資訊集相同時，Bot 在相同 seed 下產生相同 action distribution。
 - 互動牌桌只顯示規則允許公開的牌；重播是否顯示未攤牌底牌採明確設定，預設不顯示。即使 log 保存完整牌局，Bot 決策路徑仍不得存取。
+- 攤牌後的公開範圍依現實規則判定：輸家可 muck，只有實際亮出的底牌才是公開資訊。muck 政策為具名設定（`realistic` 為預設／`alwaysShow`），寫入 `RunManifest`；不同設定的統計結果不得混用比較。詳見 [`德州撲克規則細則.md`](德州撲克規則細則.md) 4.2。
 
 ---
 
@@ -252,7 +253,7 @@ CI 跨 0 只能標示「本樣本無法判定優劣」，不得直接等同「�
 - 桌型：3／4／6／9-max。
 - 籌碼：統一籌碼與逐座不等額；至少三人 all-in 的多層 side pot。
 - Forced bets：四種 ante 模式、無／單／double straddle、rake 開關、cap 與 no-flop-no-drop。
-- 規則：fold、check、call、完整加注、短額 all-in、split pot、odd chip、showdown。
+- 規則：fold、check、call、完整加注、短額 all-in、split pot、odd chip、showdown；[`德州撲克規則細則.md`](德州撲克規則細則.md) 第九章的測試向量 R1–R14 全數通過。
 - 資訊隔離：每種街別驗證 DecisionView 不含未公開牌。
 - 可重現：完成、暫停續跑、不同平行度三條路徑逐事件一致。
 - 統計：用可人工計算的合成資料驗證每種 estimator、CI、比例分母、FDR 與 All-in EV。
