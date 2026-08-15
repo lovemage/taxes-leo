@@ -59,7 +59,7 @@
 |---|---|---|
 | players | 3–9 | 座位數 |
 | blind | struct | SB／BB；顯示可用 bb 正規化，保存為最小籌碼整數 |
-| stackBySeatBb | map[seat, 100–500] | 每座初始籌碼；策略 applicability 依英雄與相關對手有效籌碼 bucket 判定 |
+| stackBySeatBb | map[seat, 20\|50\|100] | 每座初始籌碼深度，三檔擇一；每手開始重置為此值。策略 applicability 依英雄與相關對手有效籌碼 bucket 判定 |
 | ante | enum | none／perPlayer（逐人）／bbAnte（BB ante）／btnAnte（BTN ante）＋ 金額 |
 | straddle | struct | none／single／double ＋座位與金額 |
 | rake | struct | pct ＋每手 cap ＋ `noFlopNoDrop: boolean` |

@@ -44,7 +44,8 @@
 |---|---|
 | `players` | 3～9；恆為 1 名使用者，其餘為 Bot |
 | `smallBlind` / `bigBlind` | 以最小籌碼單位保存的正整數；`SB < BB` |
-| `stackBySeat` | 每座獨立設定，範圍 100～500BB；開始一手後不可改當手籌碼 |
+| `stackBySeat` | 每座從 **20／50／100 BB** 三檔選一；預設全桌同檔，可逐座覆寫為不同檔。開始一手後不可改當手籌碼 |
+| `stackPolicy` | 固定為 `resetEachHand`：每手開始時所有座位重置為 `stackBySeat`。不實作補碼與破產離桌，桌上人數在整個 run 中固定 |
 | `ante.mode` | `none`／`perPlayer`／`bbAnte`／`btnAnte` |
 | `ante.amount` | 最小籌碼單位的非負整數；`none` 時必須為 0 |
 | `straddle.mode` | `none`／`single`／`double` |
@@ -251,7 +252,7 @@ CI 跨 0 只能標示「本樣本無法判定優劣」，不得直接等同「�
 ## 八、最低驗收矩陣
 
 - 桌型：3／4／6／9-max。
-- 籌碼：統一籌碼與逐座不等額；至少三人 all-in 的多層 side pot。
+- 籌碼：統一深度與逐座不等深度；至少三人 all-in 的多層 side pot。**全桌同深度時 side pot 不會形成**，因此多層 side pot 與 odd chip 的驗收必須使用逐座不同檔位（見 [`德州撲克規則細則.md`](德州撲克規則細則.md) 8.3）。
 - Forced bets：四種 ante 模式、無／單／double straddle、rake 開關、cap 與 no-flop-no-drop。
 - 規則：fold、check、call、完整加注、短額 all-in、split pot、odd chip、showdown；[`德州撲克規則細則.md`](德州撲克規則細則.md) 第九章的測試向量 R1–R14 全數通過。
 - 資訊隔離：每種街別驗證 DecisionView 不含未公開牌。
