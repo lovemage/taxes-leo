@@ -11,6 +11,10 @@
  * 零寬字元計入 length 但不佔視覺寬度，等於「告訴佈局引擎真實寬度」，
  * 讓 dagre 連同節點間距、連線位置一起算對，而不是事後硬拉框線。
  *
+ * 輸出檔名為 <name>.generated.svg。
+ * diagrams/arch.svg 與 ux.svg 是手工維護的正式圖，不由本腳本產生，
+ * 因此本腳本不得寫入同名檔案，避免一次誤跑就覆蓋掉手工圖。
+ *
  * 用法：node diagrams/render.js
  */
 
@@ -76,13 +80,13 @@ for (const name of DIAGRAMS) {
     execFileSync('node', [
       'scripts/render.mjs',
       '--input', tmp,
-      '--output', path.join(HERE, `${name}.svg`),
+      '--output', path.join(HERE, `${name}.generated.svg`),
       '--format', 'svg',
       '--theme', 'github-light',
       '--font', 'Noto Sans TC',
     ], { cwd: SKILL, stdio: 'pipe' });
-    const size = fs.statSync(path.join(HERE, `${name}.svg`)).size;
-    console.log(`  ✓ ${name}.svg  ${(size / 1024).toFixed(1)} KB　補正 ${count} 個標籤`);
+    const size = fs.statSync(path.join(HERE, `${name}.generated.svg`)).size;
+    console.log(`  ✓ ${name}.generated.svg  ${(size / 1024).toFixed(1)} KB　補正 ${count} 個標籤`);
     total++;
   } finally {
     fs.unlinkSync(tmp);
