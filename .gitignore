@@ -15,3 +15,6 @@ diagrams/.*.padded.mmd
 # 系統
 .DS_Store
 Thumbs.db
+
+# Rust build
+/target/

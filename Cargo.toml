@@ -1,0 +1,17 @@
+[workspace]
+resolver = "2"
+members = ["apps/engine"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "UNLICENSED"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+# 規則層禁止浮點籌碼（核心規格 2.3）：整數轉浮點一律要顯式處理
+cast_precision_loss = "deny"
+cast_possible_truncation = "deny"

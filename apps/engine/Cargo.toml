@@ -1,0 +1,12 @@
+[package]
+name = "poker-engine"
+description = "9-max 德州撲克模擬平台的規則引擎（牌局唯一權威）"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true
