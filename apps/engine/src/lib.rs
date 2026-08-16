@@ -12,6 +12,8 @@
 
 pub mod betting;
 pub mod chips;
+pub mod pot;
 
 pub use betting::{Action, BettingRound, LegalActions, RaiseRange, SeatState};
 pub use chips::Chips;
+pub use pot::{Distribution, OddChipAward, PotLayer, RakeConfig};
