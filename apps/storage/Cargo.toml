@@ -1,0 +1,18 @@
+[package]
+name = "poker-storage"
+description = "本機事件 log、RunManifest 與重播資料層（SQLite）"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+poker-engine = { path = "../engine" }
+# bundled：自帶 SQLite C 原始碼，不依賴系統 libsqlite3，
+# Windows 交付時不需額外 runtime
+rusqlite = { version = "0.40", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[lints]
+workspace = true

@@ -150,7 +150,7 @@
 
 | 項 | 門檻 |
 |---|---|
-| 每手 log 大小 | 由 DB 上限反推：2 GB ÷ 100 萬手 ≈ **2 KB／手**（含 index 攤提）。此為推導值不是獨立門檻；**不得為壓進 2 KB 而刪除決策 trace 的必要欄位**，寧可調整序列化格式或壓縮策略 |
+| 每手 log 大小 | 由 DB 上限反推：2 GB ÷ 100 萬手 ≈ **2 KB／手**（含 index 攤提）。此為推導值不是獨立門檻；**不得為壓進 2 KB 而刪除決策 trace 的必要欄位**，寧可調整序列化格式或壓縮策略。<br>**初步實測（2026-08-16，緊湊二進位編碼）**：9-max 全跟注情境每手 **229 位元組**（含 SQLite page 與 index 開銷），外推 100 萬手約 **218 MB**。全跟注是行動數的高估情境（實戰多數手在翻前結束），因此仍有約 1.8 KB／手餘裕供 M2 的決策 trace 使用。正式數值仍依 258V 基準機重測 |
 | 100 萬手 DB 上限 | ≤ 2 GB（含 index，不含可安全清除的 WAL 暫存） |
 | 寫入吞吐 | 在核心規格第七章基準下完成 10 萬手 ≤60 分鐘、100 萬手 ≤12 小時，且 UI 門檻仍通過 |
 | 分頁／重播延遲 | 100 萬手 DB 載入指定手牌 p95 ≤ 200 ms；cold／warm 分開記錄 |
@@ -371,9 +371,11 @@ packages/
 apps/
 ├── desktop          # Tauri 桌面殼（M3 起）
 ├── ui               # React 前端（M3 起）
-└── engine           # Rust 模擬引擎（M1 起）
+├── engine           # Rust 規則引擎（M1 起，**零外部相依**）
+└── storage          # Rust 儲存層：事件 log、RunManifest、重播（SQLite）
 ```
 
+- **引擎與儲存層分成兩個 crate**：`engine` 只放規則，不引任何外部套件，測試快且不受套件版本影響；SQLite（rusqlite，bundled）只出現在 `storage`。`storage` 依賴 `engine`，反向不成立。
 - `api-client` 對桌面版變成 **IPC 型別化客戶端**（Tauri command 的型別化包裝），前端仍「不直接碰引擎」。
 - **型別單一來源**：以 **Rust structs 為單一來源**，用 Specta／ts-rs 產生前端 TS 型別、schemars 產生 JSON Schema 供 `bot-config`／`validation` 驗證；IPC 邊界（Tauri command）由同一來源產生型別化客戶端，避免 Rust 與 TS 各自手寫型別漂移。
 
