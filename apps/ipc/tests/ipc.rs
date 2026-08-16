@@ -189,7 +189,7 @@ fn 明確開啟全揭露時才送出全部底牌() {
 #[test]
 fn 逐手摘要不含任何底牌() {
     let (handler, run_id) = prepared();
-    let summaries = handler.list_hands(run_id, 0, 20, 0).expect("列表");
+    let summaries = handler.list_hands(run_id, 0, 20).expect("列表");
     assert_eq!(summaries.len(), 20);
 
     // 摘要型別本身就沒有底牌欄位，序列化後也不應出現任何牌張欄位

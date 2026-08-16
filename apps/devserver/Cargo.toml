@@ -1,0 +1,20 @@
+[package]
+name = "poker-devserver"
+description = "開發用 HTTP 外殼，把 IpcHandler 暴露給 Vite dev server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "devserver"
+path = "src/main.rs"
+
+[dependencies]
+poker-engine = { path = "../engine" }
+poker-ipc = { path = "../ipc" }
+poker-storage = { path = "../storage" }
+serde_json = "1"
+
+[lints]
+workspace = true

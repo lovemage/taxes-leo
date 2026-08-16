@@ -83,6 +83,9 @@ impl IpcHandler {
     ///
     /// 摘要不含任何底牌，因此無須指定可見範圍。
     ///
+    /// 損益取自儲存層寫入時算好的 `hero_delta`，**不由 payouts 重算**——
+    /// blob 不含各座投入額，重算會漏掉投入而得出恆為正的錯誤數字。
+    ///
     /// # Errors
     /// 查詢或解碼失敗時回傳錯誤。
     pub fn list_hands(
@@ -90,21 +93,17 @@ impl IpcHandler {
         run_id: i64,
         offset: u64,
         limit: u64,
-        hero_seat: usize,
     ) -> Result<Vec<HandSummaryView>, IpcError> {
-        let records = self.store.page_hands(run_id, offset, limit)?;
-        Ok(records
+        let rows = self.store.page_hand_summaries(run_id, offset, limit)?;
+        Ok(rows
             .into_iter()
-            .map(|record| {
-                let gained = record.payouts[hero_seat] + record.refunds[hero_seat];
-                HandSummaryView {
-                    hand_index: record.hand_index,
-                    instance_index: record.instance_index,
-                    seated: u8::try_from(record.occupied.iter().filter(|&&o| o).count())
-                        .unwrap_or(u8::MAX),
-                    hero_delta: i64::try_from(gained.units()).unwrap_or(i64::MAX),
-                    board: record.board.iter().map(ToString::to_string).collect(),
-                }
+            .map(|(record, hero_delta)| HandSummaryView {
+                hand_index: record.hand_index,
+                instance_index: record.instance_index,
+                seated: u8::try_from(record.occupied.iter().filter(|&&o| o).count())
+                    .unwrap_or(u8::MAX),
+                hero_delta,
+                board: record.board.iter().map(ToString::to_string).collect(),
             })
             .collect())
     }

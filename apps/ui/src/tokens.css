@@ -1,0 +1,76 @@
+/* 視覺 token，來源為 UI面板詳細規格.md 的 V.2～V.4。
+   數值請勿在元件裡硬寫，一律引用這裡的變數。 */
+
+:root {
+  /* V.2 色彩 */
+  --bg-base: #0b0c0e;
+  --bg-surface: #16181c;
+  --bg-raised: #1e2126;
+  --bg-hover: #22262c;
+  --border: #2a2e34;
+  --text-primary: #e8eaed;
+  --text-secondary: #9aa0a6;
+  --text-tertiary: #6b7280;
+  --accent: #22c55e;
+  --accent-hover: #16a34a;
+  --positive: #22c55e;
+  --negative: #ef4444;
+  --warning: #f59e0b;
+
+  /* V.7 行動編碼。字母是主要載體，顏色只是加速辨識 */
+  --action-fold: #3b82f6;
+  --action-check: #22c55e;
+  --action-call: #22c55e;
+  --action-bet: #ef4444;
+  --action-raise: #ef4444;
+  --action-allin: #991b1b;
+
+  /* V.9 四色牌組。花色符號必須始終繪出，顏色只是輔助 */
+  --suit-spade: #d1d5db;
+  --suit-heart: #ef4444;
+  --suit-diamond: #3b82f6;
+  --suit-club: #22c55e;
+
+  /* V.3 字型 */
+  --font-mono: 'JetBrains Mono', Consolas, ui-monospace, monospace;
+  --font-sans: Inter, 'Noto Sans TC', system-ui, sans-serif;
+
+  /* V.4 圓角階梯 */
+  --radius-chip: 3px;
+  --radius-control: 6px;
+  --radius-panel: 8px;
+  --radius-container: 12px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* V.3：所有數字等寬、右對齊 */
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.positive {
+  color: var(--positive);
+}
+.negative {
+  color: var(--negative);
+}
+.muted {
+  color: var(--text-secondary);
+}
+.dim {
+  color: var(--text-tertiary);
+}

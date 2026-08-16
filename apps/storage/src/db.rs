@@ -258,6 +258,39 @@ impl Store {
         Ok(out)
     }
 
+    /// 分頁取得逐手紀錄與**已保存的**使用者損益。
+    ///
+    /// 損益取自 `hero_delta` 欄位而非由 blob 重算：blob 不含各座投入額，
+    /// 只用 payouts 重算會漏掉投入，得出恆為正的錯誤數字。
+    ///
+    /// # Errors
+    /// 查詢或解碼失敗時回傳錯誤。
+    pub fn page_hand_summaries(
+        &self,
+        run_id: i64,
+        offset: u64,
+        limit: u64,
+    ) -> Result<Vec<(HandRecord, i64)>, StorageError> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT blob, hero_delta FROM hand WHERE run_id = ?1
+             ORDER BY hand_index LIMIT ?2 OFFSET ?3",
+        )?;
+        let rows = stmt.query_map(
+            params![
+                run_id,
+                i64::try_from(limit).expect("limit 必在 i64 範圍"),
+                i64::try_from(offset).expect("offset 必在 i64 範圍")
+            ],
+            |r| Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, i64>(1)?)),
+        )?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (blob, delta) = row?;
+            out.push((decode(&blob)?, delta));
+        }
+        Ok(out)
+    }
+
     /// 使用者的逐手損益序列，供統計層聚合（免解碼 blob）。
     ///
     /// # Errors
