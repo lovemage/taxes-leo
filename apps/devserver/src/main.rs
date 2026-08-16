@@ -13,9 +13,10 @@
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 
-use poker_engine::betting::{Action, LegalActions};
+use poker_engine::betting::Action;
 use poker_engine::chips::Chips;
-use poker_engine::hand::{ActionProvider, Street};
+use poker_engine::hand::ActionProvider;
+use poker_engine::strategy::DecisionView;
 use poker_engine::rng::RNG_VERSION;
 use poker_engine::session::{run_session, SessionConfig};
 use poker_engine::table::TableConfig;
@@ -35,7 +36,8 @@ const HERO_SEAT: usize = 0;
 struct CallingStation;
 
 impl ActionProvider for CallingStation {
-    fn choose(&mut self, _street: Street, legal: &LegalActions) -> Action {
+    fn choose(&mut self, view: &DecisionView) -> Action {
+        let legal = &view.legal;
         if legal.can_check {
             Action::Check
         } else if legal.call_to.is_some() {

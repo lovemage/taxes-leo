@@ -11,7 +11,10 @@ use crate::card::Card;
 use crate::chips::Chips;
 use crate::eval::{evaluate, HandRank};
 use crate::pot::{settle, Distribution};
+use crate::position::{resolve, PositionLabel};
 use crate::rng::Rng;
+use crate::strategy::decision::{OpponentPublic, PublicAction, StackBucket};
+use crate::strategy::DecisionView;
 use crate::table::{AnteMode, MuckPolicy, TableConfig};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -39,10 +42,13 @@ pub struct HandSetup {
     pub big_blind_seat: usize,
 }
 
-/// 行動來源。M2 起改由 `StrategyProvider` 以 `DecisionView` 驅動；
-/// 目前只餵合法行動集合，本身已不含任何隱藏資訊。
+/// 行動來源。
+///
+/// 核心規格 2.4：決策端**只能**收到 [`DecisionView`]，不得接觸完整
+/// `GameState`。這個簽章就是該約束的落實——實作者拿不到牌堆與他人底牌，
+/// 因為那些資訊在 `DecisionView` 的型別上不存在。
 pub trait ActionProvider {
-    fn choose(&mut self, street: Street, legal: &LegalActions) -> Action;
+    fn choose(&mut self, view: &DecisionView) -> Action;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -72,7 +78,19 @@ pub struct HandResult {
     pub events: Vec<HandEvent>,
 }
 
-/// 打完一手牌。
+/// 預先指定的發牌。
+///
+/// 供測試構造確定情境使用——例如核心規格 2.4 要求的隔離測試，需要
+/// 「英雄底牌與公共牌相同、但他人底牌不同」的兩手，靠隨機碰撞不可行。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreparedDeal {
+    /// 逐座底牌；未入座者為 `None`
+    pub hole_cards: Vec<Option<[Card; 2]>>,
+    /// 五張公共牌，依 flop/turn/river 順序取用
+    pub board: [Card; 5],
+}
+
+/// 打完一手牌，牌由 `rng` 洗出。
 ///
 /// # Panics
 /// `provider` 交回不合法行動時 panic。
@@ -83,24 +101,48 @@ pub fn play_hand(
     rng: &mut Rng,
     provider: &mut dyn ActionProvider,
 ) -> HandResult {
-    let n = setup.stacks.len();
-    let mut stacks = setup.stacks.clone();
-    let mut contributions = vec![Chips::ZERO; n];
-    let mut events = Vec::new();
-
-    // ── 發牌 ────────────────────────────────────────────────────────
     // 規則細則第七章：不實作 burn card（牌堆均勻隨機時與燒牌等價）
     let mut deck = crate::card::full_deck();
     rng.shuffle(&mut deck);
     let mut next_card = 0usize;
 
-    let mut hole_cards: Vec<Option<[Card; 2]>> = vec![None; n];
+    let mut hole_cards: Vec<Option<[Card; 2]>> = vec![None; setup.stacks.len()];
     for (seat, slot) in hole_cards.iter_mut().enumerate() {
         if setup.occupied[seat] {
             *slot = Some([deck[next_card], deck[next_card + 1]]);
             next_card += 2;
         }
     }
+    let board = [
+        deck[next_card],
+        deck[next_card + 1],
+        deck[next_card + 2],
+        deck[next_card + 3],
+        deck[next_card + 4],
+    ];
+
+    play_hand_with_deal(config, setup, &PreparedDeal { hole_cards, board }, provider)
+}
+
+/// 打完一手牌，使用指定的發牌。
+///
+/// # Panics
+/// `provider` 交回不合法行動，或 `deal` 的座位數與 `setup` 不符時 panic。
+#[must_use]
+pub fn play_hand_with_deal(
+    config: &TableConfig,
+    setup: &HandSetup,
+    deal: &PreparedDeal,
+    provider: &mut dyn ActionProvider,
+) -> HandResult {
+    let n = setup.stacks.len();
+    assert_eq!(deal.hole_cards.len(), n, "發牌的座位數與桌型不符");
+    let mut stacks = setup.stacks.clone();
+    let mut contributions = vec![Chips::ZERO; n];
+    let mut events = Vec::new();
+
+    let hole_cards = deal.hole_cards.clone();
+    let mut next_board = 0usize;
 
     // ── 強制下注 ────────────────────────────────────────────────────
     // 規則細則 2.2：ante 為 dead money，不計入當街投入，因此與盲注分開累計
@@ -135,6 +177,12 @@ pub fn play_hand(
     };
     let first_to_act = next_occupied(setup, option_seat);
 
+    let labels = resolve(&setup.occupied, setup.big_blind_seat).labels;
+    let mut history: Vec<PublicAction> = Vec::new();
+    let seated = setup.occupied.iter().filter(|&&o| o).count();
+    // ante 已進底池但不屬當街投入，因此列入先前底池
+    let ante_pot: Chips = contributions.iter().copied().sum();
+
     let mut round = BettingRound::new_preflop(
         stacks.clone(),
         state.clone(),
@@ -142,8 +190,18 @@ pub fn play_hand(
         first_to_act,
         largest_forced,
     );
-    let mut final_aggressor =
-        run_round(&mut round, Street::Preflop, provider, &mut events);
+    let mut final_aggressor = {
+        let mut ctx = ViewContext {
+            labels: &labels,
+            hole_cards: &hole_cards,
+            board: &[],
+            prior_pot: ante_pot,
+            seated,
+            big_blind: config.big_blind,
+            history: &mut history,
+        };
+        run_round(&mut round, Street::Preflop, provider, &mut events, &mut ctx)
+    };
     absorb(&round, &mut stacks, &mut state, &mut contributions, n);
 
     // ── 翻後各街 ────────────────────────────────────────────────────
@@ -155,8 +213,8 @@ pub fn play_hand(
             break;
         }
         let count = if street == Street::Flop { 3 } else { 1 };
-        let dealt: Vec<Card> = deck[next_card..next_card + count].to_vec();
-        next_card += count;
+        let dealt: Vec<Card> = deal.board[next_board..next_board + count].to_vec();
+        next_board += count;
         board.extend_from_slice(&dealt);
         if street == Street::Flop {
             flop_dealt = true;
@@ -174,7 +232,19 @@ pub fn play_hand(
         let first = next_active_from(&state, setup.button);
         let mut round =
             BettingRound::new_postflop(stacks.clone(), state.clone(), first, config.big_blind);
-        let aggressor = run_round(&mut round, street, provider, &mut events);
+        let aggressor = {
+            let prior_pot: Chips = contributions.iter().copied().sum();
+            let mut ctx = ViewContext {
+                labels: &labels,
+                hole_cards: &hole_cards,
+                board: &board,
+                prior_pot,
+                seated,
+                big_blind: config.big_blind,
+                history: &mut history,
+            };
+            run_round(&mut round, street, provider, &mut events, &mut ctx)
+        };
         final_aggressor = aggressor;
         absorb(&round, &mut stacks, &mut state, &mut contributions, n);
     }
@@ -332,18 +402,99 @@ fn post_blinds_and_straddles(
     }
 }
 
+/// 建構 `DecisionView` 所需的脈絡。
+///
+/// 刻意只收公開資訊：這個結構裡沒有牌堆，也沒有他人底牌。
+struct ViewContext<'a> {
+    labels: &'a [Option<PositionLabel>],
+    hole_cards: &'a [Option<[Card; 2]>],
+    board: &'a [Card],
+    /// 先前各街已進入底池的總額
+    prior_pot: Chips,
+    seated: usize,
+    big_blind: Chips,
+    history: &'a mut Vec<PublicAction>,
+}
+
+/// 由引擎內部狀態萃取該座位可見的資訊（核心規格 2.4）。
+///
+/// **這是隱藏資訊的唯一出口**。`hole_cards` 雖是完整陣列，但只取用
+/// `seat` 自己的那一筆；其餘座位只轉出公開籌碼與狀態。
+fn build_view(
+    round: &BettingRound,
+    seat: usize,
+    street: Street,
+    legal: &LegalActions,
+    ctx: &ViewContext<'_>,
+) -> DecisionView {
+    let committed_this_street: Chips = ctx
+        .hole_cards
+        .iter()
+        .enumerate()
+        .map(|(s, _)| round.committed(s))
+        .sum();
+    let pot = ctx.prior_pot + committed_this_street;
+
+    let opponents: Vec<OpponentPublic> = (0..ctx.hole_cards.len())
+        .filter(|&s| s != seat && ctx.hole_cards[s].is_some())
+        .map(|s| OpponentPublic {
+            seat: s,
+            position: ctx.labels[s].unwrap_or(PositionLabel::Bb),
+            stack: round.stack(s),
+            committed: round.committed(s),
+            folded: matches!(round.state(s), SeatState::Folded),
+            all_in: matches!(round.state(s), SeatState::AllIn),
+        })
+        .collect();
+
+    // 有效籌碼＝英雄與仍在牌局對手中的較小者，換算為百分之一 BB 後判檔
+    // （規則細則 8.5：不得先取整再判定）
+    let hero_effective = round.stack(seat) + round.committed(seat);
+    let opponent_max = opponents
+        .iter()
+        .filter(|o| !o.folded)
+        .map(|o| o.stack + o.committed)
+        .max()
+        .unwrap_or(hero_effective);
+    let effective = hero_effective.min_of(opponent_max);
+    let centi_bb = effective.units() * 100 / ctx.big_blind.units().max(1);
+
+    DecisionView {
+        seat,
+        position: ctx.labels[seat].unwrap_or(PositionLabel::Bb),
+        street,
+        hole_cards: ctx.hole_cards[seat].expect("行動者必然已發牌"),
+        board: ctx.board.to_vec(),
+        seated: ctx.seated,
+        effective_stack_bucket: StackBucket::from_centi_bb(centi_bb),
+        pot,
+        to_call: legal.call_to.unwrap_or(round.current_bet()).saturating_sub(round.committed(seat)),
+        legal: legal.clone(),
+        history: ctx.history.clone(),
+        opponents,
+    }
+}
+
 /// 跑完一條街的下注，回傳本街最後一位主動下注／加注者。
 fn run_round(
     round: &mut BettingRound,
     street: Street,
     provider: &mut dyn ActionProvider,
     events: &mut Vec<HandEvent>,
+    ctx: &mut ViewContext<'_>,
 ) -> Option<usize> {
     let mut aggressor = None;
     while let Some(legal) = round.legal_actions() {
         let seat = legal.seat;
         let before = round.current_bet();
-        let action = provider.choose(street, &legal);
+        let view = build_view(round, seat, street, &legal, ctx);
+        let action = provider.choose(&view);
+        ctx.history.push(PublicAction {
+            street,
+            seat,
+            position: ctx.labels[seat].unwrap_or(PositionLabel::Bb),
+            action,
+        });
         round
             .apply(action)
             .unwrap_or_else(|e| panic!("provider 在座位 {seat} 交回不合法行動 {action:?}：{e:?}"));

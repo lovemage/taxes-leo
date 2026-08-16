@@ -3,9 +3,10 @@
 //! 對應 `德州撲克規則細則.md` 第九章 R7、R8、R11、R12，
 //! 以及核心規格 3.4 的可重現性要求。
 
-use poker_engine::betting::{Action, LegalActions};
+use poker_engine::betting::Action;
 use poker_engine::chips::Chips;
-use poker_engine::hand::{play_hand, ActionProvider, HandSetup, Street};
+use poker_engine::hand::{play_hand, ActionProvider, HandSetup};
+use poker_engine::strategy::DecisionView;
 use poker_engine::pot::RakeConfig;
 use poker_engine::rng::{Rng, RngDomain};
 use poker_engine::table::{AnteConfig, AnteMode, MuckPolicy, StraddleConfig, TableConfig};
@@ -18,7 +19,8 @@ fn c(n: u64) -> Chips {
 struct CallingStation;
 
 impl ActionProvider for CallingStation {
-    fn choose(&mut self, _street: Street, legal: &LegalActions) -> Action {
+    fn choose(&mut self, view: &DecisionView) -> Action {
+        let legal = &view.legal;
         if legal.can_check {
             Action::Check
         } else if legal.call_to.is_some() {
@@ -33,7 +35,8 @@ impl ActionProvider for CallingStation {
 struct FoldAllExcept(usize);
 
 impl ActionProvider for FoldAllExcept {
-    fn choose(&mut self, _street: Street, legal: &LegalActions) -> Action {
+    fn choose(&mut self, view: &DecisionView) -> Action {
+        let legal = &view.legal;
         if legal.seat == self.0 {
             if legal.can_check {
                 Action::Check

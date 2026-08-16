@@ -3,9 +3,10 @@
 //! 最重要的一組是隱藏資訊遮蔽：核心規格 2.4 要求未亮出的底牌不得外流，
 //! 而遮蔽必須發生在**邊界**，不能靠前端自律。
 
-use poker_engine::betting::{Action, LegalActions};
+use poker_engine::betting::Action;
 use poker_engine::chips::Chips;
-use poker_engine::hand::{ActionProvider, Street};
+use poker_engine::hand::ActionProvider;
+use poker_engine::strategy::DecisionView;
 use poker_engine::rng::RNG_VERSION;
 use poker_engine::session::{run_session, SessionConfig};
 use poker_engine::table::TableConfig;
@@ -24,7 +25,8 @@ fn c(n: u64) -> Chips {
 struct CallingStation;
 
 impl ActionProvider for CallingStation {
-    fn choose(&mut self, _street: Street, legal: &LegalActions) -> Action {
+    fn choose(&mut self, view: &DecisionView) -> Action {
+        let legal = &view.legal;
         if legal.can_check {
             Action::Check
         } else if legal.call_to.is_some() {

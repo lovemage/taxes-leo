@@ -2,9 +2,10 @@
 //!
 //! 對應 `德州撲克規則細則.md` 第九章 R15–R23，以及 8.4.1 的標籤規則。
 
-use poker_engine::betting::{Action, LegalActions};
+use poker_engine::betting::Action;
 use poker_engine::chips::Chips;
-use poker_engine::hand::{ActionProvider, Street};
+use poker_engine::hand::ActionProvider;
+use poker_engine::strategy::DecisionView;
 use poker_engine::position::{advance_big_blind, resolve, PositionLabel};
 use poker_engine::session::{run_session, InstanceEnd, SessionConfig, MIN_PLAYERS};
 use poker_engine::table::TableConfig;
@@ -18,7 +19,8 @@ fn c(n: u64) -> Chips {
 struct CallingStation;
 
 impl ActionProvider for CallingStation {
-    fn choose(&mut self, _street: Street, legal: &LegalActions) -> Action {
+    fn choose(&mut self, view: &DecisionView) -> Action {
+        let legal = &view.legal;
         if legal.can_check {
             Action::Check
         } else if legal.call_to.is_some() {
