@@ -48,6 +48,12 @@ impl HandRank {
         self.0
     }
 
+    /// 由 [`HandRank::value`] 的輸出還原。供 log 與跨模組傳遞使用。
+    #[must_use]
+    pub const fn from_value(value: u32) -> Self {
+        Self(value)
+    }
+
     #[must_use]
     pub fn category(self) -> Category {
         match self.0 >> 20 {
