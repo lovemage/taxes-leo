@@ -1,0 +1,247 @@
+//! 跨 IPC 邊界的資料型別（DTO）。
+//!
+//! 實做計劃第七章：**Rust structs 為型別單一來源**，前端 TS 型別由此產生，
+//! 避免兩邊各自手寫而漂移。
+//!
+//! # 隱藏資訊隔離
+//!
+//! 核心規格 2.4：「互動牌桌只顯示規則允許公開的牌；重播是否顯示未攤牌底牌
+//! 採明確設定，預設不顯示。」
+//!
+//! 本模組的做法是**在邊界就遮蔽**，而不是把完整底牌送到前端再叫前端別畫。
+//! UI 拿不到的資料就不可能因為前端 bug 而外洩，也讓「UI 零遊戲邏輯」
+//! （實做計劃鐵則 6）少一個破口。
+
+use poker_engine::card::Card;
+use poker_engine::position::Positions;
+use poker_storage::codec::{HandRecord, RecordedAction};
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
+
+/// 底牌可見範圍。
+///
+/// 這是個**明確設定**，沒有預設值可以被意外略過——呼叫端必須指定，
+/// 對應核心規格 2.4 的「採明確設定」。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
+#[serde(rename_all = "camelCase")]
+pub enum HoleCardVisibility {
+    /// 只送出依現實規則實際亮出的底牌。互動對打與預設重播用此模式
+    RevealedOnly,
+    /// 送出全部底牌。僅供使用者明確開啟的重播檢視使用
+    All,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
+#[serde(rename_all = "camelCase")]
+pub enum StreetView {
+    Preflop,
+    Flop,
+    Turn,
+    River,
+}
+
+impl From<poker_engine::hand::Street> for StreetView {
+    fn from(street: poker_engine::hand::Street) -> Self {
+        use poker_engine::hand::Street;
+        match street {
+            Street::Preflop => Self::Preflop,
+            Street::Flop => Self::Flop,
+            Street::Turn => Self::Turn,
+            Street::River => Self::River,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
+#[serde(rename_all = "camelCase")]
+pub struct ActionView {
+    pub street: StreetView,
+    pub seat: u8,
+    /// fold／check／call／allIn／raiseTo
+    pub kind: String,
+    /// `raiseTo` 時為加注到的本街累計額，其餘為 null
+    #[ts(type = "number | null")]
+    pub to: Option<u64>,
+}
+
+impl From<&RecordedAction> for ActionView {
+    fn from(action: &RecordedAction) -> Self {
+        use poker_engine::betting::Action;
+        let (kind, to) = match action.action {
+            Action::Fold => ("fold", None),
+            Action::Check => ("check", None),
+            Action::Call => ("call", None),
+            Action::AllIn => ("allIn", None),
+            Action::RaiseTo(amount) => ("raiseTo", Some(amount.units())),
+        };
+        Self {
+            street: action.street.into(),
+            seat: action.seat,
+            kind: kind.to_owned(),
+            to,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
+#[serde(rename_all = "camelCase")]
+pub struct SeatView {
+    pub seat: u8,
+    pub occupied: bool,
+    /// 位置標籤，使用規則細則 8.4.1 的唯一命名（UTG／LJ／BTN…）。
+    /// dead button／dead small blind 時該標籤不會出現在任何座位
+    pub position: Option<String>,
+    /// 底牌，`null` 表示依可見範圍遮蔽或該座無人
+    pub hole_cards: Option<[String; 2]>,
+    /// 該座底牌是否依現實規則實際亮出過
+    pub revealed: bool,
+    #[ts(type = "number")]
+    pub payout: u64,
+    #[ts(type = "number")]
+    pub refund: u64,
+}
+
+/// 一手牌的可視化資料。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
+#[serde(rename_all = "camelCase")]
+pub struct HandView {
+    #[ts(type = "number")]
+    pub hand_index: u64,
+    #[ts(type = "number")]
+    pub instance_index: u64,
+    pub seated: u8,
+    /// 按鈕**位置**。dead button 時該座位無人持有
+    pub button: u8,
+    pub dead_button: bool,
+    pub dead_small_blind: bool,
+    pub seats: Vec<SeatView>,
+    pub board: Vec<String>,
+    pub actions: Vec<ActionView>,
+    #[ts(type = "number")]
+    pub rake: u64,
+    /// 本手實際套用的底牌可見範圍，供 UI 顯示「重播已開啟全底牌」之類的提示
+    pub visibility: HoleCardVisibility,
+}
+
+fn card_text(card: Card) -> String {
+    card.to_string()
+}
+
+impl HandView {
+    /// 由儲存的紀錄組出可傳給 UI 的檢視。
+    ///
+    /// `positions` 來自引擎的位置解析；`visibility` 決定底牌遮蔽範圍。
+    #[must_use]
+    pub fn from_record(
+        record: &HandRecord,
+        positions: &Positions,
+        visibility: HoleCardVisibility,
+    ) -> Self {
+        let seats = record
+            .occupied
+            .iter()
+            .enumerate()
+            .map(|(seat, &occupied)| {
+                let revealed = record.revealed.get(seat).copied().unwrap_or(false);
+                // 遮蔽發生在這裡：未亮出且未開啟全揭露時，底牌根本不進入 DTO
+                let visible = matches!(visibility, HoleCardVisibility::All) || revealed;
+                let hole_cards = record
+                    .hole_cards
+                    .get(seat)
+                    .and_then(|c| *c)
+                    .filter(|_| visible)
+                    .map(|cards| [card_text(cards[0]), card_text(cards[1])]);
+
+                SeatView {
+                    seat: u8::try_from(seat).unwrap_or(u8::MAX),
+                    occupied,
+                    position: positions
+                        .labels
+                        .get(seat)
+                        .and_then(|l| *l)
+                        .map(|label| label.as_str().to_owned()),
+                    hole_cards,
+                    revealed,
+                    payout: record.payouts.get(seat).map_or(0, |c| c.units()),
+                    refund: record.refunds.get(seat).map_or(0, |c| c.units()),
+                }
+            })
+            .collect();
+
+        Self {
+            hand_index: record.hand_index,
+            instance_index: record.instance_index,
+            seated: u8::try_from(record.occupied.iter().filter(|&&o| o).count())
+                .unwrap_or(u8::MAX),
+            button: u8::try_from(positions.button).unwrap_or(u8::MAX),
+            dead_button: positions.dead_button,
+            dead_small_blind: positions.dead_small_blind,
+            seats,
+            board: record.board.iter().copied().map(card_text).collect(),
+            actions: record.actions.iter().map(ActionView::from).collect(),
+            rake: record.rake.units(),
+            visibility,
+        }
+    }
+}
+
+/// 逐手列表用的摘要（面板 G）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
+#[serde(rename_all = "camelCase")]
+pub struct HandSummaryView {
+    #[ts(type = "number")]
+    pub hand_index: u64,
+    #[ts(type = "number")]
+    pub instance_index: u64,
+    pub seated: u8,
+    /// 使用者座位在本手的淨損益，以最小籌碼單位計
+    #[ts(type = "number")]
+    pub hero_delta: i64,
+    pub board: Vec<String>,
+}
+
+/// run 層級的摘要。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
+#[serde(rename_all = "camelCase")]
+pub struct RunView {
+    #[ts(type = "number")]
+    pub run_id: i64,
+    #[ts(type = "number")]
+    pub hands_played: u64,
+    pub completed: bool,
+    pub players: u8,
+    pub hero_seat: u8,
+    /// master seed 是完整 u64 值域，可能超過 JS 的安全整數上限，
+    /// 因此以字串傳遞。它只供顯示與重現設定，不參與前端運算
+    #[ts(type = "string")]
+    #[serde(with = "seed_as_string")]
+    pub master_seed: u64,
+    pub rng_algorithm: String,
+    /// 桌次數。統計層以此判斷 block／cluster 是否足夠（核心規格 5.3）
+    #[ts(type = "number")]
+    pub instance_count: u64,
+}
+
+/// `master_seed` 以字串序列化。
+///
+/// u64 的上界超過 JavaScript 的 `Number.MAX_SAFE_INTEGER`，直接送數字會在
+/// 前端靜默失去精度，而 seed 一旦失真就無法重現同一個 run。
+mod seed_as_string {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(value: &u64, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&value.to_string())
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        text.parse().map_err(serde::de::Error::custom)
+    }
+}

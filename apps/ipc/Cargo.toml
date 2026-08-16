@@ -1,0 +1,17 @@
+[package]
+name = "poker-ipc"
+description = "UI 與引擎之間的型別化 IPC 契約（Rust structs 為單一來源）"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+poker-engine = { path = "../engine" }
+poker-storage = { path = "../storage" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ts-rs = "12"
+
+[lints]
+workspace = true

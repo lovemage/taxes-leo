@@ -1,0 +1,12 @@
+{
+  "name": "@taxes-leo/poker-types",
+  "version": "0.1.0",
+  "private": true,
+  "description": "由 Rust structs 產生的前端型別（單一來源，請勿手改）",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "generate": "cargo test -p poker-ipc export_bindings"
+  }
+}

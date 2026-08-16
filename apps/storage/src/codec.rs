@@ -15,7 +15,10 @@ use poker_engine::hand::{HandResult, Street};
 use poker_engine::session::PlayedHand;
 
 /// log 格式版本。任何編碼變更都必須遞增，並同步寫入 `RunManifest`。
-pub const LOG_FORMAT_VERSION: u16 = 1;
+///
+/// v2：新增 `revealed` 遮罩。重播時必須知道哪些底牌依現實規則實際亮出過，
+/// 否則 IPC 層無從判定可傳給 UI 的範圍（核心規格 2.4）。
+pub const LOG_FORMAT_VERSION: u16 = 2;
 
 const MAGIC: [u8; 2] = *b"9M";
 
@@ -39,6 +42,9 @@ pub struct HandRecord {
     pub occupied: Vec<bool>,
     pub big_blind_seat: u8,
     pub hole_cards: Vec<Option<[Card; 2]>>,
+    /// 依現實規則**實際亮出**的底牌。只有這些是公開資訊，
+    /// IPC 層據此決定可傳給 UI 的範圍（核心規格 2.4、規則細則 4.2）
+    pub revealed: Vec<bool>,
     pub board: Vec<Card>,
     pub actions: Vec<RecordedAction>,
     pub payouts: Vec<Chips>,
@@ -76,6 +82,7 @@ impl HandRecord {
             big_blind_seat: u8::try_from(played.positions.big_blind_seat)
                 .expect("座位索引必小於 256"),
             hole_cards: result.hole_cards.clone(),
+            revealed: result.revealed.clone(),
             board: result.board.clone(),
             actions,
             payouts: result.distribution.payouts.clone(),
@@ -151,6 +158,15 @@ pub fn encode(record: &HandRecord) -> Vec<u8> {
         }
     }
     out.extend_from_slice(&mask.to_le_bytes());
+
+    // 亮牌遮罩（v2）
+    let mut revealed_mask = 0u16;
+    for (seat, &revealed) in record.revealed.iter().enumerate() {
+        if revealed {
+            revealed_mask |= 1 << seat;
+        }
+    }
+    out.extend_from_slice(&revealed_mask.to_le_bytes());
     out.push(record.big_blind_seat);
 
     // 底牌：只寫在座者，順序即座位序
@@ -264,6 +280,8 @@ pub fn decode(bytes: &[u8]) -> Result<HandRecord, CodecError> {
     let seats = usize::from(r.u8()?);
     let mask = r.u16()?;
     let occupied: Vec<bool> = (0..seats).map(|s| mask & (1 << s) != 0).collect();
+    let revealed_mask = r.u16()?;
+    let revealed: Vec<bool> = (0..seats).map(|s| revealed_mask & (1 << s) != 0).collect();
     let big_blind_seat = r.u8()?;
 
     let mut hole_cards = vec![None; seats];
@@ -321,6 +339,7 @@ pub fn decode(bytes: &[u8]) -> Result<HandRecord, CodecError> {
         occupied,
         big_blind_seat,
         hole_cards,
+        revealed,
         board,
         actions,
         payouts,

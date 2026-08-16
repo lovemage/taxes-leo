@@ -155,6 +155,7 @@ fn 格式版本不符時拒絕解碼() {
         occupied: vec![true; 6],
         big_blind_seat: 2,
         hole_cards: vec![None; 6],
+        revealed: vec![false; 6],
         board: Vec::new(),
         actions: Vec::new(),
         payouts: vec![Chips::ZERO; 6],
