@@ -15,8 +15,10 @@ pub mod card;
 pub mod chips;
 pub mod eval;
 pub mod hand;
+pub mod position;
 pub mod pot;
 pub mod rng;
+pub mod session;
 pub mod table;
 
 pub use betting::{Action, BettingRound, LegalActions, RaiseRange, SeatState};
@@ -24,6 +26,10 @@ pub use card::{full_deck, Card, Rank, Suit};
 pub use chips::Chips;
 pub use eval::{evaluate, Category, HandRank};
 pub use hand::{play_hand, ActionProvider, HandResult, HandSetup, Street};
+pub use position::{PositionLabel, Positions};
 pub use pot::{Distribution, OddChipAward, PotLayer, RakeConfig};
 pub use rng::{Rng, RngDomain, RNG_VERSION};
+pub use session::{
+    run_session, InstanceEnd, PlayedHand, RunSummary, SessionConfig, TableInstance, MIN_PLAYERS,
+};
 pub use table::{AnteConfig, AnteMode, MuckPolicy, StraddleConfig, TableConfig};
