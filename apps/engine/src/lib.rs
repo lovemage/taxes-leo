@@ -11,9 +11,13 @@
 //! 規則層一律使用整數最小籌碼單位，浮點只出現在統計輸出。
 
 pub mod betting;
+pub mod card;
 pub mod chips;
+pub mod eval;
 pub mod pot;
 
 pub use betting::{Action, BettingRound, LegalActions, RaiseRange, SeatState};
+pub use card::{full_deck, Card, Rank, Suit};
 pub use chips::Chips;
+pub use eval::{evaluate, Category, HandRank};
 pub use pot::{Distribution, OddChipAward, PotLayer, RakeConfig};
