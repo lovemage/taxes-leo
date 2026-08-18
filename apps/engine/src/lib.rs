@@ -13,6 +13,7 @@
 pub mod betting;
 pub mod card;
 pub mod chips;
+pub mod equity;
 pub mod eval;
 pub mod hand;
 pub mod position;

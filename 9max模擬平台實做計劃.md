@@ -126,7 +126,7 @@
 | 牌面 SVG spike：52 張牌面＋牌背＋花色路徑 | 可用的 SVG 牌面元件 |
 | 引擎骨架 spike：最小規則循環 + 零和／籌碼守恆斷言（固定點） | 證明引擎路線可行 |
 | **資訊集隔離 spike**：完整 `GameState` → 每座 `DecisionView`；以替換隱藏牌測試 Bot 輸出不變 | 證明 Bot 無隱藏牌存取路徑 |
-| **多人 Equity spike**：6／9-max 代表節點比較 exact 與 deterministic sampling | 凍結 exact/sampling 門檻、sampling budget、誤差與 cache key |
+| **多人 Equity spike**：6／9-max 代表節點比較 exact 與 deterministic sampling | 凍結 exact/sampling 門檻、sampling budget、誤差與 cache key。<br>**初步實測（2026-08-16，開發機、單執行緒、release）**：Monte Carlo 單次呼叫 8 對手 × 1000 樣本為 p50 905 μs／p99 937 μs；8 對手 × 200 樣本為 p50 180 μs。以每手 3 次呼叫外推 100 萬手，1000 樣本約 0.8 小時、200 樣本約 0.2 小時，均遠低於 12 小時預算。精確枚舉已驗證：QQ vs AKo 全枚舉 1,712,304 runout、結果 56.6%，與公認值相符。**正式數值仍須依核心規格 7.1 在 258V／32GB 或更低規格筆電重測**，且上述外推未含規則層、log 寫入與統計聚合的耗時 |
 | **Equity 時間預算實測（新增，最高風險）**：在 258V 基準機上量測 postflop 多人節點的單次決策成本 | 證明批次模式每決策 **p50 ≤1 ms、p99 ≤5 ms**（核心規格 7.3 由 12 小時／100 萬手反推）；分別凍結**批次**與**互動**兩組 sampling budget |
 | **內容體積量化與產製管線（新增，關鍵路徑）**：精算 preflop baseline 的實際格數並決定產製方式 | 格數清單（桌型 × 位置 × bucket × 節點情境 × 169）＋ 產製方案（solver 批次產出／顧問抽查簽核／分批範圍）＋ 首批交付定義 |
 | **面板欄位級規格補齊**：A／C／E／G 四個面板 | 補入 [`UI面板詳細規格.md`](UI面板詳細規格.md)，與既有面板 B／D／F 同層級；M3 不得在缺欄位級規格下開工 |
