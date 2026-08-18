@@ -10,10 +10,12 @@
 pub mod decision;
 pub mod distribution;
 pub mod hand_class;
+pub mod preflop;
 
 pub use decision::{DecisionView, OpponentPublic, PublicAction, StackBucket};
 pub use distribution::{ActionDistribution, DistributionError, Myriad, FULL};
 pub use hand_class::HandClass;
+pub use preflop::{PreflopNode, PreflopScenario};
 
 /// 自身 range：169 類各自的到達權重（萬分比）。
 ///
