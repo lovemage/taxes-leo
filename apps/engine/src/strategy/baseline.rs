@@ -164,6 +164,44 @@ impl BaselineRules {
         }
     }
 
+    /// 取得某情境的寬度參數（校準工具用）。
+    #[must_use]
+    pub fn widths_of(&self, scenario: PreflopScenario) -> ScenarioWidths {
+        self.widths_for(scenario)
+    }
+
+    /// 取得某 bucket 的乘數（校準工具用）。
+    #[must_use]
+    pub fn bucket_multiplier_of(&self, bucket: StackBucket) -> Myriad {
+        self.bucket_multiplier[Self::bucket_index(bucket)]
+    }
+
+    /// 設定某情境最早位置的主動寬度（校準工具用）。
+    pub fn set_aggressive_earliest(&mut self, scenario: PreflopScenario, value: Myriad) {
+        self.widths_mut(scenario).aggressive_earliest = value;
+    }
+
+    /// 設定某情境最晚位置的主動寬度（校準工具用）。
+    pub fn set_aggressive_latest(&mut self, scenario: PreflopScenario, value: Myriad) {
+        self.widths_mut(scenario).aggressive_latest = value;
+    }
+
+    /// 設定某 bucket 的乘數（校準工具用）。
+    pub fn set_bucket_multiplier(&mut self, bucket: StackBucket, value: Myriad) {
+        self.bucket_multiplier[Self::bucket_index(bucket)] = value;
+    }
+
+    fn widths_mut(&mut self, scenario: PreflopScenario) -> &mut ScenarioWidths {
+        match scenario {
+            PreflopScenario::Unopened => &mut self.unopened,
+            PreflopScenario::VsLimp { .. } => &mut self.vs_limp,
+            PreflopScenario::VsOpen { .. } => &mut self.vs_open,
+            PreflopScenario::VsThreeBet { .. } => &mut self.vs_three_bet,
+            PreflopScenario::VsFourBet { .. } => &mut self.vs_four_bet,
+            PreflopScenario::VsSqueeze { .. } => &mut self.vs_squeeze,
+        }
+    }
+
     fn widths_for(&self, scenario: PreflopScenario) -> ScenarioWidths {
         match scenario {
             PreflopScenario::Unopened => self.unopened,
@@ -187,6 +225,33 @@ impl BaselineRules {
             StackBucket::UltraDeep => 7,
             StackBucket::Unbounded => 8,
         }
+    }
+}
+
+/// 節點的「預期對抗人數」，決定該用哪張 equity 排序表。
+///
+/// # 這個對應為什麼重要
+///
+/// 直覺上「9-max 開牌 = 對 8 個對手」，但那是錯的：**開牌時不會面對 8 手
+/// 隨機牌**，多數人會棄牌，實際對抗的是 1～2 手比隨機強的牌。
+///
+/// 用 8 人 equity 排序開牌範圍會產生明顯錯誤的結果——同花牌因多人做成
+/// 同花的機會而被高估，中小對子因多人底池被稀釋而被低估，於是出現
+/// 「UTG 開 K9s 卻棄 88」這種任何牌手都會立刻指出的排序。
+///
+/// 因此開牌與面對加注一律以少人數排序；只有面對多名跛入者這種確實會
+/// 多人看牌的情境才用較高的對手數。
+#[must_use]
+pub fn expected_opponents(node: &PreflopNode) -> usize {
+    match node.scenario {
+        // 開牌：預期被 1～2 人跟進
+        PreflopScenario::Unopened => 2,
+        // 面對跛入：跛入者多半會看牌，人數接近實際
+        PreflopScenario::VsLimp { limpers } => usize::from(limpers).clamp(1, 3) + 1,
+        // 面對加注：多為單挑或三人底池
+        PreflopScenario::VsOpen { .. } | PreflopScenario::VsSqueeze { .. } => 2,
+        // 3-bet／4-bet 後幾乎必為單挑
+        PreflopScenario::VsThreeBet { .. } | PreflopScenario::VsFourBet { .. } => 1,
     }
 }
 
@@ -411,6 +476,56 @@ mod tests {
         assert!(
             width(PositionLabel::Utg) < width(PositionLabel::Co),
             "非盲注位仍應維持位置越晚越寬"
+        );
+    }
+
+    /// 回歸測試：開牌情境的排序表必須用少人數。
+    ///
+    /// 初版把「9-max 開牌」對應成「對 8 個隨機對手」，導致同花牌被多人
+    /// equity 高估、中小對子被稀釋低估，產生「UTG 開 K9s 卻棄 88」這種
+    /// 任何牌手都會立刻指出的排序。開牌時多數人會棄牌，實際對抗的是
+    /// 1～2 手比隨機強的牌，因此排序必須用少人數。
+    #[test]
+    fn 開牌情境以少人數排序而非全桌人數() {
+        for seated in 6u8..=9 {
+            let node = PreflopNode {
+                seated,
+                hero: PositionLabel::Utg,
+                bucket: StackBucket::VeryDeep,
+                scenario: PreflopScenario::Unopened,
+            };
+            let opponents = expected_opponents(&node);
+            assert!(
+                opponents <= 2,
+                "{seated}-max 開牌的預期對抗人數為 {opponents}，不應接近全桌人數"
+            );
+        }
+    }
+
+    /// 開牌範圍中，中等對子不應被弱同花牌超越。
+    ///
+    /// 這是上一則錯誤的直接症狀，用實際產生結果驗證而非只驗參數。
+    #[test]
+    fn 開牌範圍中中等對子不弱於弱同花牌() {
+        let rules = BaselineRules::engineering_placeholder();
+        let ranking = EquityRanking::compute(2, 3_000);
+        let node = node(PositionLabel::Utg, PreflopScenario::Unopened, StackBucket::VeryDeep);
+
+        let aggressive = |class: HandClass| -> Myriad {
+            distribution_for(&node, class, &rules, &ranking)
+                .expect("產生")
+                .entries()
+                .iter()
+                .filter(|(a, _)| matches!(a, Action::RaiseTo(_) | Action::AllIn))
+                .map(|(_, w)| *w)
+                .sum()
+        };
+
+        let eights = class_of(Rank::Eight, Rank::Eight, false);
+        let king_nine_suited = class_of(Rank::King, Rank::Nine, true);
+        assert!(
+            aggressive(eights) >= aggressive(king_nine_suited),
+            "88 的開牌頻率不應低於 K9s"
         );
     }
 

@@ -7,7 +7,7 @@ use std::time::Instant;
 
 use poker_engine::betting::Action;
 use poker_engine::position::PositionLabel;
-use poker_engine::strategy::baseline::{distribution_for, BaselineRules};
+use poker_engine::strategy::baseline::{distribution_for, expected_opponents, BaselineRules};
 use poker_engine::strategy::decision::StackBucket;
 use poker_engine::strategy::distribution::FULL;
 use poker_engine::strategy::hand_class::HandClass;
@@ -139,15 +139,7 @@ fn pick_ranking<'a>(
     rankings: &'a BTreeMap<usize, EquityRanking>,
     node: &PreflopNode,
 ) -> &'a EquityRanking {
-    // 以情境近似「預期對抗人數」：面對加注多為單挑或三人，開牌則面對全桌
-    let opponents = match node.scenario {
-        PreflopScenario::Unopened => usize::from(node.seated).saturating_sub(1).min(8),
-        PreflopScenario::VsLimp { limpers } => usize::from(limpers).max(1) + 1,
-        PreflopScenario::VsOpen { .. } => 2,
-        PreflopScenario::VsThreeBet { .. }
-        | PreflopScenario::VsFourBet { .. }
-        | PreflopScenario::VsSqueeze { .. } => 1,
-    };
+    let opponents = expected_opponents(node);
     rankings
         .range(..=opponents)
         .next_back()

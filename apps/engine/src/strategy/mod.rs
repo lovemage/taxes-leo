@@ -12,6 +12,7 @@ pub mod distribution;
 pub mod hand_class;
 pub mod preflop;
 pub mod baseline;
+pub mod calibration;
 pub mod ranking;
 
 pub use decision::{DecisionView, OpponentPublic, PublicAction, StackBucket};
@@ -19,6 +20,7 @@ pub use distribution::{ActionDistribution, DistributionError, Myriad, FULL};
 pub use hand_class::HandClass;
 pub use preflop::{PreflopNode, PreflopScenario};
 pub use baseline::{BaselineRules, ScenarioWidths};
+pub use calibration::{Attribution, MatrixCell, ParameterRef, RangeMatrix, Verdict};
 pub use ranking::{ClassEquity, EquityRanking};
 
 /// 自身 range：169 類各自的到達權重（萬分比）。
