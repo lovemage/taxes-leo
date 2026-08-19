@@ -25,6 +25,9 @@ pub enum RngDomain {
     StrategyMix = 0x2000,
     /// Monte Carlo Equity
     Equity = 0x3000,
+    /// 統計重抽（bootstrap）。與其他用途分離，讓重抽次數的調整
+    /// 不會影響牌局與策略取樣的結果
+    Stats = 0x4000,
 }
 
 /// splitmix64：用於由 (master seed, hand index, domain) 派生 stream 種子。
@@ -144,10 +147,18 @@ mod tests {
         let mut deal = Rng::derive(42, 7, RngDomain::Deal);
         let mut mix = Rng::derive(42, 7, RngDomain::StrategyMix);
         let mut equity = Rng::derive(42, 7, RngDomain::Equity);
-        let (a, b, c) = (deal.next_u64(), mix.next_u64(), equity.next_u64());
+        let mut stats = Rng::derive(42, 7, RngDomain::Stats);
+        let (a, b, c, d) = (
+            deal.next_u64(),
+            mix.next_u64(),
+            equity.next_u64(),
+            stats.next_u64(),
+        );
         assert_ne!(a, b, "發牌與策略取樣不得共用 stream");
         assert_ne!(b, c, "策略取樣與 Equity 不得共用 stream");
         assert_ne!(a, c, "發牌與 Equity 不得共用 stream");
+        assert_ne!(c, d, "Equity 與統計重抽不得共用 stream");
+        assert_ne!(a, d, "發牌與統計重抽不得共用 stream");
     }
 
     #[test]

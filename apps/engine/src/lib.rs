@@ -21,6 +21,7 @@ pub mod position;
 pub mod pot;
 pub mod rng;
 pub mod session;
+pub mod stats;
 pub mod strategy;
 pub mod table;
 
