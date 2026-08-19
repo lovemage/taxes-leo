@@ -11,6 +11,7 @@
 //! 規則層一律使用整數最小籌碼單位，浮點只出現在統計輸出。
 
 pub mod betting;
+pub mod bot;
 pub mod card;
 pub mod chips;
 pub mod equity;
