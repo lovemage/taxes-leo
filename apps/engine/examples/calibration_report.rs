@@ -14,25 +14,26 @@ use poker_engine::strategy::baseline::{expected_opponents, BaselineRules};
 use poker_engine::strategy::calibration::{MatrixCell, RangeMatrix};
 use poker_engine::strategy::decision::StackBucket;
 use poker_engine::strategy::distribution::FULL;
-use poker_engine::strategy::preflop::{PreflopNode, PreflopScenario};
+use poker_engine::strategy::preflop::{positions_for, PreflopNode, PreflopScenario};
 use poker_engine::strategy::playability::PlayabilityCategory;
 use poker_engine::strategy::ranking::EquityRanking;
 
-/// 報告涵蓋的節點。全部 4,302 個節點的矩陣沒有人看得完，
-/// 因此挑選最具代表性、也最影響整體結果的子集。
-fn report_nodes() -> Vec<(&'static str, PreflopNode)> {
+/// 報告涵蓋的節點。全部 4,302 個沒有人調得完，挑最具代表性的。
+///
+/// 開牌範圍**由 `positions_for` 產生而非手寫清單**。初版手寫時漏掉了
+/// UTG+1 與 UTG+2（由牌手顧問於 2026-08-19 指出），改為依桌型展開後，
+/// 結構上不可能再漏位置。
+fn report_nodes() -> Vec<(String, PreflopNode)> {
     let deep = StackBucket::VeryDeep;
-    let mut out: Vec<(&'static str, PreflopNode)> = Vec::new();
+    let mut out: Vec<(String, PreflopNode)> = Vec::new();
 
-    for (label, hero) in [
-        ("UTG 開牌", PositionLabel::Utg),
-        ("LJ 開牌", PositionLabel::Lj),
-        ("HJ 開牌", PositionLabel::Hj),
-        ("CO 開牌", PositionLabel::Co),
-        ("BTN 開牌", PositionLabel::Btn),
-        ("SB 開牌", PositionLabel::Sb),
-        ("BB 主動", PositionLabel::Bb),
-    ] {
+    // 9-max 的全部 9 個位置，順序即由早到晚
+    for hero in positions_for(9) {
+        let label = if matches!(hero, PositionLabel::Bb) {
+            format!("{} 主動", hero.as_str())
+        } else {
+            format!("{} 開牌", hero.as_str())
+        };
         out.push((
             label,
             PreflopNode {
@@ -45,7 +46,7 @@ fn report_nodes() -> Vec<(&'static str, PreflopNode)> {
     }
 
     out.push((
-        "BTN 面對 CO 開牌",
+        "BTN 面對 CO 開牌".to_owned(),
         PreflopNode {
             seated: 9,
             hero: PositionLabel::Btn,
@@ -56,7 +57,7 @@ fn report_nodes() -> Vec<(&'static str, PreflopNode)> {
         },
     ));
     out.push((
-        "BB 面對 BTN 開牌",
+        "BB 面對 BTN 開牌".to_owned(),
         PreflopNode {
             seated: 9,
             hero: PositionLabel::Bb,
@@ -67,18 +68,7 @@ fn report_nodes() -> Vec<(&'static str, PreflopNode)> {
         },
     ));
     out.push((
-        "CO 開牌後面對 BTN 3-bet",
-        PreflopNode {
-            seated: 9,
-            hero: PositionLabel::Co,
-            bucket: deep,
-            scenario: PreflopScenario::VsThreeBet {
-                by: PositionLabel::Btn,
-            },
-        },
-    ));
-    out.push((
-        "BTN 開牌（短碼 [15,25)）",
+        "BTN 開牌（短碼 15-25BB）".to_owned(),
         PreflopNode {
             seated: 9,
             hero: PositionLabel::Btn,
@@ -87,7 +77,7 @@ fn report_nodes() -> Vec<(&'static str, PreflopNode)> {
         },
     ));
     out.push((
-        "BTN 開牌（6-max）",
+        "BTN 開牌（6-max）".to_owned(),
         PreflopNode {
             seated: 6,
             hero: PositionLabel::Btn,
@@ -172,7 +162,7 @@ fn main() {
             &ranking_one
         };
         let matrix = RangeMatrix::build(node, &rules, ranking);
-        body.push_str(&matrix_html(title, &matrix));
+        body.push_str(&matrix_html(&title, &matrix));
     }
 
     let widths = rules.widths_of(PreflopScenario::Unopened);

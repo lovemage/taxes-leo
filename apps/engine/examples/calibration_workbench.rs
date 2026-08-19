@@ -31,21 +31,23 @@ use poker_engine::strategy::preflop::{positions_for, PreflopNode, PreflopScenari
 use poker_engine::strategy::ranking::{EquityRanking, CONTENT_GRADE_SAMPLES};
 
 /// 工作台涵蓋的節點。全部 4,302 個沒有人調得完，挑最具代表性的。
-fn workbench_nodes() -> Vec<(&'static str, PreflopNode)> {
+///
+/// 開牌範圍**由 `positions_for` 產生而非手寫清單**。初版手寫時漏掉了
+/// UTG+1 與 UTG+2（由牌手顧問於 2026-08-19 指出），改為依桌型展開後，
+/// 結構上不可能再漏位置。
+fn workbench_nodes() -> Vec<(String, PreflopNode)> {
     let deep = StackBucket::VeryDeep;
-    let mut out: Vec<(&'static str, PreflopNode)> = Vec::new();
+    let mut out: Vec<(String, PreflopNode)> = Vec::new();
 
-    for (title, hero) in [
-        ("UTG 開牌", PositionLabel::Utg),
-        ("LJ 開牌", PositionLabel::Lj),
-        ("HJ 開牌", PositionLabel::Hj),
-        ("CO 開牌", PositionLabel::Co),
-        ("BTN 開牌", PositionLabel::Btn),
-        ("SB 開牌", PositionLabel::Sb),
-        ("BB 主動", PositionLabel::Bb),
-    ] {
+    // 9-max 的全部 9 個位置，順序即由早到晚
+    for hero in positions_for(9) {
+        let label = if matches!(hero, PositionLabel::Bb) {
+            format!("{} 主動", hero.as_str())
+        } else {
+            format!("{} 開牌", hero.as_str())
+        };
         out.push((
-            title,
+            label,
             PreflopNode {
                 seated: 9,
                 hero,
@@ -56,7 +58,7 @@ fn workbench_nodes() -> Vec<(&'static str, PreflopNode)> {
     }
 
     out.push((
-        "BTN 面對 CO 開牌",
+        "BTN 面對 CO 開牌".to_owned(),
         PreflopNode {
             seated: 9,
             hero: PositionLabel::Btn,
@@ -67,7 +69,7 @@ fn workbench_nodes() -> Vec<(&'static str, PreflopNode)> {
         },
     ));
     out.push((
-        "BB 面對 BTN 開牌",
+        "BB 面對 BTN 開牌".to_owned(),
         PreflopNode {
             seated: 9,
             hero: PositionLabel::Bb,
@@ -78,7 +80,7 @@ fn workbench_nodes() -> Vec<(&'static str, PreflopNode)> {
         },
     ));
     out.push((
-        "BTN 開牌（短碼 15-25BB）",
+        "BTN 開牌（短碼 15-25BB）".to_owned(),
         PreflopNode {
             seated: 9,
             hero: PositionLabel::Btn,
@@ -87,7 +89,7 @@ fn workbench_nodes() -> Vec<(&'static str, PreflopNode)> {
         },
     ));
     out.push((
-        "BTN 開牌（6-max）",
+        "BTN 開牌（6-max）".to_owned(),
         PreflopNode {
             seated: 6,
             hero: PositionLabel::Btn,
