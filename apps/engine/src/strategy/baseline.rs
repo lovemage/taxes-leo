@@ -199,6 +199,24 @@ impl BaselineRules {
         self.bucket_multiplier[Self::bucket_index(bucket)] = value;
     }
 
+    /// 全部 9 檔 bucket 乘數（工作台匯出用）。
+    #[must_use]
+    pub const fn bucket_multipliers(&self) -> &[Myriad; 9] {
+        &self.bucket_multiplier
+    }
+
+    /// bucket 在乘數陣列中的索引（工作台匯出用）。
+    #[must_use]
+    pub const fn bucket_index_of(bucket: StackBucket) -> usize {
+        Self::bucket_index(bucket)
+    }
+
+    /// 該 bucket 是否採推入或棄牌（工作台匯出用）。
+    #[must_use]
+    pub fn is_push_fold(&self, bucket: StackBucket) -> bool {
+        bucket <= self.push_fold_below
+    }
+
     fn widths_mut(&mut self, scenario: PreflopScenario) -> &mut ScenarioWidths {
         match scenario {
             PreflopScenario::Unopened => &mut self.unopened,
@@ -221,7 +239,7 @@ impl BaselineRules {
         }
     }
 
-    fn bucket_index(bucket: StackBucket) -> usize {
+    const fn bucket_index(bucket: StackBucket) -> usize {
         match bucket {
             StackBucket::VeryShort => 0,
             StackBucket::Short => 1,

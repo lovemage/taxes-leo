@@ -70,7 +70,6 @@ fn main() {
     println!("抽樣：9-max／[160,240) bucket／unopened 的開牌範圍寬度");
     println!("{:>6} {:>12} {:>10}", "位置", "開牌頻率合計", "約略寬度");
     println!("{}", "-".repeat(32));
-    let ranking = &rankings[&5];
     for hero in [
         PositionLabel::Utg,
         PositionLabel::Lj,
@@ -85,6 +84,8 @@ fn main() {
             bucket: StackBucket::VeryDeep,
             scenario: PreflopScenario::Unopened,
         };
+        // 必須與展開全表時用同一張排序表，否則抽樣顯示的寬度不是真實值
+        let ranking = pick_ranking(&rankings, &node);
         let mut total_raise = 0u64;
         for class in HandClass::all() {
             let d = distribution_for(&node, class, &rules, ranking).expect("產生");
@@ -109,6 +110,7 @@ fn main() {
         bucket: StackBucket::VeryDeep,
         scenario: PreflopScenario::Unopened,
     };
+    let ranking = pick_ranking(&rankings, &node);
     let mut mixed: Vec<(String, u32)> = Vec::new();
     for class in HandClass::all() {
         let d = distribution_for(&node, class, &rules, ranking).expect("產生");

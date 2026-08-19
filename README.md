@@ -61,6 +61,38 @@ pnpm --filter @taxes-leo/ui dev
 > 的傳輸層實作。Tauri 在 Linux 需要 webkit2gtk，開發機沒有時仍可用
 > 這條路徑完整開發與測試。
 
+## 牌手顧問校準流程
+
+顧問**不需要安裝任何開發工具**，用瀏覽器開啟單一 HTML 檔即可。
+
+```bash
+# 產生互動工作台（可拉滑桿、即時預覽、匯出參數）
+cargo run --release --example calibration_workbench
+# → target/calibration-workbench.html
+
+# 產生唯讀報告（只看範圍，不可調整）
+cargo run --release --example calibration_report
+# → target/calibration-report.html
+
+# 顧問回傳 JSON 後，用歸因工具檢視單格意見的連帶影響
+cargo run --release --example attribute_feedback
+```
+
+**工作台的使用方式**：把 HTML 寄給顧問 → 他在本機瀏覽器開啟 → 拉左側參數滑桿，
+右側 13×13 矩陣即時重算 → 按「匯出參數」下載 JSON → 寄回。全程不需要伺服器。
+
+**兩道防線**：
+
+1. **漂移自我校驗**。工作台的預覽由 JS 重算，可能與 Rust 引擎漂移。因此匯出時由
+   Rust 算好全部 1,859 個樣本（11 個節點 × 169 格）內嵌進頁面，JS 載入時用自己的
+   實作重算並逐格比對；不一致即在頁面頂端顯示紅色警告。漂移會被當場抓到，
+   而不是靜默誤導顧問。
+2. **回讀時重新驗證**。`parse_workbench_export` 與 `apply_import` 不信任前端擋過的
+   結果，逐項檢查範圍，且**越界時整批拒絕**——部分套用會產生一組沒有人簽核過的
+   混合設定。回讀後 `consultant_approved` 仍為 `false`：調過參數不等於完成簽核。
+
+> 工作台只負責預覽，**正式的 727,038 格全表一律由 Rust 引擎展開**。
+
 ## 目前進度
 
 `cargo test --workspace` 全綠，共 113 個測試。

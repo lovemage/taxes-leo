@@ -455,3 +455,210 @@ mod tests {
         }
     }
 }
+
+// ── 顧問調整結果的回讀 ──────────────────────────────────────────────────
+
+/// 由校準工作台匯出的 JSON 還原規則集。
+///
+/// 工作台只負責預覽，**正式的 727,038 格全表一律由引擎展開**，
+/// 因此回讀後必須重新驗證每個值是否在合法範圍內——不能假設前端已擋過。
+///
+/// 刻意手寫解析而不引入 JSON crate：引擎維持零外部相依，而工作台匯出的
+/// 格式是我們自己產生的、結構固定的扁平物件，手寫解析的成本低於引入相依。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportedRules {
+    pub version: String,
+    pub values: Vec<(String, i64)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ImportError {
+    MissingField(&'static str),
+    BadNumber(String),
+    OutOfRange { field: String, value: i64 },
+}
+
+/// 從工作台匯出的 JSON 取出「路徑 → 數值」清單。
+///
+/// # Errors
+/// 缺少版本欄位或數值無法解析時回傳錯誤。
+pub fn parse_workbench_export(json: &str) -> Result<ImportedRules, ImportError> {
+    let version = extract_string(json, "version").ok_or(ImportError::MissingField("version"))?;
+
+    let mut values = Vec::new();
+    for key in WORKBENCH_FIELDS {
+        if let Some(value) = extract_number(json, key) {
+            values.push(((*key).to_owned(), value));
+        }
+    }
+    if values.is_empty() {
+        return Err(ImportError::MissingField("找不到任何參數欄位"));
+    }
+    Ok(ImportedRules { version, values })
+}
+
+/// 工作台可調整的欄位。回讀時只接受這些鍵，
+/// 對應核心規格 4.3「不得直接注入未登錄參數」的精神。
+pub const WORKBENCH_FIELDS: &[&str] = &[
+    "sbAggressive",
+    "bbAggressive",
+    "pocketPair",
+    "suitedAce",
+    "suitedConnector",
+    "suitedOneGap",
+    "suitedTwoGap",
+    "suitedWideGap",
+    "offsuitBroadway",
+    "offsuitOther",
+];
+
+/// 套用回讀的值到規則集，逐項驗證範圍。
+///
+/// # Errors
+/// 任一值超出合法範圍時回傳該欄位與值，**整批不套用**——
+/// 部分套用會產生一組沒有人簽核過的混合設定。
+pub fn apply_import(
+    rules: &BaselineRules,
+    imported: &ImportedRules,
+) -> Result<BaselineRules, ImportError> {
+    use crate::strategy::playability::MAX_SHIFT;
+
+    // 先全部驗證再套用
+    for (field, value) in &imported.values {
+        let ok = match field.as_str() {
+            "sbAggressive" | "bbAggressive" => (0..=i64::from(FULL)).contains(value),
+            _ => value.abs() <= i64::from(MAX_SHIFT),
+        };
+        if !ok {
+            return Err(ImportError::OutOfRange {
+                field: field.clone(),
+                value: *value,
+            });
+        }
+    }
+
+    let mut out = rules.clone();
+    for (field, value) in &imported.values {
+        let narrow = i32::try_from(*value).unwrap_or(0);
+        let myriad = Myriad::try_from(*value).unwrap_or(0);
+        match field.as_str() {
+            "sbAggressive" => out.sb_aggressive = myriad,
+            "bbAggressive" => out.bb_aggressive = myriad,
+            "pocketPair" => out.playability.pocket_pair = narrow,
+            "suitedAce" => out.playability.suited_ace = narrow,
+            "suitedConnector" => out.playability.suited_connector = narrow,
+            "suitedOneGap" => out.playability.suited_one_gap = narrow,
+            "suitedTwoGap" => out.playability.suited_two_gap = narrow,
+            "suitedWideGap" => out.playability.suited_wide_gap = narrow,
+            "offsuitBroadway" => out.playability.offsuit_broadway = narrow,
+            "offsuitOther" => out.playability.offsuit_other = narrow,
+            _ => {}
+        }
+    }
+    // 回讀的內容仍未簽核，除非另行標記
+    out.consultant_approved = false;
+    out.version = format!("{}+consultant", imported.version);
+    Ok(out)
+}
+
+fn extract_string(json: &str, key: &str) -> Option<String> {
+    let needle = format!("\"{key}\"");
+    let start = json.find(&needle)? + needle.len();
+    let rest = &json[start..];
+    let colon = rest.find(':')? + 1;
+    let rest = &rest[colon..];
+    let open = rest.find('"')? + 1;
+    let rest = &rest[open..];
+    let close = rest.find('"')?;
+    Some(rest[..close].to_owned())
+}
+
+fn extract_number(json: &str, key: &str) -> Option<i64> {
+    let needle = format!("\"{key}\"");
+    let start = json.find(&needle)? + needle.len();
+    let rest = &json[start..];
+    let colon = rest.find(':')? + 1;
+    let rest = rest[colon..].trim_start();
+    let end = rest
+        .find(|c: char| !c.is_ascii_digit() && c != '-')
+        .unwrap_or(rest.len());
+    rest[..end].parse().ok()
+}
+
+#[cfg(test)]
+mod import_tests {
+    use super::*;
+
+    const SAMPLE: &str = r#"{
+      "version": "placeholder-v0",
+      "sbAggressive": 3600,
+      "bbAggressive": 2200,
+      "playability": {
+        "pocketPair": 700,
+        "suitedAce": 300,
+        "suitedConnector": 900,
+        "suitedOneGap": 400,
+        "suitedTwoGap": 150,
+        "suitedWideGap": -700,
+        "offsuitBroadway": -200,
+        "offsuitOther": -500
+      }
+    }"#;
+
+    #[test]
+    fn 可解析工作台匯出的格式() {
+        let imported = parse_workbench_export(SAMPLE).expect("解析");
+        assert_eq!(imported.version, "placeholder-v0");
+        assert_eq!(imported.values.len(), WORKBENCH_FIELDS.len());
+        assert!(imported
+            .values
+            .iter()
+            .any(|(k, v)| k == "suitedConnector" && *v == 900));
+        assert!(imported
+            .values
+            .iter()
+            .any(|(k, v)| k == "suitedWideGap" && *v == -700));
+    }
+
+    #[test]
+    fn 套用後的規則反映顧問調整() {
+        let base = BaselineRules::engineering_placeholder();
+        let imported = parse_workbench_export(SAMPLE).expect("解析");
+        let applied = apply_import(&base, &imported).expect("套用");
+
+        assert_eq!(applied.playability.suited_connector, 900);
+        assert_eq!(applied.playability.suited_wide_gap, -700);
+        assert_eq!(applied.sb_aggressive, 3_600);
+    }
+
+    #[test]
+    fn 回讀的內容仍標為未簽核() {
+        let base = BaselineRules::engineering_placeholder();
+        let imported = parse_workbench_export(SAMPLE).expect("解析");
+        let applied = apply_import(&base, &imported).expect("套用");
+        assert!(
+            !applied.consultant_approved,
+            "顧問調過參數不等於已完成簽核，簽核是另一個明確動作"
+        );
+        assert!(applied.version.contains("consultant"), "版本須可辨識來源");
+    }
+
+    #[test]
+    fn 越界值整批拒絕而非部分套用() {
+        let bad = SAMPLE.replace("\"suitedConnector\": 900", "\"suitedConnector\": 9900");
+        let imported = parse_workbench_export(&bad).expect("解析");
+        let base = BaselineRules::engineering_placeholder();
+        assert!(
+            matches!(
+                apply_import(&base, &imported),
+                Err(ImportError::OutOfRange { .. })
+            ),
+            "超出上限必須整批拒絕，部分套用會產生沒有人簽核過的混合設定"
+        );
+    }
+
+    #[test]
+    fn 缺少版本欄位時拒絕() {
+        assert!(parse_workbench_export(r#"{"sbAggressive":100}"#).is_err());
+    }
+}
