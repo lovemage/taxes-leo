@@ -51,6 +51,31 @@ impl HandClass {
         self.suited
     }
 
+    /// 兩張牌之間的間隔。相連為 0（AK、87），一洞為 1（AQ、86）。
+    /// 對子恆為 0。
+    #[must_use]
+    pub const fn gap(self) -> u8 {
+        let high = self.high.value();
+        let low = self.low.value();
+        if high <= low {
+            0
+        } else {
+            high - low - 1
+        }
+    }
+
+    /// 是否為 broadway（兩張皆 T 以上）。
+    #[must_use]
+    pub const fn is_broadway(self) -> bool {
+        self.low.value() >= 10
+    }
+
+    /// 最高張是否為 A。
+    #[must_use]
+    pub const fn has_ace(self) -> bool {
+        matches!(self.high.value(), 14)
+    }
+
     /// 13×13 網格座標 `(row, col)`。
     ///
     /// 列與欄皆由 A 到 2。同花在上三角（col > row），非同花在下三角。
@@ -183,6 +208,31 @@ mod tests {
             }
         }
         assert_eq!(combos, 1326, "C(52,2) = 1326");
+    }
+
+    #[test]
+    fn 間隔計算正確() {
+        assert_eq!(class_of_pair(Rank::Ace).gap(), 0, "對子間隔為 0");
+        assert_eq!(class_of_two(Rank::Ace, Rank::King).gap(), 0, "AK 相連");
+        assert_eq!(class_of_two(Rank::Ace, Rank::Queen).gap(), 1, "AQ 一洞");
+        assert_eq!(class_of_two(Rank::Eight, Rank::Seven).gap(), 0, "87 相連");
+        assert_eq!(class_of_two(Rank::King, Rank::Two).gap(), 10, "K2 相隔甚遠");
+    }
+
+    #[test]
+    fn broadway_與_ace_判定正確() {
+        assert!(class_of_two(Rank::King, Rank::Ten).is_broadway());
+        assert!(!class_of_two(Rank::King, Rank::Nine).is_broadway());
+        assert!(class_of_two(Rank::Ace, Rank::Two).has_ace());
+        assert!(!class_of_two(Rank::King, Rank::Queen).has_ace());
+    }
+
+    fn class_of_pair(rank: Rank) -> HandClass {
+        HandClass::from_cards(Card::new(rank, Suit::Spades), Card::new(rank, Suit::Hearts))
+    }
+
+    fn class_of_two(high: Rank, low: Rank) -> HandClass {
+        HandClass::from_cards(Card::new(high, Suit::Spades), Card::new(low, Suit::Hearts))
     }
 
     #[test]

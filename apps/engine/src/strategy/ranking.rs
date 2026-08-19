@@ -17,6 +17,21 @@ use crate::strategy::hand_class::HandClass;
 /// 因此視為內容版本的一部分。
 pub const RANKING_SEED: u64 = 0x9E37_79B9;
 
+/// 產製正式內容所需的最低樣本數。
+///
+/// # 為什麼有下限
+///
+/// 169 類的 equity 分佈很密集，相鄰類別常只差 1～2 個百分位。樣本不足時
+/// Monte Carlo 誤差會超過類別間的真實差距，排序因此不穩定。
+///
+/// 實測：3,000 樣本下 `T7s` 與 `K2s` 的百分位各偏約 3.5 點，合計 7 點的
+/// 擺動**超過可玩性調整的幅度**，導致調整失效、兩者排序翻轉；
+/// 20,000 樣本則穩定。
+///
+/// 低於此值的排序表只可用於快速測試，**不得用於產製要交付的內容**，
+/// 由 [`EquityRanking::is_content_grade`] 標示。
+pub const CONTENT_GRADE_SAMPLES: u64 = 20_000;
+
 /// 一個手牌類別的 equity 量測結果。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ClassEquity {
@@ -88,6 +103,15 @@ impl EquityRanking {
             by_class,
             order,
         }
+    }
+
+    /// 樣本數是否足以產製正式內容（見 [`CONTENT_GRADE_SAMPLES`]）。
+    ///
+    /// 比照 `EquityMode` 的作法：把「這份資料夠不夠格」隨資料一起傳遞，
+    /// 呼叫端無法遺失這個脈絡。
+    #[must_use]
+    pub const fn is_content_grade(&self) -> bool {
+        self.samples >= CONTENT_GRADE_SAMPLES
     }
 
     #[must_use]
@@ -164,6 +188,14 @@ mod tests {
         ranks.sort_unstable();
         ranks.dedup();
         assert_eq!(ranks.len(), 169, "每個類別必須有唯一排名");
+    }
+
+    #[test]
+    fn 低樣本排序表不得標為內容等級() {
+        assert!(
+            !EquityRanking::compute(1, 400).is_content_grade(),
+            "測試用的低樣本排序表必須被標示為不可用於產製內容"
+        );
     }
 
     #[test]

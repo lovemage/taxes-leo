@@ -16,8 +16,9 @@
 //!
 //! # 已知的簡化（顧問校準時的優先修正對象）
 //!
-//! - **以 equity 排序代替可玩性**：raw equity 低估同花連牌的翻後可玩性、
-//!   低估 A5s 這類有阻斷與堅果同花價值的牌、也低估 AKo 的支配優勢。
+//! - **可玩性以八個類別偏移近似**：`playability` 模組修正了 raw equity 無法
+//!   表達的翻後價值差異，但只分七類；同一類內（例如 87s 與 32s 同為同花連牌）
+//!   仍共用同一偏移，未依牌面高低再分。
 //! - **每情境單一加注尺度**：核心規格 4.1 的模型是 `action × size`，
 //!   這裡每個情境只給一個尺度，尺度混合列為後續。
 //! - **不含對手位置的細緻差異**：節點已依「面對誰」區分，但規則目前只用
@@ -32,6 +33,7 @@ use crate::strategy::decision::StackBucket;
 use crate::strategy::distribution::{ActionDistribution, DistributionError, Myriad, FULL};
 use crate::strategy::hand_class::HandClass;
 use crate::position::PositionLabel;
+use crate::strategy::playability::PlayabilityAdjustments;
 use crate::strategy::preflop::{positions_for, PreflopNode, PreflopScenario};
 use crate::strategy::ranking::EquityRanking;
 
@@ -78,6 +80,10 @@ pub struct BaselineRules {
     /// 開牌範圍，與現實相反。因此另立參數。
     pub sb_aggressive: Myriad,
     pub bb_aggressive: Myriad,
+
+    /// 可玩性調整：修正 raw equity 排序無法表達的翻後價值差異。
+    /// 七個具名偏移，是顧問的首要調整對象（見 `playability` 模組）
+    pub playability: PlayabilityAdjustments,
 
     /// 各情境的加注尺度，以 BB 的百分之一表示
     pub open_size_centi_bb: u32,
@@ -157,6 +163,8 @@ impl BaselineRules {
             // SB 略窄於 BTN；BB 在無人開牌時本就可過牌，主動範圍更窄
             sb_aggressive: 3_800,
             bb_aggressive: 2_000,
+
+            playability: PlayabilityAdjustments::engineering_placeholder(),
 
             open_size_centi_bb: 250,
             three_bet_size_centi_bb: 900,
@@ -295,7 +303,10 @@ pub fn distribution_for(
     let aggressive_width = Myriad::try_from(clamped).unwrap_or(FULL);
     let call_width = aggressive_width.saturating_add(widths.call_extra).min(FULL);
 
-    let percentile = Myriad::try_from(ranking.percentile_myriad(class)).unwrap_or(FULL);
+    // 以可玩性調整後的百分位判定，而非 raw equity 排序。
+    // 這讓「同花連牌比弱同花高張更值得開」得以表達，不必逐格覆寫
+    let base_percentile = Myriad::try_from(ranking.percentile_myriad(class)).unwrap_or(FULL);
+    let percentile = rules.playability.adjusted_percentile(class, base_percentile);
     let band = widths.mix_band.max(1);
 
     // 短碼採推入或棄牌，不做小額加注
@@ -344,11 +355,18 @@ fn raise_size(scenario: PreflopScenario, rules: &BaselineRules) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::strategy::ranking::class_of;
+    use crate::strategy::ranking::{class_of, CONTENT_GRADE_SAMPLES};
     use crate::card::Rank;
 
+    /// 快速排序表，供不依賴精細排序的測試使用。
     fn ranking() -> EquityRanking {
         EquityRanking::compute(5, 800)
+    }
+
+    /// 內容等級排序表。計算成本高，因此整個測試 binary 只算一次。
+    fn content_ranking() -> &'static EquityRanking {
+        static CACHE: std::sync::OnceLock<EquityRanking> = std::sync::OnceLock::new();
+        CACHE.get_or_init(|| EquityRanking::compute(2, CONTENT_GRADE_SAMPLES))
     }
 
     fn node(hero: PositionLabel, scenario: PreflopScenario, bucket: StackBucket) -> PreflopNode {
@@ -527,6 +545,44 @@ mod tests {
             aggressive(eights) >= aggressive(king_nine_suited),
             "88 的開牌頻率不應低於 K9s"
         );
+    }
+
+    /// 回歸測試：同花連牌不得被弱同花高張擠掉。
+    ///
+    /// 校準工具實測指出的缺口：K2s 與 87s 的 equity 百分位相近，
+    /// 但翻後價值差距極大。修正前要求收窄 K2s 會一併排除 87s／97s／T7s，
+    /// 多數牌手不會接受這個交換。
+    #[test]
+    fn 開牌範圍中同花連牌強於同花大間隔() {
+        let rules = BaselineRules::engineering_placeholder();
+        // 必須用內容等級的樣本數：低樣本下 Monte Carlo 誤差會超過
+        // 類別間的真實差距，可玩性調整因此失效（見 CONTENT_GRADE_SAMPLES）
+        let ranking = content_ranking();
+        assert!(ranking.is_content_grade());
+        let node = node(PositionLabel::Btn, PreflopScenario::Unopened, StackBucket::VeryDeep);
+
+        let aggressive = |class: HandClass| -> Myriad {
+            distribution_for(&node, class, &rules, ranking)
+                .expect("產生")
+                .entries()
+                .iter()
+                .filter(|(a, _)| matches!(a, Action::RaiseTo(_) | Action::AllIn))
+                .map(|(_, w)| *w)
+                .sum()
+        };
+
+        for (high, low) in [
+            (Rank::Eight, Rank::Seven),
+            (Rank::Nine, Rank::Seven),
+            (Rank::Ten, Rank::Seven),
+        ] {
+            let connector = class_of(high, low, true);
+            assert!(
+                aggressive(connector) >= aggressive(class_of(Rank::King, Rank::Two, true)),
+                "{} 的開牌頻率不應低於 K2s",
+                connector.label()
+            );
+        }
     }
 
     #[test]

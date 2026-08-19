@@ -15,6 +15,7 @@ use poker_engine::strategy::calibration::{MatrixCell, RangeMatrix};
 use poker_engine::strategy::decision::StackBucket;
 use poker_engine::strategy::distribution::FULL;
 use poker_engine::strategy::preflop::{PreflopNode, PreflopScenario};
+use poker_engine::strategy::playability::PlayabilityCategory;
 use poker_engine::strategy::ranking::EquityRanking;
 
 /// 報告涵蓋的節點。全部 4,302 個節點的矩陣沒有人看得完，
@@ -143,8 +144,9 @@ fn matrix_html(title: &str, matrix: &RangeMatrix) -> String {
             };
             let _ = write!(
                 out,
-                r#"<td style="{}" title="{label}：主動 {aggressive:.0}%／equity 前 {:.1}%">{text}</td>"#,
+                r#"<td style="{}" title="{label}｜{}｜主動 {aggressive:.0}%｜可玩性調整後 equity 前 {:.1}%">{text}</td>"#,
                 cell_style(&cell),
+                PlayabilityCategory::of(cell.class).as_str(),
                 f64::from(cell.percentile) / 100.0
             );
         }
@@ -174,6 +176,29 @@ fn main() {
     }
 
     let widths = rules.widths_of(PreflopScenario::Unopened);
+
+    let examples: &[(PlayabilityCategory, &str)] = &[
+        (PlayabilityCategory::PocketPair, "AA、77、22"),
+        (PlayabilityCategory::SuitedAce, "AKs、A5s、A2s"),
+        (PlayabilityCategory::SuitedConnector, "87s、65s、KQs"),
+        (PlayabilityCategory::SuitedOneGap, "97s、J9s"),
+        (PlayabilityCategory::SuitedTwoGap, "T7s、96s"),
+        (PlayabilityCategory::SuitedWideGap, "K2s、Q4s"),
+        (PlayabilityCategory::OffsuitBroadway, "KJo、QTo"),
+        (PlayabilityCategory::OffsuitOther, "K9o、72o"),
+    ];
+    let mut playability_rows = String::new();
+    for (category, example) in examples {
+        let shift = rules.playability.of(*category);
+        let sign = if shift > 0 { "+" } else { "" };
+        let _ = write!(
+            playability_rows,
+            "<tr><td>{}</td><td class=\"num\">{sign}{:.1}%</td><td>{example}</td></tr>",
+            category.as_str(),
+            f64::from(shift) / 100.0
+        );
+    }
+
     let html = format!(
         r#"<!doctype html>
 <html lang="zh-Hant"><head><meta charset="utf-8">
@@ -237,6 +262,19 @@ table.matrix td{{width:52px;height:40px;text-align:center;vertical-align:middle;
 </table>
 <p class="meta">另有各情境的寬度、9 檔 bucket 乘數與尺度參數，合計數十個數字。
 調整任何一個即可全表重算（727,038 格，耗時約 0.02 秒）。</p>
+</div>
+
+<div class="params">
+<h2>可玩性調整（八個類別偏移）</h2>
+<p class="meta">Equity 排序衡量的是「攤牌時誰的牌大」，但翻前價值有一大部分來自翻後可玩性。
+這八個偏移讓「同花連牌比弱同花高張更值得開」得以表達。<strong>正值代表往更強的方向移動。</strong>
+這些是最需要您判斷的數字——方向依撲克共識設定，幅度刻意保守。</p>
+<table>
+<tr><th>類別</th><th>偏移</th><th>代表牌例</th></tr>
+{playability_rows}
+</table>
+<p class="meta">單一類別的偏移上限為 ±15.0%。若某類別需要超過上限的調整，
+代表該類別應再細分，而不是把旋鈕轉到底。</p>
 </div>
 </body></html>"#,
         rules.name,
