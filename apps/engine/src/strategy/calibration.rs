@@ -20,7 +20,7 @@ use crate::betting::Action;
 use crate::strategy::baseline::{distribution_for, BaselineRules};
 use crate::strategy::distribution::{Myriad, FULL};
 use crate::strategy::hand_class::HandClass;
-use crate::strategy::preflop::PreflopNode;
+use crate::strategy::preflop::{PreflopNode, PreflopScenario};
 use crate::strategy::ranking::EquityRanking;
 
 /// 矩陣中一格的行動頻率彙總。
@@ -144,10 +144,9 @@ pub enum ParameterRef {
     AggressiveEarliest,
     /// 該情境最晚（非盲注）位置的主動寬度
     AggressiveLatest,
-    /// SB 專用寬度
-    SbAggressive,
-    /// BB 專用寬度
-    BbAggressive,
+    /// 該（桌型 × 位置）的開牌寬度。開牌情境改為逐位置參數後，
+    /// 調整只影響該位置，不再牽動其他位置
+    OpeningWidth,
     /// 該 bucket 的乘數
     BucketMultiplier,
 }
@@ -158,8 +157,7 @@ impl ParameterRef {
         match self {
             Self::AggressiveEarliest => "aggressive_earliest",
             Self::AggressiveLatest => "aggressive_latest",
-            Self::SbAggressive => "sb_aggressive",
-            Self::BbAggressive => "bb_aggressive",
+            Self::OpeningWidth => "opening_width（該位置）",
             Self::BucketMultiplier => "bucket_multiplier",
         }
     }
@@ -247,14 +245,16 @@ pub fn attribute(
 
 fn candidate_parameters(node: &PreflopNode, rules: &BaselineRules) -> Vec<ParameterRef> {
     use crate::position::PositionLabel;
+    let _ = rules;
+    // 開牌情境的寬度是逐位置參數，直接調該位置即可
+    if matches!(node.scenario, PreflopScenario::Unopened) {
+        return vec![ParameterRef::OpeningWidth, ParameterRef::BucketMultiplier];
+    }
     let position_param = match node.hero {
-        PositionLabel::Sb => ParameterRef::SbAggressive,
-        PositionLabel::Bb => ParameterRef::BbAggressive,
-        // UTG 是內插起點，只受 earliest 影響
         PositionLabel::Utg => ParameterRef::AggressiveEarliest,
+        PositionLabel::Sb | PositionLabel::Bb => ParameterRef::AggressiveLatest,
         _ => ParameterRef::AggressiveLatest,
     };
-    let _ = rules;
     vec![position_param, ParameterRef::BucketMultiplier]
 }
 
@@ -263,8 +263,7 @@ fn current_value(parameter: ParameterRef, node: &PreflopNode, rules: &BaselineRu
     match parameter {
         ParameterRef::AggressiveEarliest => widths.aggressive_earliest,
         ParameterRef::AggressiveLatest => widths.aggressive_latest,
-        ParameterRef::SbAggressive => rules.sb_aggressive,
-        ParameterRef::BbAggressive => rules.bb_aggressive,
+        ParameterRef::OpeningWidth => rules.opening.get(node.seated, node.hero),
         ParameterRef::BucketMultiplier => rules.bucket_multiplier_of(node.bucket),
     }
 }
@@ -279,8 +278,7 @@ fn apply(
     match parameter {
         ParameterRef::AggressiveEarliest => out.set_aggressive_earliest(node.scenario, value),
         ParameterRef::AggressiveLatest => out.set_aggressive_latest(node.scenario, value),
-        ParameterRef::SbAggressive => out.sb_aggressive = value,
-        ParameterRef::BbAggressive => out.bb_aggressive = value,
+        ParameterRef::OpeningWidth => out.opening.set(node.seated, node.hero, value),
         ParameterRef::BucketMultiplier => out.set_bucket_multiplier(node.bucket, value),
     }
     out
@@ -491,17 +489,23 @@ pub fn parse_workbench_export(json: &str) -> Result<ImportedRules, ImportError> 
             values.push(((*key).to_owned(), value));
         }
     }
+
+    // 開牌寬度的鍵是動態的（"9.BTN" 等），逐一掃出 opening 區塊內的項目
+    for (seated, position) in opening_keys() {
+        let key = format!("{seated}.{}", position.as_str());
+        if let Some(value) = extract_number(json, &key) {
+            values.push((format!("opening.{key}"), value));
+        }
+    }
     if values.is_empty() {
         return Err(ImportError::MissingField("找不到任何參數欄位"));
     }
     Ok(ImportedRules { version, values })
 }
 
-/// 工作台可調整的欄位。回讀時只接受這些鍵，
+/// 工作台可調整的可玩性欄位。回讀時只接受這些鍵，
 /// 對應核心規格 4.3「不得直接注入未登錄參數」的精神。
 pub const WORKBENCH_FIELDS: &[&str] = &[
-    "sbAggressive",
-    "bbAggressive",
     "pocketPair",
     "suitedAce",
     "suitedConnector",
@@ -525,9 +529,10 @@ pub fn apply_import(
 
     // 先全部驗證再套用
     for (field, value) in &imported.values {
-        let ok = match field.as_str() {
-            "sbAggressive" | "bbAggressive" => (0..=i64::from(FULL)).contains(value),
-            _ => value.abs() <= i64::from(MAX_SHIFT),
+        let ok = if field.starts_with("opening.") {
+            (0..=i64::from(FULL)).contains(value)
+        } else {
+            value.abs() <= i64::from(MAX_SHIFT)
         };
         if !ok {
             return Err(ImportError::OutOfRange {
@@ -541,9 +546,14 @@ pub fn apply_import(
     for (field, value) in &imported.values {
         let narrow = i32::try_from(*value).unwrap_or(0);
         let myriad = Myriad::try_from(*value).unwrap_or(0);
+        // 開牌寬度以 "opening.<桌型>.<位置>" 為鍵，逐位置回填
+        if let Some(rest) = field.strip_prefix("opening.") {
+            if let Some((seated, position)) = parse_opening_key(rest) {
+                out.opening.set(seated, position, myriad);
+            }
+            continue;
+        }
         match field.as_str() {
-            "sbAggressive" => out.sb_aggressive = myriad,
-            "bbAggressive" => out.bb_aggressive = myriad,
             "pocketPair" => out.playability.pocket_pair = narrow,
             "suitedAce" => out.playability.suited_ace = narrow,
             "suitedConnector" => out.playability.suited_connector = narrow,
@@ -559,6 +569,39 @@ pub fn apply_import(
     out.consultant_approved = false;
     out.version = format!("{}+consultant", imported.version);
     Ok(out)
+}
+
+/// 全部可能的開牌寬度鍵（6～9 人桌 × 各自的位置）。
+fn opening_keys() -> Vec<(u8, crate::position::PositionLabel)> {
+    (6u8..=9)
+        .flat_map(|seated| {
+            crate::strategy::preflop::positions_for(seated)
+                .into_iter()
+                .map(move |position| (seated, position))
+        })
+        .collect()
+}
+
+/// 解析 `"9.BTN"` 這類開牌寬度鍵。
+fn parse_opening_key(rest: &str) -> Option<(u8, crate::position::PositionLabel)> {
+    use crate::position::PositionLabel;
+    let (seated, label) = rest.split_once('.')?;
+    let seated: u8 = seated.parse().ok()?;
+    let position = match label {
+        "UTG" => PositionLabel::Utg,
+        "UTG+1" => PositionLabel::Utg1,
+        "UTG+2" => PositionLabel::Utg2,
+        "UTG+3" => PositionLabel::Utg3,
+        "UTG+4" => PositionLabel::Utg4,
+        "LJ" => PositionLabel::Lj,
+        "HJ" => PositionLabel::Hj,
+        "CO" => PositionLabel::Co,
+        "BTN" => PositionLabel::Btn,
+        "SB" => PositionLabel::Sb,
+        "BB" => PositionLabel::Bb,
+        _ => return None,
+    };
+    Some((seated, position))
 }
 
 fn extract_string(json: &str, key: &str) -> Option<String> {
@@ -591,8 +634,10 @@ mod import_tests {
 
     const SAMPLE: &str = r#"{
       "version": "placeholder-v0",
-      "sbAggressive": 3600,
-      "bbAggressive": 2200,
+      "opening": {
+        "9.UTG": 1100,
+        "9.BTN": 4400
+      },
       "playability": {
         "pocketPair": 700,
         "suitedAce": 300,
@@ -609,7 +654,7 @@ mod import_tests {
     fn 可解析工作台匯出的格式() {
         let imported = parse_workbench_export(SAMPLE).expect("解析");
         assert_eq!(imported.version, "placeholder-v0");
-        assert_eq!(imported.values.len(), WORKBENCH_FIELDS.len());
+        assert!(imported.values.len() >= WORKBENCH_FIELDS.len());
         assert!(imported
             .values
             .iter()
@@ -628,7 +673,12 @@ mod import_tests {
 
         assert_eq!(applied.playability.suited_connector, 900);
         assert_eq!(applied.playability.suited_wide_gap, -700);
-        assert_eq!(applied.sb_aggressive, 3_600);
+        assert_eq!(
+            applied.opening.get(9, crate::position::PositionLabel::Utg),
+            1_100,
+            "逐位置開牌寬度必須逐項回填"
+        );
+        assert_eq!(applied.opening.get(9, crate::position::PositionLabel::Btn), 4_400);
     }
 
     #[test]

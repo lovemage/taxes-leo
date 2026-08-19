@@ -33,6 +33,7 @@ use crate::strategy::decision::StackBucket;
 use crate::strategy::distribution::{ActionDistribution, DistributionError, Myriad, FULL};
 use crate::strategy::hand_class::HandClass;
 use crate::position::PositionLabel;
+use crate::strategy::opening::OpeningWidths;
 use crate::strategy::playability::PlayabilityAdjustments;
 use crate::strategy::preflop::{positions_for, PreflopNode, PreflopScenario};
 use crate::strategy::ranking::EquityRanking;
@@ -73,13 +74,12 @@ pub struct BaselineRules {
     /// 低於此 bucket 一律推入或棄牌，不做小額加注
     pub push_fold_below: StackBucket,
 
-    /// 盲注位的主動範圍寬度。
+    /// 開牌（unopened）範圍寬度，**逐（桌型 × 位置）各自設定**。
     ///
-    /// **盲注位不套用「位置越晚越寬」**：SB／BB 在行動順序上最晚，
-    /// 但翻後是最不利位置，把它們當成「最晚位置」會產生比 BTN 更寬的
-    /// 開牌範圍，與現實相反。因此另立參數。
-    pub sb_aggressive: Myriad,
-    pub bb_aggressive: Myriad,
+    /// 取代原本的「最早／最晚端點加線性內插」。內插會讓中間位置系統性
+    /// 偏寬（9-max 的 UTG+1 被算成 17.7%，實際應在 13% 附近），
+    /// 且顧問無法直接調整任一位置。見 `opening` 模組。
+    pub opening: OpeningWidths,
 
     /// 可玩性調整：修正 raw equity 排序無法表達的翻後價值差異。
     /// 七個具名偏移，是顧問的首要調整對象（見 `playability` 模組）
@@ -160,9 +160,7 @@ impl BaselineRules {
             ],
             push_fold_below: StackBucket::Short,
 
-            // SB 略窄於 BTN；BB 在無人開牌時本就可過牌，主動範圍更窄
-            sb_aggressive: 3_800,
-            bb_aggressive: 2_000,
+            opening: OpeningWidths::engineering_placeholder(),
 
             playability: PlayabilityAdjustments::engineering_placeholder(),
 
@@ -298,20 +296,23 @@ pub fn distribution_for(
         .position(|&p| p == node.hero)
         .unwrap_or(0);
 
-    // 盲注位不套用「位置越晚越寬」：它們行動順序最晚但翻後最不利，
-    // 沿用內插會得到比 BTN 更寬的開牌範圍，與現實相反
-    let interpolated = match node.hero {
-        PositionLabel::Sb => i64::from(rules.sb_aggressive),
-        PositionLabel::Bb => i64::from(rules.bb_aggressive),
-        _ => {
-            // 內插只在非盲注位之間進行（UTG..BTN）
-            let non_blind = order.len().saturating_sub(2).max(1);
-            let last_index = non_blind.saturating_sub(1).max(1);
-            let span =
-                i64::from(widths.aggressive_latest) - i64::from(widths.aggressive_earliest);
-            i64::from(widths.aggressive_earliest)
-                + span * i64::try_from(position_index).unwrap_or(0)
-                    / i64::try_from(last_index).unwrap_or(1)
+    // 開牌情境逐位置查表；其餘情境仍以端點內插，因為顧問目前只對
+    // 開牌範圍逐位置調整（見 opening 模組的說明）
+    let interpolated = if matches!(node.scenario, PreflopScenario::Unopened) {
+        i64::from(rules.opening.get(node.seated, node.hero))
+    } else {
+        match node.hero {
+            // 盲注位在面對加注的情境仍套用端點值，避免比 BTN 更寬
+            PositionLabel::Sb | PositionLabel::Bb => i64::from(widths.aggressive_latest),
+            _ => {
+                let non_blind = order.len().saturating_sub(2).max(1);
+                let last_index = non_blind.saturating_sub(1).max(1);
+                let span =
+                    i64::from(widths.aggressive_latest) - i64::from(widths.aggressive_earliest);
+                i64::from(widths.aggressive_earliest)
+                    + span * i64::try_from(position_index).unwrap_or(0)
+                        / i64::try_from(last_index).unwrap_or(1)
+            }
         }
     };
 

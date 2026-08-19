@@ -15,10 +15,11 @@ let rules = JSON.parse(JSON.stringify(DATA.rules));
 
 function aggressiveWidth(node, r) {
   let interpolated;
-  if (node.blind === 'SB') {
-    interpolated = r.sbAggressive;
-  } else if (node.blind === 'BB') {
-    interpolated = r.bbAggressive;
+  if (node.scenario === 'unopened') {
+    // 開牌情境逐位置查表：每個位置一個參數，調整不牽動其他位置
+    interpolated = r.opening[node.openingKey];
+  } else if (node.blind === 'SB' || node.blind === 'BB') {
+    interpolated = r.scenarios[node.scenario].latest;
   } else {
     const w = r.scenarios[node.scenario];
     const span = w.latest - w.earliest;
@@ -160,13 +161,35 @@ function renderMatrices() {
 
 // ── 參數控制 ────────────────────────────────────────────────────────────
 
+// 開牌滑桿由節點清單產生：畫面上每有一張開牌範圍表，
+// 左邊就有一個對應的滑桿，兩邊一一對應
+// 同一個位置在不同 bucket 下共用同一個開牌寬度參數（差別來自 bucket
+// 乘數），因此依 openingKey 去重，避免出現兩個控制同一數值的滑桿
+const OPENING_CONTROLS = [];
+const seenOpeningKeys = new Set();
+for (const node of DATA.nodes) {
+  if (node.scenario !== 'unopened' || seenOpeningKeys.has(node.openingKey)) continue;
+  seenOpeningKeys.add(node.openingKey);
+  OPENING_CONTROLS.push({
+    path: ['opening', node.openingKey],
+    label: node.t,
+    min: 0,
+    max: 9000,
+    pct: true,
+    // 顯示該參數實際產生的範圍寬度。參數是「取 equity 排序前 X%」的門檻，
+    // 經 bucket 乘數與可玩性調整後，實際寬度會與門檻不同
+    widthOf: node,
+  });
+}
+
 const CONTROLS = [
-  { group: '開牌範圍寬度' },
-  { path: ['scenarios', 'unopened', 'earliest'], label: 'UTG 開牌寬度', min: 0, max: 6000, pct: true },
-  { path: ['scenarios', 'unopened', 'latest'], label: 'BTN 開牌寬度', min: 0, max: 8000, pct: true },
-  { path: ['scenarios', 'unopened', 'mixBand'], label: '混合帶寬度', min: 0, max: 2000, pct: true },
-  { path: ['sbAggressive'], label: 'SB 開牌寬度', min: 0, max: 8000, pct: true },
-  { path: ['bbAggressive'], label: 'BB 主動寬度', min: 0, max: 8000, pct: true },
+  { group: '開牌範圍寬度（每個位置一個滑桿）' },
+  ...OPENING_CONTROLS,
+  { path: ['scenarios', 'unopened', 'mixBand'], label: '混合帶寬度（共用）', min: 0, max: 2000, pct: true },
+
+  { group: '籌碼深度乘數' },
+  { path: ['bucketMultiplier', 6], label: '160-240BB（預設深度）', min: 5000, max: 15000, pct: true },
+  { path: ['bucketMultiplier', 1], label: '15-25BB（短碼）', min: 5000, max: 25000, pct: true },
 
   { group: '面對開牌' },
   { path: ['scenarios', 'vsOpen', 'earliest'], label: '早位 3-bet 寬度', min: 0, max: 3000, pct: true },
@@ -193,14 +216,28 @@ function write(path, value) {
   parent[last] = value;
 }
 
+/// 該參數實際產生的範圍寬度（百分比字串）。
+function resultingWidth(node) {
+  const cells = DATA.classes.map((_, i) => cellOf(i, node, rules));
+  return (cells.reduce((sum, c) => sum + c.a, 0) / 169 / 100).toFixed(1);
+}
+
+function controlValueText(control) {
+  const value = read(control.path);
+  const base = control.pct ? `${(value / 100).toFixed(1)}%` : value;
+  if (control.widthOf) {
+    return `${base} → 實際 ${resultingWidth(control.widthOf)}%`;
+  }
+  return base;
+}
+
 function renderControls() {
   const host = document.getElementById('controls');
   host.innerHTML = CONTROLS.map((control, i) => {
     if (control.group) return `<h3>${control.group}</h3>`;
     const value = read(control.path);
-    const shown = control.pct ? `${(value / 100).toFixed(1)}%` : value;
     return `<div class="slider">
-      <label><span>${control.label}</span><span class="val" id="v${i}">${shown}</span></label>
+      <label><span>${control.label}</span><span class="val" id="v${i}">${controlValueText(control)}</span></label>
       <input type="range" id="s${i}" min="${control.min}" max="${control.max}" step="10" value="${value}">
     </div>`;
   }).join('');
@@ -211,12 +248,20 @@ function renderControls() {
     input.addEventListener('input', () => {
       const value = Number(input.value);
       write(control.path, value);
-      document.getElementById(`v${i}`).textContent = control.pct
-        ? `${(value / 100).toFixed(1)}%`
-        : value;
       renderMatrices();
+      // 可玩性與 bucket 乘數會改變所有位置的實際寬度，因此全部重畫
+      refreshControlValues();
       updateOutput();
     });
+  });
+}
+
+/// 重畫全部滑桿的數值標籤。任一參數的改動都可能影響其他位置的實際寬度。
+function refreshControlValues() {
+  CONTROLS.forEach((control, i) => {
+    if (control.group) return;
+    const slot = document.getElementById(`v${i}`);
+    if (slot) slot.textContent = controlValueText(control);
   });
 }
 

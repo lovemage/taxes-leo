@@ -195,7 +195,7 @@ fn main() {
         let is_blind = matches!(node.hero, PositionLabel::Sb | PositionLabel::Bb);
         let _ = write!(
             nodes_json,
-            r#"{{"t":"{title}","key":"{}","seated":{},"hero":"{}","heroIndex":{hero_index},"lastIndex":{},"blind":"{}","scenario":"{}","bucketIndex":{},"bucket":"{}","opponents":{},"pushFold":{}}}"#,
+            r#"{{"t":"{title}","key":"{}","seated":{},"hero":"{}","heroIndex":{hero_index},"lastIndex":{},"blind":"{}","scenario":"{}","bucketIndex":{},"bucket":"{}","opponents":{},"pushFold":{},"openingKey":"{}.{}"}}"#,
             node.key(),
             node.seated,
             node.hero.as_str(),
@@ -205,7 +205,9 @@ fn main() {
             BaselineRules::bucket_index_of(node.bucket),
             node.bucket.as_str(),
             expected_opponents(node),
-            rules.is_push_fold(node.bucket)
+            rules.is_push_fold(node.bucket),
+            node.seated,
+            node.hero.as_str()
         );
     }
     nodes_json.push(']');
@@ -243,11 +245,23 @@ fn main() {
         .map(ToString::to_string)
         .collect();
 
+    // 逐（桌型 × 位置）開牌寬度。工作台的每個滑桿對應一張範圍表
+    let mut opening_json = String::from("{");
+    for (index, ((seated, position), value)) in rules.opening.entries().iter().enumerate() {
+        if index > 0 {
+            opening_json.push(',');
+        }
+        let _ = write!(
+            opening_json,
+            r#""{seated}.{}":{value}"#,
+            position.as_str()
+        );
+    }
+    opening_json.push('}');
+
     let rules_json = format!(
-        r#"{{"version":"{}","scenarios":{scenarios_json},"sbAggressive":{},"bbAggressive":{},"bucketMultiplier":[{}],"playability":{{"pocketPair":{},"suitedAce":{},"suitedConnector":{},"suitedOneGap":{},"suitedTwoGap":{},"suitedWideGap":{},"offsuitBroadway":{},"offsuitOther":{}}}}}"#,
+        r#"{{"version":"{}","scenarios":{scenarios_json},"opening":{opening_json},"bucketMultiplier":[{}],"playability":{{"pocketPair":{},"suitedAce":{},"suitedConnector":{},"suitedOneGap":{},"suitedTwoGap":{},"suitedWideGap":{},"offsuitBroadway":{},"offsuitOther":{}}}}}"#,
         rules.version,
-        rules.sb_aggressive,
-        rules.bb_aggressive,
         multipliers.join(","),
         p.pocket_pair,
         p.suited_ace,
