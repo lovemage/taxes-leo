@@ -5,16 +5,14 @@
 
 import { useEffect, useState } from 'react';
 import type {
-  HandSummaryView,
   HandView,
   HoleCardVisibility,
   RunView,
 } from '../../../../packages/poker-types/src/index';
-import { getHand, getRun, listHands } from '../api';
+import { getHand, getRun } from '../api';
 import { ActionChip } from '../components/ActionChip';
+import { HandList } from '../components/HandList';
 import { TableView } from '../components/TableView';
-
-const PAGE = 60;
 
 /**
  * @param reloadToken 每次遞增就重新抓取。run 跑完後 App shell 會遞增它，
@@ -23,7 +21,6 @@ const PAGE = 60;
  */
 export function Replay({ reloadToken, bigBlind }: { reloadToken: number; bigBlind: number }) {
   const [run, setRun] = useState<RunView | null>(null);
-  const [hands, setHands] = useState<HandSummaryView[]>([]);
   const [selected, setSelected] = useState(0);
   const [hand, setHand] = useState<HandView | null>(null);
   const [visibility, setVisibility] = useState<HoleCardVisibility>('revealedOnly');
@@ -31,11 +28,10 @@ export function Replay({ reloadToken, bigBlind }: { reloadToken: number; bigBlin
 
   useEffect(() => {
     setError(null);
-    Promise.all([getRun(), listHands(0, PAGE)])
-      .then(([runView, list]) => {
+    getRun()
+      .then((runView) => {
         setRun(runView);
-        setHands(list);
-        setSelected(list[0]?.handIndex ?? 0);
+        setSelected(0);
       })
       .catch((e: unknown) => setError(String(e)));
   }, [reloadToken]);
@@ -75,49 +71,13 @@ export function Replay({ reloadToken, bigBlind }: { reloadToken: number; bigBlin
             {run ? `${run.handsPlayed} 手 · ${run.instanceCount} 個桌次` : '載入中…'}
           </div>
         </div>
-        <div style={{ overflowY: 'auto', flex: 1 }}>
-          {hands.map((summary) => {
-            const active = summary.handIndex === selected;
-            return (
-              <button
-                key={summary.handIndex}
-                onClick={() => setSelected(summary.handIndex)}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  width: '100%',
-                  padding: '8px 12px',
-                  border: 'none',
-                  /* 選中態：整格直角背景色塊填滿＋文字加深（V.4）。
-                     不用圓角膠囊，也不用左側強調邊框 */
-                  borderRadius: 0,
-                  background: active ? 'var(--bg-hover)' : 'transparent',
-                  color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
-                  fontWeight: active ? 600 : 400,
-                  cursor: 'pointer',
-                  fontFamily: 'inherit',
-                  fontSize: 12,
-                  textAlign: 'left',
-                }}
-              >
-                <span className="num" style={{ minWidth: 42 }}>
-                  #{summary.handIndex}
-                </span>
-                <span className="dim" style={{ fontSize: 11 }}>
-                  {summary.seated} 人
-                </span>
-                <span
-                  className={`num ${summary.heroDelta > 0 ? 'positive' : summary.heroDelta < 0 ? 'negative' : 'dim'}`}
-                  style={{ minWidth: 52 }}
-                >
-                  {summary.heroDelta > 0 ? '+' : summary.heroDelta < 0 ? '−' : ''}
-                  {(Math.abs(summary.heroDelta) / bigBlind).toFixed(1)}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+        <HandList
+          total={run ? Number(run.handsPlayed) : 0}
+          selected={selected}
+          onSelect={setSelected}
+          bigBlind={bigBlind}
+          reloadToken={reloadToken}
+        />
       </aside>
 
       {/* 右：牌桌與行動序列 */}
