@@ -18,7 +18,7 @@
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
-use poker_ipc::{HandSummaryView, HandView, HoleCardVisibility, RunView};
+use poker_ipc::{HandSummaryView, HandView, HoleCardVisibility, PowerPreviewView, RunView};
 use poker_storage::Store;
 use poker_ipc::run::{self, RunControl, RunRequest};
 use tauri::{Emitter, Manager, State};
@@ -108,6 +108,12 @@ fn cancel_run(state: State<'_, AppState>) -> CommandResult<()> {
     Ok(())
 }
 
+/// 面板 A 的效力預覽。不需要 run，純粹依設定計算。
+#[tauri::command]
+fn preview_power(hand_limit: u64, players: usize) -> Vec<PowerPreviewView> {
+    poker_ipc::views::power_previews(hand_limit, players)
+}
+
 // ── 資料查詢（面板 F／G）─────────────────────────────────────────────
 
 #[tauri::command]
@@ -159,10 +165,19 @@ fn get_hand(state: State<'_, AppState>, index: u64, reveal_all: bool) -> Command
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
-            let store = Store::open_in_memory()?;
+            // 落地到 app data 目錄，不用 in-memory。
+            //
+            // 兩個理由：跑滿 1000K 手的 log 放在記憶體會吃掉數百 MB；
+            // 而且 run 的結果必須在關掉視窗後還在，否則核心規格 3.2 的
+            // 「事後瀏覽既有報表與 log」形同虛設。
+            let data_dir = app.path().app_data_dir()?;
+            std::fs::create_dir_all(&data_dir)?;
+            let store = Store::open(data_dir.join("runs.sqlite"))?;
+            // 接回上次的 run，否則重開視窗會看不到先前跑完的結果
+            let latest = store.latest_run_id()?;
             app.manage(AppState {
                 store: Arc::new(Mutex::new(store)),
-                current_run: Mutex::new(None),
+                current_run: Mutex::new(latest),
                 control: Mutex::new(None),
             });
             Ok(())
@@ -171,6 +186,7 @@ fn main() {
             start_run,
             pause_run,
             cancel_run,
+            preview_power,
             get_run,
             list_hands,
             get_hand

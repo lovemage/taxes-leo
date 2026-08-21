@@ -10,6 +10,7 @@ export type { ActionView } from './generated/ActionView';
 export type { HandSummaryView } from './generated/HandSummaryView';
 export type { HandView } from './generated/HandView';
 export type { HoleCardVisibility } from './generated/HoleCardVisibility';
+export type { PowerPreviewView } from './generated/PowerPreviewView';
 export type { RunView } from './generated/RunView';
 export type { SeatView } from './generated/SeatView';
 export type { StreetView } from './generated/StreetView';

@@ -322,6 +322,22 @@ impl Store {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// 最近一個 run 的 id，資料庫為空時回傳 `None`。
+    ///
+    /// 桌面殼啟動時用它接回上次的結果：資料庫已落地，若不接回，
+    /// 重開視窗就看不到先前跑完的 run，等於白存。
+    ///
+    /// # Errors
+    /// 查詢失敗時回傳錯誤。
+    pub fn latest_run_id(&self) -> Result<Option<i64>, StorageError> {
+        Ok(self
+            .conn
+            .query_row("SELECT id FROM run ORDER BY id DESC LIMIT 1", [], |r| {
+                r.get::<_, i64>(0)
+            })
+            .optional()?)
+    }
+
     /// 依日期範圍刪除 run（M0 log 規格的「清理」要求）。
     ///
     /// # Errors

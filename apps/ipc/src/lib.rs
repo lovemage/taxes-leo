@@ -20,5 +20,6 @@ pub mod views;
 pub use handler::{IpcError, IpcHandler};
 pub use run::{execute, RunControl, RunProgress, RunRequest};
 pub use view::{
-    ActionView, HandSummaryView, HandView, HoleCardVisibility, RunView, SeatView, StreetView,
+    ActionView, HandSummaryView, HandView, HoleCardVisibility, PowerPreviewView, RunView, SeatView,
+    StreetView,
 };

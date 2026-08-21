@@ -9,7 +9,7 @@ use poker_engine::position::resolve;
 use poker_storage::db::Store;
 
 use crate::handler::IpcError;
-use crate::view::{HandSummaryView, HandView, HoleCardVisibility, RunView};
+use crate::view::{HandSummaryView, HandView, HoleCardVisibility, PowerPreviewView, RunView};
 
 /// run 層級摘要。
 ///
@@ -72,4 +72,26 @@ pub fn hand_summaries(
             board: record.board.iter().map(ToString::to_string).collect(),
         })
         .collect())
+}
+
+/// 某手數設定下的統計效力預覽。
+///
+/// UI 規格 F.5.1 要求面板 A 的手數滑桿旁即時顯示，
+/// 不能等跑完才在報表揭露。
+#[must_use]
+pub fn power_previews(hand_limit: u64, players: usize) -> Vec<PowerPreviewView> {
+    use poker_engine::stats::{preview_all, PLANNING_SIGMA_BB100};
+
+    preview_all(hand_limit, players, PLANNING_SIGMA_BB100)
+        .into_iter()
+        .map(|preview| PowerPreviewView {
+            level: preview.level.as_str().to_owned(),
+            hands_per_slice: preview.hands_per_slice,
+            half_width_bb100: preview
+                .half_width_bb100
+                .is_finite()
+                .then_some(preview.half_width_bb100),
+            usable: preview.usable,
+        })
+        .collect()
 }

@@ -2,12 +2,10 @@
 //
 // 同一份前端程式碼要能在兩種環境下跑：
 //
-// - **Tauri 桌面殼**（產品形態）：透過 `window.__TAURI__.core.invoke` 呼叫
-//   Rust command。
+// - **Tauri 桌面殼**（產品形態）：透過 `window.__TAURI__` 呼叫 Rust command。
 // - **瀏覽器 ＋ dev server**（開發鷹架）：打 apps/devserver 的 HTTP 端點。
 //
-// 兩邊的 command 名稱與參數形狀刻意一致，因此切換只發生在本檔，
-// 其餘前端程式碼不需要知道自己跑在哪一種環境裡。
+// 兩邊的 command 名稱與參數形狀刻意一致，因此切換只發生在本檔。
 //
 // 型別一律引用 packages/poker-types 的產生結果，前端不自行宣告 DTO
 // （實做計劃第七章：型別單一來源）。
@@ -16,31 +14,122 @@ import type {
   HandSummaryView,
   HandView,
   HoleCardVisibility,
+  PowerPreviewView,
   RunView,
 } from '../../../packages/poker-types/src/index';
 
-/** Tauri 注入的全域物件。存在與否即是環境判定依據。 */
+/** 面板 A 的設定。欄位語意的權威來源是核心規格 2.1。 */
+export interface RunRequest {
+  players: number;
+  autoRefillEnabled: boolean;
+  autoRefillTarget: number;
+  startingStackBb: number;
+  smallBlind: number;
+  bigBlind: number;
+  anteMode: 'none' | 'perPlayer' | 'bbAnte' | 'btnAnte';
+  anteAmount: number;
+  straddleMode: 'none' | 'single' | 'double';
+  rakePercent: number;
+  rakeCapBb: number;
+  rakeNoFlopNoDrop: boolean;
+  handLimit: number;
+  /** u64 以字串傳遞，避免在 JS 失去精度 */
+  masterSeed: string;
+  heroSeat: number;
+}
+
+/** 背景執行推送的進度。 */
+export interface RunProgress {
+  handsDone: number;
+  handsTotal: number;
+  instances: number;
+  bbPer100: number;
+  paused: boolean;
+  finished: boolean;
+  cancelled: boolean;
+}
+
 interface TauriGlobal {
   core: { invoke: <T>(command: string, args?: Record<string, unknown>) => Promise<T> };
+  event: {
+    listen: <T>(name: string, handler: (event: { payload: T }) => void) => Promise<() => void>;
+  };
 }
 
 function tauri(): TauriGlobal | null {
-  const candidate = (globalThis as { __TAURI__?: TauriGlobal }).__TAURI__;
-  return candidate ?? null;
+  return (globalThis as { __TAURI__?: TauriGlobal }).__TAURI__ ?? null;
 }
 
-/** 目前是否跑在 Tauri 殼內。供 UI 顯示環境提示。 */
+/** 目前是否跑在 Tauri 殼內。瀏覽器模式下執行控制不可用。 */
 export function isDesktop(): boolean {
   return tauri() !== null;
 }
 
 async function http<T>(path: string): Promise<T> {
   const response = await fetch(path);
-  if (!response.ok) {
-    throw new Error(`IPC ${path} 失敗：${response.status}`);
-  }
+  if (!response.ok) throw new Error(`IPC ${path} 失敗：${response.status}`);
   return (await response.json()) as T;
 }
+
+function desktopOnly(what: string): never {
+  throw new Error(`${what}需要桌面版；瀏覽器模式只能檢視既有資料`);
+}
+
+// ── 執行控制（面板 E）────────────────────────────────────────────────
+
+export function startRun(request: RunRequest): Promise<void> {
+  const bridge = tauri();
+  if (!bridge) desktopOnly('執行模擬');
+  // created_at 由前端提供：引擎自身不讀系統時鐘，以免時間進入可重現路徑
+  return bridge.core.invoke('start_run', {
+    request,
+    createdAt: Math.floor(Date.now() / 1000),
+  });
+}
+
+export function pauseRun(paused: boolean): Promise<void> {
+  const bridge = tauri();
+  if (!bridge) desktopOnly('暫停');
+  return bridge.core.invoke('pause_run', { paused });
+}
+
+export function cancelRun(): Promise<void> {
+  const bridge = tauri();
+  if (!bridge) desktopOnly('取消');
+  return bridge.core.invoke('cancel_run');
+}
+
+/** 訂閱進度事件，回傳解除訂閱的函式。 */
+export async function onRunProgress(
+  handler: (progress: RunProgress) => void,
+): Promise<() => void> {
+  const bridge = tauri();
+  if (!bridge) return () => {};
+  return bridge.event.listen<RunProgress>('run-progress', (e) => handler(e.payload));
+}
+
+export async function onRunReady(handler: () => void): Promise<() => void> {
+  const bridge = tauri();
+  if (!bridge) return () => {};
+  return bridge.event.listen<number>('run-ready', () => handler());
+}
+
+export async function onRunFailed(handler: (message: string) => void): Promise<() => void> {
+  const bridge = tauri();
+  if (!bridge) return () => {};
+  return bridge.event.listen<string>('run-failed', (e) => handler(e.payload));
+}
+
+// ── 設定輔助（面板 A）────────────────────────────────────────────────
+
+/** 統計效力預覽。由引擎計算，前端不重寫算式。 */
+export function previewPower(handLimit: number, players: number): Promise<PowerPreviewView[]> {
+  const bridge = tauri();
+  if (!bridge) return Promise.resolve([]);
+  return bridge.core.invoke<PowerPreviewView[]>('preview_power', { handLimit, players });
+}
+
+// ── 資料查詢（面板 F／G）─────────────────────────────────────────────
 
 export function getRun(): Promise<RunView> {
   const bridge = tauri();
@@ -55,10 +144,8 @@ export function listHands(offset: number, limit: number): Promise<HandSummaryVie
 }
 
 export function getHand(index: number, visibility: HoleCardVisibility): Promise<HandView> {
-  // 可見範圍必須明示（核心規格 2.4）。預設不顯示未攤牌底牌，
-  // 只有使用者明確開啟重播全揭露時才帶 revealAll
+  // 可見範圍必須明示（核心規格 2.4）。預設不顯示未攤牌底牌
   const revealAll = visibility === 'all';
-
   const bridge = tauri();
   if (bridge) return bridge.core.invoke<HandView>('get_hand', { index, revealAll });
   return http<HandView>(`/api/hand?index=${index}${revealAll ? '&revealAll=1' : ''}`);

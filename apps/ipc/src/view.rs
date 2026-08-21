@@ -245,3 +245,22 @@ mod seed_as_string {
         text.parse().map_err(serde::de::Error::custom)
     }
 }
+
+/// 執行前的統計效力預覽（UI 規格 F.5.1、核心規格 5.3.1）。
+///
+/// 由 Rust 計算而非前端重寫：算式雖然只是 `1.96σ/√(N/100)`，但 σ 的來源、
+/// 切片數的定義與可用門檻都在引擎側，重寫一次就多一處會漂移的地方。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
+#[serde(rename_all = "camelCase")]
+pub struct PowerPreviewView {
+    /// 分析層級的顯示名稱
+    pub level: String,
+    #[ts(type = "number")]
+    pub hands_per_slice: u64,
+    /// 95% CI 半寬，bb/100。無限大時以 null 表示
+    #[ts(type = "number | null")]
+    pub half_width_bb100: Option<f64>,
+    /// 該切片是否足以支撐有意義的判定
+    pub usable: bool,
+}

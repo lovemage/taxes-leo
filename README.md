@@ -54,7 +54,9 @@ pnpm install
 pnpm --filter @taxes-leo/ui dev
 ```
 
-開啟 http://localhost:5180 可瀏覽逐手 log、牌桌重播與行動序列。
+開啟 http://localhost:5180。瀏覽器模式只能檢視 devserver 的示範資料
+（左側圖示欄的「重播」），執行模擬要用桌面殼——`start_run` 之類的執行
+指令只存在於 Tauri 端。
 
 > `devserver` 只是開發鷹架，不是產品的一部分。M3 會換成 Tauri command，
 > 呼叫的是同一組 `IpcHandler` 方法，前端只需替換 `apps/ui/src/api.ts`
@@ -146,14 +148,15 @@ cargo run --release --example attribute_feedback
 
 ## 目前進度
 
-`cargo test --workspace` 全綠，共 279 個測試。
+`cargo test --workspace` 全綠，共 291 個測試。
 
 | 里程碑 | 狀態 |
 |---|---|
 | M0 垂直切片 | 全鏈路可跑通；兩道硬閘門未過（見下） |
 | M1 規則層 | 完成 |
-| M2 策略與 Bot 層 | 型別骨架已建，核心內容未動 |
-| M3 桌面應用 UI／M4 收尾與發佈 | 未開始 |
+| M2 策略與 Bot 層 | 型別骨架與校準工作台已建，baseline 內容待顧問回填 |
+| M3 桌面應用 UI | App shell、面板 A（牌桌設定）、面板 E（執行）可用；B／C／D／F／G 未做 |
+| M4 收尾與發佈 | 未開始 |
 
 **已完成**
 
@@ -168,12 +171,12 @@ cargo run --release --example attribute_feedback
 
 1. **Equity 時間預算實測**：尚無 equity 程式碼，批次模式 p50 ≤1 ms／p99 ≤5 ms 未驗證。
    此閘門失守則「100 萬手 ≤12 小時」在 M2 必然跳票
-2. **內容體積產製管線**：約 32 萬格 preflop baseline 的產製方式未定案。產製管線定案前，
-   M2 的 6–8 週估算不成立
+2. **內容體積產製管線**：精算後 baseline 為 **727,038 格**（`content_size` example），
+   純人工填表約 76 人日，因此只能走參數化產生器。產生器已可跑（`generate_baseline`），
+   但顧問尚未回填參數值
 
-**其他未完成的 M0 凍結項**：面板 A／C／E／G 的欄位級規格（M3 開工前提，
-[`UI面板詳細規格.md`](UI面板詳細規格.md) 目前只有 B／D／F）、多人 Equity spike、
-變異數削減 spike、258V 基準測試環境。
+**其他未完成的 M0 凍結項**：多人 Equity spike、變異數削減 spike、258V 基準測試環境。
+面板 A／C／E／G 的欄位級規格已補進 [`UI面板詳細規格.md`](UI面板詳細規格.md)。
 
 **M2 待做**：RangeTracker、preflop／postflop 策略表、7 組人格、多人 Equity、
 Analytics 與報表、顧問校準工具。

@@ -1,209 +1,147 @@
-// M0 垂直切片的 UI 端：逐手列表 → 牌桌 → 行動序列。
+// 應用程式外殼。
 //
-// 這個畫面同時驗證三件事：引擎產生的資料能落 SQLite、能經 IPC 取回、
-// 能在畫面重建出當時的牌局，也就是 M0 閘門的「全鏈路可跑通」。
+// UI 規格 V.1 的三欄式版面：
+//
+//   [ 圖示欄 56px ][ 參數欄 300px ][ 主內容 ]
+//
+// 參數欄只放**輸入**，主內容只放**輸出**。這個分工讓「調參數 → 看結果」
+// 不必來回切換畫面，也讓執行期間的鎖定範圍剛好等於參數欄。
 
-import { useEffect, useState } from 'react';
-import type {
-  HandSummaryView,
-  HandView,
-  HoleCardVisibility,
-  RunView,
-} from '../../../packages/poker-types/src/index';
-import { getHand, getRun, listHands } from './api';
-import { ActionChip } from './components/ActionChip';
-import { TableView } from './components/TableView';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  cancelRun,
+  isDesktop,
+  onRunFailed,
+  onRunProgress,
+  onRunReady,
+  pauseRun,
+  startRun,
+  type RunProgress,
+  type RunRequest,
+} from './api';
+import { IconRail, type RailItem } from './components/IconRail';
+import { Replay } from './panels/Replay';
+import { RunControl } from './panels/RunControl';
+import { DEFAULT_REQUEST, TableSetup, validateRequest } from './panels/TableSetup';
 
-const BIG_BLIND = 2;
-const PAGE = 60;
+const RAIL: readonly RailItem[] = [
+  { key: 'run', glyph: '▶', label: '執行', enabled: true },
+  { key: 'replay', glyph: '⏱', label: '重播', enabled: true },
+  { key: 'bots', glyph: '◍', label: 'Bot', enabled: false },
+  { key: 'strategy', glyph: '▦', label: '策略', enabled: false },
+  { key: 'report', glyph: '◫', label: '報表', enabled: false },
+];
 
 export function App() {
-  const [run, setRun] = useState<RunView | null>(null);
-  const [hands, setHands] = useState<HandSummaryView[]>([]);
-  const [selected, setSelected] = useState(0);
-  const [hand, setHand] = useState<HandView | null>(null);
-  const [visibility, setVisibility] = useState<HoleCardVisibility>('revealedOnly');
-  const [error, setError] = useState<string | null>(null);
+  const [panel, setPanel] = useState('run');
+  const [request, setRequest] = useState<RunRequest>(DEFAULT_REQUEST);
+  const [progress, setProgress] = useState<RunProgress | null>(null);
+  const [running, setRunning] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
+  const desktop = isDesktop();
+  const invalid = validateRequest(request);
+
+  // 進度事件在背景執行緒推送，因此訂閱一次即可，不隨 state 重掛
+  const runningRef = useRef(running);
+  runningRef.current = running;
 
   useEffect(() => {
-    Promise.all([getRun(), listHands(0, PAGE)])
-      .then(([runView, list]) => {
-        setRun(runView);
-        setHands(list);
-      })
-      .catch((e: unknown) => setError(String(e)));
+    const unsubscribers: Array<() => void> = [];
+    let disposed = false;
+
+    const track = (promise: Promise<() => void>) => {
+      promise
+        .then((off) => {
+          // 元件在訂閱完成前就卸載時，立刻解除，避免留下孤兒監聽器
+          if (disposed) off();
+          else unsubscribers.push(off);
+        })
+        .catch(() => {});
+    };
+
+    track(
+      onRunProgress((next) => {
+        setProgress(next);
+        if (next.finished || next.cancelled) setRunning(false);
+      }),
+    );
+    track(
+      onRunReady(() => {
+        setRunning(false);
+        // run 寫完才換資料來源，否則重播會讀到半成品
+        setReloadToken((token) => token + 1);
+      }),
+    );
+    track(
+      onRunFailed((message) => {
+        setRunning(false);
+        setFailure(message);
+      }),
+    );
+
+    return () => {
+      disposed = true;
+      unsubscribers.forEach((off) => off());
+    };
   }, []);
 
-  useEffect(() => {
-    getHand(selected, visibility)
-      .then(setHand)
-      .catch((e: unknown) => setError(String(e)));
-  }, [selected, visibility]);
+  const handleStart = useCallback(() => {
+    setFailure(null);
+    setProgress(null);
+    setRunning(true);
+    startRun(request).catch((error: unknown) => {
+      setRunning(false);
+      setFailure(String(error));
+    });
+  }, [request]);
 
-  if (error) {
-    return (
-      <div style={{ padding: 24 }}>
-        <h1 style={{ fontSize: 16 }}>無法連線到引擎</h1>
-        <p className="muted">{error}</p>
-        <p className="dim">請先執行：cargo run -p poker-devserver</p>
-      </div>
-    );
-  }
+  const handlePause = useCallback(() => {
+    const next = !(progress?.paused ?? false);
+    pauseRun(next).catch((error: unknown) => setFailure(String(error)));
+    // 暫停期間不會再推進度，因此樂觀更新，否則按鈕文字會卡住
+    setProgress((current) => (current ? { ...current, paused: next } : current));
+  }, [progress]);
+
+  const handleCancel = useCallback(() => {
+    cancelRun().catch((error: unknown) => setFailure(String(error)));
+  }, []);
 
   return (
-    <div style={{ display: 'flex', height: '100vh' }}>
-      {/* 左：逐手列表（面板 G） */}
+    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+      <IconRail items={RAIL} active={panel} onSelect={setPanel} />
+
+      {/* 中：參數欄。目前只有面板 A，其餘面板進來後在這裡分支 */}
       <aside
         style={{
-          width: 260,
-          borderRight: `1px solid var(--border)`,
+          width: 300,
+          flexShrink: 0,
+          borderRight: '1px solid var(--border)',
           background: 'var(--bg-surface)',
-          display: 'flex',
-          flexDirection: 'column',
+          overflowY: 'auto',
+          padding: 16,
         }}
       >
-        <div style={{ padding: 12, borderBottom: `1px solid var(--border)` }}>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>逐手 Log</div>
-          <div className="dim" style={{ fontSize: 11, marginTop: 4 }}>
-            {run ? `${run.handsPlayed} 手 · ${run.instanceCount} 個桌次` : '載入中…'}
-          </div>
-        </div>
-        <div style={{ overflowY: 'auto', flex: 1 }}>
-          {hands.map((summary) => {
-            const active = summary.handIndex === selected;
-            return (
-              <button
-                key={summary.handIndex}
-                onClick={() => setSelected(summary.handIndex)}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  width: '100%',
-                  padding: '8px 12px',
-                  border: 'none',
-                  /* 選中態：整格直角背景色塊填滿＋文字加深（V.4）。
-                     不用圓角膠囊，也不用左側強調邊框 */
-                  borderRadius: 0,
-                  background: active ? 'var(--bg-hover)' : 'transparent',
-                  color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
-                  fontWeight: active ? 600 : 400,
-                  cursor: 'pointer',
-                  fontFamily: 'inherit',
-                  fontSize: 12,
-                  textAlign: 'left',
-                }}
-              >
-                <span className="num" style={{ minWidth: 42 }}>
-                  #{summary.handIndex}
-                </span>
-                <span className="dim" style={{ fontSize: 11 }}>
-                  {summary.seated} 人
-                </span>
-                <span
-                  className={`num ${summary.heroDelta > 0 ? 'positive' : summary.heroDelta < 0 ? 'negative' : 'dim'}`}
-                  style={{ minWidth: 52 }}
-                >
-                  {summary.heroDelta > 0 ? '+' : summary.heroDelta < 0 ? '−' : ''}
-                  {(Math.abs(summary.heroDelta) / BIG_BLIND).toFixed(1)}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+        <h2 style={{ fontSize: 13, margin: '0 0 16px' }}>牌桌設定</h2>
+        <TableSetup request={request} onChange={setRequest} locked={running} />
       </aside>
 
-      {/* 右：牌桌與行動序列 */}
-      <main style={{ flex: 1, padding: 16, overflowY: 'auto' }}>
-        <header
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: 12,
-          }}
-        >
-          <div>
-            <h1 style={{ fontSize: 15, margin: 0 }}>
-              第 <span className="num">{selected}</span> 手
-              {hand && (
-                <span className="dim" style={{ fontSize: 12, marginLeft: 8 }}>
-                  桌次 {hand.instanceIndex} · {hand.seated} 人在桌
-                </span>
-              )}
-            </h1>
-            {run && (
-              <div className="dim" style={{ fontSize: 11, marginTop: 4 }}>
-                seed {run.masterSeed} · {run.rngAlgorithm}
-              </div>
-            )}
-          </div>
-
-          {/* 核心規格 2.4：重播是否顯示未攤牌底牌採明確設定，預設不顯示 */}
-          <label
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              fontSize: 12,
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={visibility === 'all'}
-              onChange={(e) => setVisibility(e.target.checked ? 'all' : 'revealedOnly')}
-            />
-            顯示未攤牌底牌
-          </label>
-        </header>
-
-        {hand ? (
-          <>
-            <TableView hand={hand} heroSeat={run?.heroSeat ?? 0} bigBlind={BIG_BLIND} />
-
-            <section
-              style={{
-                marginTop: 16,
-                padding: 12,
-                borderRadius: 'var(--radius-panel)',
-                border: `1px solid var(--border)`,
-                background: 'var(--bg-surface)',
-              }}
-            >
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>行動序列</div>
-              {(['preflop', 'flop', 'turn', 'river'] as const).map((street) => {
-                const actions = hand.actions.filter((a) => a.street === street);
-                if (actions.length === 0) return null;
-                return (
-                  <div
-                    key={street}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      padding: '6px 0',
-                      borderTop: `1px solid var(--border)`,
-                      flexWrap: 'wrap',
-                    }}
-                  >
-                    <span
-                      className="muted"
-                      style={{ width: 64, fontSize: 11, fontFamily: 'var(--font-mono)' }}
-                    >
-                      {street}
-                    </span>
-                    {actions.map((action, i) => (
-                      <ActionChip key={i} action={action} bigBlind={BIG_BLIND} />
-                    ))}
-                  </div>
-                );
-              })}
-            </section>
-          </>
+      {/* 右：主內容 */}
+      <main style={{ flex: 1, overflow: 'auto', background: 'var(--bg-base)' }}>
+        {panel === 'run' ? (
+          <RunControl
+            request={request}
+            progress={progress}
+            running={running}
+            desktop={desktop}
+            invalid={invalid}
+            failure={failure}
+            onStart={handleStart}
+            onPause={handlePause}
+            onCancel={handleCancel}
+          />
         ) : (
-          <p className="dim">載入中…</p>
+          <Replay reloadToken={reloadToken} bigBlind={request.bigBlind} />
         )}
       </main>
     </div>

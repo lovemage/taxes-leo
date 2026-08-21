@@ -354,6 +354,19 @@ fn 可依日期範圍刪除_run() {
     assert!(store.load_manifest(recent_id).is_ok(), "新 run 應保留");
 }
 
+#[test]
+fn 可取回最近一個_run() {
+    let config = session_config(20);
+    let mut store = Store::open_in_memory().expect("建立資料庫");
+    assert_eq!(store.latest_run_id().expect("查詢"), None, "空資料庫沒有 run");
+
+    store.create_run(&manifest_for(&config)).expect("建立第一個 run");
+    let second = store.create_run(&manifest_for(&config)).expect("建立第二個 run");
+
+    // 桌面殼重開視窗時靠這個接回上次的結果，取到舊的那個等於接錯
+    assert_eq!(store.latest_run_id().expect("查詢"), Some(second));
+}
+
 // ── 重播一致性 ──────────────────────────────────────────────────────────
 
 #[test]
