@@ -302,9 +302,16 @@ pub struct PowerPreviewView {
     pub level: String,
     #[ts(type = "number")]
     pub hands_per_slice: u64,
-    /// 95% CI 半寬，bb/100。無限大時以 null 表示
+    /// 95% CI 半寬，bb/100。**一律計算**——區間再寬也是資訊，
+    /// 換成「樣本不足」四個字反而讓使用者什麼都不知道。
+    /// 僅在手數為 0 這種退化情形為 null
     #[ts(type = "number | null")]
     pub half_width_bb100: Option<f64>,
-    /// 該切片是否足以支撐有意義的判定
-    pub usable: bool,
+    /// 把半寬收到建議精度所需的總手數
+    #[ts(type = "number")]
+    pub hands_for_target: u64,
+    /// 建議精度（半寬），bb/100
+    pub target_half_width_bb100: f64,
+    /// 是否已達建議精度。**這不是能不能用的閘門**，只是說服力的標示
+    pub meets_target: bool,
 }

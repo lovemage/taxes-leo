@@ -5,9 +5,17 @@
 //!
 //! # 為什麼這件事重要
 //!
-//! `handLimit` 下限是 10K，但 10K 手不足以支撐大多數切片。使用者若在跑完
-//! 100 萬手之後才知道「169 格熱力圖無法對任何一格做判定」，那 12 小時就白花了。
-//! 預覽讓這個限制在**設定階段**就看得見。
+//! 使用者若在跑完之後才知道「169 格熱力圖的區間寬到什麼都看不出來」，
+//! 那些時間就白花了。預覽讓精度在**設定階段**就看得見。
+//!
+//! # 一律計算，不擋
+//!
+//! 區間再寬也是資訊——「這個手數下只能分辨 ±30 bb/100」本身就是結論。
+//! 因此本模組**永遠給出半寬**，不會因為寬就換成「樣本不足」四個字；
+//! 那樣使用者什麼都不知道，還以為是程式壞了。
+//!
+//! 取而代之的是**建議手數**：告訴他跑到多少手才能把區間收到有說服力的
+//! 程度。判斷留給使用者，但判斷所需的兩個數字都給齊。
 
 /// 每手結果標準差的規劃用估計值，單位為 bb/100。
 ///
@@ -59,14 +67,20 @@ pub struct PowerPreview {
     pub total_hands: u64,
     /// 每個切片分到的手數
     pub hands_per_slice: u64,
-    /// 95% CI 的半寬，bb/100
+    /// 95% CI 的半寬，bb/100。**一律計算**，不因為寬就不給
     pub half_width_bb100: f64,
-    /// 該切片是否可能做出有意義的判定
-    pub usable: bool,
+    /// 要把半寬收到 [`TARGET_HALF_WIDTH_BB100`] 所需的總手數
+    pub hands_for_target: u64,
+    /// 目前手數是否已達建議精度。**這不是「能不能用」的閘門**，
+    /// 只是「結論有多少說服力」的標示
+    pub meets_target: bool,
 }
 
-/// 可用性門檻：半寬超過此值即視為無法支撐有意義的結論。
-pub const USABLE_HALF_WIDTH_BB100: f64 = 10.0;
+/// 建議精度：半寬收到此值以內，結論才具說服力。
+///
+/// **這是建議不是門檻。** 沒達到的切片照樣算出區間並顯示，
+/// 只是同時告訴使用者「跑到 X 手會更有說服力」。
+pub const TARGET_HALF_WIDTH_BB100: f64 = 10.0;
 
 /// 計算某手數與分析層級下的預期可分辨差距。
 ///
@@ -90,7 +104,8 @@ pub fn preview(total_hands: u64, level: AnalysisLevel, sigma_bb100: f64) -> Powe
         total_hands,
         hands_per_slice,
         half_width_bb100,
-        usable: half_width_bb100 <= USABLE_HALF_WIDTH_BB100,
+        hands_for_target: hands_required(TARGET_HALF_WIDTH_BB100, level, sigma_bb100),
+        meets_target: half_width_bb100 <= TARGET_HALF_WIDTH_BB100,
     }
 }
 
@@ -128,13 +143,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn 手數上限下_169_格仍無法判定() {
-        // 核心規格 5.3.1 的關鍵結論：熱力圖在 1000K 上限下仍不可判定
+    fn 熱力圖在百萬手下仍達不到建議精度() {
+        // 核心規格 5.3.1 的關鍵結論：熱力圖即使跑到 100 萬手，
+        // 區間仍寬到不足以對單格做宣稱
         let preview = preview(1_000_000, AnalysisLevel::HandClassGrid, PLANNING_SIGMA_BB100);
+        assert!(!preview.meets_target);
         assert!(
-            !preview.usable,
-            "169 格在 100 萬手下仍不可判定，半寬 {:.1} bb/100",
-            preview.half_width_bb100
+            preview.half_width_bb100.is_finite(),
+            "達不到建議精度不代表算不出來——半寬照樣要給"
         );
     }
 
@@ -156,15 +172,33 @@ mod tests {
         assert_eq!(per_position, overall * 9);
     }
 
+    /// 手數很少時仍要給出區間與建議，不得以「樣本不足」帶過。
     #[test]
-    fn 手數下限下多數切片不可用() {
-        // handLimit 下限為 10K
-        let previews = preview_all(10_000, 9, PLANNING_SIGMA_BB100);
-        let usable = previews.iter().filter(|p| p.usable).count();
-        assert_eq!(
-            usable, 0,
-            "10K 手不足以支撐任何切片，這正是必須在設定階段預覽的理由"
-        );
+    fn 手數不足時仍算出半寬並給出建議手數() {
+        // handLimit 下限為 1K
+        let previews = preview_all(1_000, 9, PLANNING_SIGMA_BB100);
+        assert_eq!(previews.iter().filter(|p| p.meets_target).count(), 0);
+
+        for preview in &previews {
+            assert!(
+                preview.half_width_bb100.is_finite() && preview.half_width_bb100 > 0.0,
+                "{} 的半寬必須算得出來，寬也要給",
+                preview.level.as_str()
+            );
+            assert!(
+                preview.hands_for_target > preview.total_hands,
+                "{} 應建議一個比目前更大的手數",
+                preview.level.as_str()
+            );
+        }
+    }
+
+    /// 達到建議精度後，建議手數不得超過目前手數。
+    #[test]
+    fn 達到建議精度時不再要求更多手數() {
+        let preview = preview(100_000, AnalysisLevel::Overall, PLANNING_SIGMA_BB100);
+        assert!(preview.meets_target, "10 萬手足以讓整體 bb/100 達到 ±10");
+        assert!(preview.hands_for_target <= preview.total_hands);
     }
 
     #[test]
@@ -181,7 +215,7 @@ mod tests {
     fn 零手數不崩潰() {
         let preview = preview(0, AnalysisLevel::Overall, PLANNING_SIGMA_BB100);
         assert!(preview.half_width_bb100.is_infinite());
-        assert!(!preview.usable);
+        assert!(!preview.meets_target);
     }
 
     #[test]

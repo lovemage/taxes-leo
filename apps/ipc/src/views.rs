@@ -99,7 +99,9 @@ pub fn power_previews(hand_limit: u64, players: usize) -> Vec<PowerPreviewView> 
                 .half_width_bb100
                 .is_finite()
                 .then_some(preview.half_width_bb100),
-            usable: preview.usable,
+            hands_for_target: preview.hands_for_target,
+            target_half_width_bb100: poker_engine::stats::TARGET_HALF_WIDTH_BB100,
+            meets_target: preview.meets_target,
         })
         .collect()
 }

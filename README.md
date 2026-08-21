@@ -157,7 +157,7 @@ cargo run --release --example attribute_feedback
 
 ## 目前進度
 
-`cargo test --workspace` 全綠，共 327 個測試。
+`cargo test --workspace` 全綠，共 328 個測試。
 
 | 里程碑 | 狀態 |
 |---|---|

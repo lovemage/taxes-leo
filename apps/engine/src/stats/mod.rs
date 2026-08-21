@@ -18,5 +18,6 @@ pub use bootstrap::{
 pub use fdr::{benjamini_hochberg, FdrResult, Test};
 pub use power::{
     hands_required, preview, preview_all, AnalysisLevel, PowerPreview, PLANNING_SIGMA_BB100,
+    TARGET_HALF_WIDTH_BB100,
 };
 pub use proportion::{wilson, Proportion};

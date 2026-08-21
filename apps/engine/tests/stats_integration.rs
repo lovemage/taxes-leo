@@ -254,13 +254,17 @@ fn 執行前的效力預覽反映規格結論() {
         .iter()
         .find(|p| matches!(p.level, AnalysisLevel::HandClassGrid))
         .expect("含 169 格層級");
-    assert!(!grid.usable, "169 格在上限手數下仍不可判定");
+    assert!(!grid.meets_target, "169 格在上限手數下仍達不到建議精度");
+    assert!(
+        grid.half_width_bb100.is_finite(),
+        "達不到建議精度不代表算不出來——半寬照樣要給"
+    );
 
     let overall = previews
         .iter()
         .find(|p| matches!(p.level, AnalysisLevel::Overall))
         .expect("含整體層級");
-    assert!(overall.usable, "整體 bb/100 在 100 萬手下應可用");
+    assert!(overall.meets_target, "整體 bb/100 在 100 萬手下應達到建議精度");
 }
 
 #[test]

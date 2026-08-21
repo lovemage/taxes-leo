@@ -328,11 +328,16 @@ export function TableSetup({
 /**
  * A.3 統計效力預覽。
  *
- * 核心規格 5.3.1 要求效力在**設定階段**就看得見，
- * 否則使用者會在跑完之後才發現滿版「無法判定」。
+ * 核心規格 5.3.1 要求效力在**設定階段**就看得見，否則使用者會在跑完
+ * 之後才發現結論站不住腳。
+ *
+ * **每一列都給出區間，不會因為寬就換成「樣本不足」。** 區間再寬也是
+ * 資訊——「這個手數下只能分辨 ±30 bb/100」本身就是結論；蓋掉它使用者
+ * 什麼都不知道。達不到建議精度的列改為提示要跑到多少手。
  */
 function PowerPreview({ previews }: { previews: PowerPreviewView[] }) {
   if (previews.length === 0) return null;
+  const target = previews[0].targetHalfWidthBb100;
 
   return (
     <div
@@ -345,7 +350,7 @@ function PowerPreview({ previews }: { previews: PowerPreviewView[] }) {
       }}
     >
       <div className="dim" style={{ fontSize: 11, marginBottom: 6 }}>
-        此手數的預期效力（估計值，非保證）
+        此手數的 95% 區間半寬（估計值，實際通常更寬）
       </div>
       {previews.map((preview) => (
         <div
@@ -353,25 +358,49 @@ function PowerPreview({ previews }: { previews: PowerPreviewView[] }) {
           style={{
             display: 'flex',
             justifyContent: 'space-between',
+            alignItems: 'baseline',
+            gap: 8,
             fontSize: 11,
-            padding: '2px 0',
+            padding: '3px 0',
           }}
         >
-          <span style={{ color: preview.usable ? 'var(--text-secondary)' : 'var(--text-tertiary)' }}>
+          <span style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
             {preview.level}
           </span>
           <span
             className="num"
-            style={{ color: preview.usable ? 'var(--positive)' : 'var(--text-tertiary)' }}
+            style={{
+              color: preview.meetsTarget ? 'var(--positive)' : 'var(--text-primary)',
+              whiteSpace: 'nowrap',
+            }}
           >
             {preview.halfWidthBb100 === null
-              ? '樣本不足'
-              : `±${preview.halfWidthBb100.toFixed(1)} bb/100`}
+              ? '—'
+              : `±${preview.halfWidthBb100.toFixed(1)}`}
+          </span>
+          <span
+            className="dim"
+            style={{ fontSize: 10, minWidth: 92, textAlign: 'right', whiteSpace: 'nowrap' }}
+          >
+            {preview.meetsTarget
+              ? `已達 ±${target}`
+              : `建議 ≥ ${formatHands(preview.handsForTarget)}`}
           </span>
         </div>
       ))}
+      <div className="dim" style={{ fontSize: 10, marginTop: 6, lineHeight: 1.5 }}>
+        建議手數是把區間收到 ±{target} bb/100 所需的量。沒達到不代表不能跑——
+        區間照樣會算出來，只是結論的說服力較弱。
+      </div>
     </div>
   );
+}
+
+/** 手數以 K／M 呈現，避免 12400000 這種數字塞爆欄位。 */
+function formatHands(hands: number): string {
+  if (hands >= 1_000_000) return `${(hands / 1_000_000).toFixed(1)}M 手`;
+  if (hands >= 1_000) return `${Math.round(hands / 1_000)}K 手`;
+  return `${hands} 手`;
 }
 
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
