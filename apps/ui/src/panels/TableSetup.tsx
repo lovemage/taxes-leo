@@ -17,7 +17,7 @@ export const DEFAULT_REQUEST: RunRequest = {
   anteMode: 'none',
   anteAmount: 0,
   straddleMode: 'none',
-  rakePercent: 0,
+  rakeBasisPoints: 0,
   rakeCapBb: 0,
   rakeNoFlopNoDrop: false,
   handLimit: 100_000,
@@ -49,6 +49,24 @@ export function validateRequest(request: RunRequest): string | null {
     return `手數需介於 ${HAND_MIN / 1000}K 與 ${HAND_MAX / 1000}K 之間`;
   }
   if (!/^\d+$/.test(request.masterSeed)) return 'seed 必須是非負整數';
+  // 跨 IPC 的欄位都是整數型別，小數會在 Tauri 反序列化時直接炸掉，
+  // 錯誤訊息還是看不懂的 `invalid type: floating point`。在這裡先擋
+  const integerFields: ReadonlyArray<[string, number]> = [
+    ['座位數', request.players],
+    ['補位目標人數', request.autoRefillTarget],
+    ['起始深度', request.startingStackBb],
+    ['小盲', request.smallBlind],
+    ['大盲', request.bigBlind],
+    ['Ante 金額', request.anteAmount],
+    ['抽水比例', request.rakeBasisPoints],
+    ['抽水上限', request.rakeCapBb],
+    ['手數', request.handLimit],
+    ['座位', request.heroSeat],
+  ];
+  for (const [label, value] of integerFields) {
+    if (!Number.isInteger(value) || value < 0) return `${label}必須是非負整數`;
+  }
+  if (request.rakeBasisPoints > 10_000) return '抽水比例不得超過 100%';
   return null;
 }
 
@@ -216,13 +234,20 @@ export function TableSetup({
       </Group>
 
       <Group title="抽水">
-        <Field label="抽水比例" unit="%" range="0–100">
+        <Field
+          label="抽水比例"
+          unit="%"
+          range="0–100"
+          hint="可到小數點後兩位；引擎以萬分比計算，4.5% 這類值不會被截掉"
+        >
           <NumberInput
-            value={request.rakePercent}
+            value={request.rakeBasisPoints / 100}
             min={0}
             max={100}
+            step={0.5}
+            decimals={2}
             disabled={locked}
-            onChange={(v) => set('rakePercent', v)}
+            onChange={(v) => set('rakeBasisPoints', Math.round(v * 100))}
           />
         </Field>
         <Field label="每手上限" unit="BB">

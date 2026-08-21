@@ -21,7 +21,7 @@ fn request() -> RunRequest {
         ante_mode: "none".to_owned(),
         ante_amount: 0,
         straddle_mode: "none".to_owned(),
-        rake_percent: 0,
+        rake_basis_points: 0,
         rake_cap_bb: 0,
         rake_no_flop_no_drop: false,
         hand_limit: 2_000,
@@ -67,14 +67,22 @@ fn straddle_金額自動計算為兩倍遞增() {
     assert_eq!(amounts, vec![4, 8], "首段 2×BB，後段為前段 2 倍");
 }
 
+/// 抽水率跨 IPC 用萬分比，因此 4.5% 這類實務常見值不會被壓成整數百分比。
 #[test]
-fn 抽水百分比轉為萬分比() {
+fn 抽水率以萬分比原樣傳遞() {
     let mut request = request();
-    request.rake_percent = 5;
+    request.rake_basis_points = 450;
     request.rake_cap_bb = 3;
     let config = request.to_session_config().expect("轉換");
-    assert_eq!(config.table.rake.basis_points, 500, "5% = 500 萬分比");
+    assert_eq!(config.table.rake.basis_points, 450, "4.5% = 450 萬分比");
     assert_eq!(config.table.rake.cap.units(), 6, "3BB × 每 BB 2 單位");
+}
+
+#[test]
+fn 抽水率超過百分之百被攔下() {
+    let mut request = request();
+    request.rake_basis_points = 10_001;
+    assert!(request.to_session_config().is_err());
 }
 
 #[test]

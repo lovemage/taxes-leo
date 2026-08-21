@@ -76,9 +76,9 @@ export function RunControl({
           <Summary
             label="抽水"
             value={
-              request.rakePercent === 0
+              request.rakeBasisPoints === 0
                 ? '無'
-                : `${request.rakePercent}%，上限 ${request.rakeCapBb} BB`
+                : `${request.rakeBasisPoints / 100}%，上限 ${request.rakeCapBb} BB`
             }
           />
           <Summary label="手數" value={`${(request.handLimit / 1000).toFixed(0)}K`} />

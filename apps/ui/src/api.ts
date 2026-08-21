@@ -29,7 +29,8 @@ export interface RunRequest {
   anteMode: 'none' | 'perPlayer' | 'bbAnte' | 'btnAnte';
   anteAmount: number;
   straddleMode: 'none' | 'single' | 'double';
-  rakePercent: number;
+  /** 抽水率，萬分比（5% = 500）。UI 以 % 顯示，跨 IPC 一律整數 */
+  rakeBasisPoints: number;
   rakeCapBb: number;
   rakeNoFlopNoDrop: boolean;
   handLimit: number;

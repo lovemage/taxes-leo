@@ -52,7 +52,12 @@ pub struct RunRequest {
     pub ante_mode: String,
     pub ante_amount: u64,
     pub straddle_mode: String,
-    pub rake_percent: u32,
+    /// 抽水率，萬分比（5% = 500）。
+    ///
+    /// 前端傳萬分比而非百分比：引擎本來就以萬分比表示，實務上的
+    /// 4.5% 這類抽水率在整數百分比裡根本表達不出來。前端負責
+    /// 「% ↔ 萬分比」的顯示換算，跨 IPC 的一律是整數
+    pub rake_basis_points: u32,
     pub rake_cap_bb: u64,
     pub rake_no_flop_no_drop: bool,
     /// 手數，以 10K 為單位傳入實際手數
@@ -103,13 +108,19 @@ impl RunRequest {
             },
             straddle,
             rake: RakeConfig {
-                // 前端傳百分比，引擎用萬分比
-                basis_points: self.rake_percent * 100,
+                basis_points: self.rake_basis_points,
                 cap: Chips::new(self.rake_cap_bb * big_blind),
                 no_flop_no_drop: self.rake_no_flop_no_drop,
             },
             muck: MuckPolicy::Realistic,
         };
+
+        if self.rake_basis_points > 10_000 {
+            return Err(format!(
+                "抽水率不得超過 100%（收到 {} 萬分比）",
+                self.rake_basis_points
+            ));
+        }
 
         let master_seed: u64 = self
             .master_seed
