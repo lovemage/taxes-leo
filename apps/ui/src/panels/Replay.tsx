@@ -1,9 +1,6 @@
 // 面板 G — 逐手 Log 與重播。
-//
-// 原本是 M0 垂直切片的整個畫面；現在收成一個面板，
-// 由 App shell 決定何時顯示。
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type {
   HandView,
   HoleCardVisibility,
@@ -12,11 +9,7 @@ import type {
 import { getHand, getRun } from '../api';
 import { ActionChip } from '../components/ActionChip';
 import { HandList } from '../components/HandList';
-import {
-  frameCaption,
-  ReplayControls,
-  useReplayPlayer,
-} from '../components/ReplayPlayer';
+import { frameCaption, ReplayControls, useReplayPlayer } from '../components/ReplayPlayer';
 import { TableView } from '../components/TableView';
 
 /** 手牌未載入時的空幀，讓 hook 的呼叫順序不隨資料變動 */
@@ -38,7 +31,10 @@ export function Replay({ reloadToken, bigBlind }: { reloadToken: number; bigBlin
   // 他人底牌（DecisionView 結構上就沒有那個欄位），桌外複盤的人看得到
   const [visibility, setVisibility] = useState<HoleCardVisibility>('all');
   const [error, setError] = useState<string | null>(null);
-  const player = useReplayPlayer(hand?.frames ?? NO_FRAMES);
+  const [listOpen, setListOpen] = useState(false);
+  const [continuous, setContinuous] = useState(true);
+
+  const total = run ? Number(run.handsPlayed) : 0;
 
   useEffect(() => {
     setError(null);
@@ -57,6 +53,15 @@ export function Replay({ reloadToken, bigBlind }: { reloadToken: number; bigBlin
       .catch((e: unknown) => setError(String(e)));
   }, [selected, visibility, run]);
 
+  // 身分穩定，否則播放器的結束判定會每次 render 重跑
+  const advance = useCallback(() => setSelected((current) => current + 1), []);
+
+  const player = useReplayPlayer(hand?.frames ?? NO_FRAMES, {
+    continuous,
+    hasNext: selected + 1 < total,
+    onAdvance: advance,
+  });
+
   if (error) {
     return (
       <div style={{ padding: 24 }}>
@@ -67,85 +72,134 @@ export function Replay({ reloadToken, bigBlind }: { reloadToken: number; bigBlin
     );
   }
 
+  const frame = hand && hand.frames.length > 0
+    ? hand.frames[Math.min(player.index, hand.frames.length - 1)]
+    : null;
+
   return (
-    <div style={{ display: 'flex', height: '100%' }}>
-      {/* 左：逐手列表 */}
-      <aside
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* ── Header：逐手 Log 收在這裡，點擊才展開 ── */}
+      <header
         style={{
-          width: 240,
-          borderRight: '1px solid var(--border)',
-          background: 'var(--bg-surface)',
           display: 'flex',
-          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 12,
+          padding: '8px 16px',
+          borderBottom: '1px solid var(--border)',
+          background: 'var(--bg-surface)',
+          flexShrink: 0,
         }}
       >
-        <div style={{ padding: 12, borderBottom: '1px solid var(--border)' }}>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>逐手 Log</div>
-          <div className="dim" style={{ fontSize: 11, marginTop: 4 }}>
-            {run ? `${run.handsPlayed} 手 · ${run.instanceCount} 個桌次` : '載入中…'}
-          </div>
-        </div>
-        <HandList
-          total={run ? Number(run.handsPlayed) : 0}
-          selected={selected}
-          onSelect={setSelected}
-          bigBlind={bigBlind}
-          reloadToken={reloadToken}
-        />
-      </aside>
-
-      {/* 右：牌桌與行動序列 */}
-      <main style={{ flex: 1, padding: 16, overflowY: 'auto' }}>
-        <header
+        <button
+          type="button"
+          onClick={() => setListOpen(!listOpen)}
           style={{
             display: 'flex',
-            justifyContent: 'space-between',
             alignItems: 'center',
-            marginBottom: 12,
+            gap: 6,
+            padding: '5px 10px',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-control)',
+            background: listOpen ? 'var(--bg-hover)' : 'transparent',
+            color: 'var(--text-primary)',
+            fontFamily: 'inherit',
+            fontSize: 12,
+            cursor: 'pointer',
           }}
         >
-          <div>
-            <h1 style={{ fontSize: 15, margin: 0 }}>
-              第 <span className="num">{selected}</span> 手
-              {hand && (
-                <span className="dim" style={{ fontSize: 12, marginLeft: 8 }}>
-                  桌次 {hand.instanceIndex} · {hand.seated} 人在桌
+          <span style={{ fontSize: 10 }}>{listOpen ? '▾' : '▸'}</span>
+          逐手 Log
+          <span className="num dim">
+            #{selected}
+          </span>
+          <span className="dim" style={{ fontSize: 11 }}>
+            / {total.toLocaleString()} 手
+          </span>
+        </button>
+
+        <div style={{ flex: 1, fontSize: 12, color: 'var(--text-secondary)' }}>
+          {hand && (
+            <>
+              桌次 {hand.instanceIndex} · {hand.seated} 人在桌
+              {run && (
+                <span className="dim" style={{ marginLeft: 10, fontSize: 11 }}>
+                  seed {run.masterSeed}
                 </span>
               )}
-            </h1>
-            {run && (
-              <div className="dim" style={{ fontSize: 11, marginTop: 4 }}>
-                seed {run.masterSeed} · {run.rngAlgorithm}
-              </div>
-            )}
-          </div>
+            </>
+          )}
+        </div>
 
-          {/* 核心規格 2.4：重播是否顯示未攤牌底牌採明確設定，預設不顯示 */}
-          <label
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              fontSize: 12,
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
+        <label
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            fontSize: 12,
+            color: 'var(--text-secondary)',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+          }}
+          title="切到限制模式後，未亮出的底牌不會傳到前端，可用來驗證自己的讀牌"
+        >
+          <input
+            type="checkbox"
+            checked={visibility === 'revealedOnly'}
+            onChange={(e) => setVisibility(e.target.checked ? 'revealedOnly' : 'all')}
+          />
+          只顯示實際亮出的底牌
+        </label>
+      </header>
+
+      {listOpen && (
+        <div
+          style={{
+            height: 280,
+            display: 'flex',
+            flexDirection: 'column',
+            borderBottom: '1px solid var(--border)',
+            background: 'var(--bg-surface)',
+            flexShrink: 0,
+          }}
+        >
+          <HandList
+            total={total}
+            selected={selected}
+            onSelect={(index) => {
+              setSelected(index);
+              setListOpen(false);
             }}
-            title="切到限制模式後，未亮出的底牌不會傳到前端，可用來驗證自己的讀牌"
-          >
-            <input
-              type="checkbox"
-              checked={visibility === 'revealedOnly'}
-              onChange={(e) => setVisibility(e.target.checked ? 'revealedOnly' : 'all')}
-            />
-            只顯示實際亮出的底牌
-          </label>
-        </header>
+            bigBlind={bigBlind}
+            reloadToken={reloadToken}
+          />
+        </div>
+      )}
 
-        {hand && hand.frames.length > 0 ? (
+      {/* ── 牌桌與行動序列 ── */}
+      <main style={{ flex: 1, padding: 16, overflowY: 'auto' }}>
+        {hand && frame ? (
           <>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'baseline',
+                marginBottom: 8,
+              }}
+            >
+              <h1 style={{ fontSize: 15, margin: 0 }}>
+                第 <span className="num">{selected}</span> 手
+              </h1>
+              {visibility === 'all' && (
+                <span className="dim" style={{ fontSize: 11 }}>
+                  全揭露模式
+                </span>
+              )}
+            </div>
+
             <TableView
               hand={hand}
-              frame={hand.frames[Math.min(player.index, hand.frames.length - 1)]}
+              frame={frame}
               heroSeat={run?.heroSeat ?? 0}
               bigBlind={bigBlind}
             />
@@ -159,14 +213,15 @@ export function Replay({ reloadToken, bigBlind }: { reloadToken: number; bigBlin
                 minHeight: 18,
               }}
             >
-              {frameCaption(
-                hand.frames[Math.min(player.index, hand.frames.length - 1)],
-                hand.seats.map((seat) => seat.position),
-                bigBlind,
-              )}
+              {frameCaption(frame, hand.seats.map((seat) => seat.position), bigBlind)}
             </div>
 
-            <ReplayControls frames={hand.frames} {...player} />
+            <ReplayControls
+              frames={hand.frames}
+              {...player}
+              continuous={continuous}
+              setContinuous={setContinuous}
+            />
 
             <section
               style={{

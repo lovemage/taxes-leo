@@ -20,16 +20,16 @@ export const DEFAULT_REQUEST: RunRequest = {
   rakeBasisPoints: 0,
   rakeCapBb: 0,
   rakeNoFlopNoDrop: false,
-  handLimit: 100_000,
+  handLimit: 10_000,
   masterSeed: String(Math.floor(Math.random() * 1_000_000_000)),
   heroSeat: 0,
   bots: [],
 };
 
-/** 手數以 10K 為單位，範圍 10K–1000K（核心規格 2.1）。 */
-const HAND_STEP = 10_000;
-const HAND_MIN = 10_000;
-const HAND_MAX = 1_000_000;
+/** 手數以 1K 為單位，範圍 1K–100K（核心規格 2.1）。 */
+const HAND_STEP = 1_000;
+const HAND_MIN = 1_000;
+const HAND_MAX = 100_000;
 
 /**
  * 送出前的檢查。
@@ -272,7 +272,7 @@ export function TableSetup({
       <Group title="執行">
         <Field
           label="手數"
-          range={`${HAND_MIN / 1000}K–${HAND_MAX / 1000}K，以 10K 為單位`}
+          range={`${HAND_MIN / 1000}K–${HAND_MAX / 1000}K，以 1K 為單位`}
         >
           <input
             type="range"
@@ -282,7 +282,7 @@ export function TableSetup({
             value={request.handLimit}
             disabled={locked}
             onChange={(e) => set('handLimit', Number(e.target.value))}
-            style={{ width: '100%', accentColor: 'var(--accent)' }}
+            style={{ width: '100%' }}
           />
           <div
             className="num"

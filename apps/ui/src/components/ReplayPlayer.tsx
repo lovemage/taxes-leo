@@ -9,7 +9,17 @@ import type { FrameView } from '../../../../packages/poker-types/src/index';
 /** 1x 時每幀停留的毫秒數。真人牌桌一個行動約一秒 */
 const BASE_MS = 900;
 
-export function useReplayPlayer(frames: FrameView[]) {
+export function useReplayPlayer(
+  frames: FrameView[],
+  options: {
+    /** 播完一手是否自動接下一手 */
+    continuous: boolean;
+    /** 後面還有沒有手可以接 */
+    hasNext: boolean;
+    /** 要求切換到下一手 */
+    onAdvance: () => void;
+  },
+) {
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(true);
   const [speed, setSpeed] = useState(2);
@@ -17,7 +27,8 @@ export function useReplayPlayer(frames: FrameView[]) {
   const latest = useRef({ playing, speed, total: frames.length });
   latest.current = { playing, speed, total: frames.length };
 
-  // 換手就從頭播
+  // 換手就從頭播。連續模式下這一步接住上一手的播放狀態，
+  // 於是一手接一手地放下去，而不是打完一手就停在收池畫面
   useEffect(() => {
     setIndex(0);
     setPlaying(true);
@@ -35,10 +46,17 @@ export function useReplayPlayer(frames: FrameView[]) {
     return () => window.clearInterval(timer);
   }, [speed]);
 
-  // 播到最後一幀就停，不要讓「播放中」的狀態繼續掛著
+  const { continuous, hasNext, onAdvance } = options;
+
+  // 播到最後一幀：連續模式接下一手，否則停下來
   useEffect(() => {
-    if (frames.length > 0 && index >= frames.length - 1) setPlaying(false);
-  }, [index, frames.length]);
+    if (frames.length === 0 || index < frames.length - 1) return;
+    if (playing && continuous && hasNext) {
+      onAdvance();
+      return;
+    }
+    setPlaying(false);
+  }, [index, frames.length, playing, continuous, hasNext, onAdvance]);
 
   return { index, setIndex, playing, setPlaying, speed, setSpeed };
 }
@@ -51,6 +69,8 @@ export function ReplayControls({
   setPlaying,
   speed,
   setSpeed,
+  continuous,
+  setContinuous,
 }: {
   frames: FrameView[];
   index: number;
@@ -59,6 +79,8 @@ export function ReplayControls({
   setPlaying: (playing: boolean) => void;
   speed: number;
   setSpeed: (speed: number) => void;
+  continuous: boolean;
+  setContinuous: (continuous: boolean) => void;
 }) {
   const last = Math.max(0, frames.length - 1);
   const atEnd = index >= last;
@@ -114,11 +136,25 @@ export function ReplayControls({
           setPlaying(false);
           setIndex(Number(e.target.value));
         }}
-        style={{ flex: 1, accentColor: 'var(--accent)' }}
+        style={{ flex: 1 }}
       />
-      <span className="num dim" style={{ fontSize: 11, minWidth: 48 }}>
-        {index + 1}/{frames.length}
+      {/* 明確寫「步」。只寫 21/43 會被讀成手數——這裡的單位一直是
+          「這一手之內的第幾個事件」，不是第幾手 */}
+      <span className="dim" style={{ fontSize: 11, minWidth: 74, whiteSpace: 'nowrap' }}>
+        第 <span className="num">{index + 1}</span>/{frames.length} 步
       </span>
+
+      <label
+        style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, cursor: 'pointer' }}
+        title="播完一手自動接下一手"
+      >
+        <input
+          type="checkbox"
+          checked={continuous}
+          onChange={(e) => setContinuous(e.target.checked)}
+        />
+        <span className="dim">連續</span>
+      </label>
 
       <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
         <span className="dim">速度</span>
@@ -128,7 +164,7 @@ export function ReplayControls({
           max={10}
           value={speed}
           onChange={(e) => setSpeed(Number(e.target.value))}
-          style={{ width: 72, accentColor: 'var(--accent)' }}
+          style={{ width: 72 }}
         />
         <span className="num" style={{ minWidth: 24 }}>
           {speed}x

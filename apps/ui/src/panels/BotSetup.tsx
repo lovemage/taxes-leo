@@ -315,7 +315,10 @@ function ParamField({
             value={effective}
             disabled={locked}
             onChange={(e) => onChange(Number(e.target.value))}
-            style={{ flex: 1, accentColor: changed ? 'var(--warning)' : 'var(--accent)' }}
+            style={
+              // 改過的參數把滑桿轉為警示色，一眼看出動過哪幾條
+              { flex: 1, '--range-accent': changed ? 'var(--warning)' : 'var(--accent)' } as React.CSSProperties
+            }
           />
           <div style={{ width: 76 }}>
             <NumberInput

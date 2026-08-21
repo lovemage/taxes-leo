@@ -2,6 +2,15 @@
    數值請勿在元件裡硬寫，一律引用這裡的變數。 */
 
 :root {
+  /* 讓瀏覽器的原生控制項（捲軸、核取方塊、下拉、數字微調鈕）跟著走深色。
+     少了這行，checkbox 與 select 會是亮底白框，在深色面板上像破洞 */
+  color-scheme: dark;
+
+  /* 滑桿強調色。元件可就地覆寫（例如已改過的參數轉為警示色），
+     因此用變數而不是寫死——原本靠 accent-color，但自訂 thumb 之後
+     那個屬性就不再生效 */
+  --range-accent: #22c55e;
+
   /* V.2 色彩 */
   --bg-base: #0b0c0e;
   --bg-surface: #16181c;
@@ -73,4 +82,84 @@ body {
 }
 .dim {
   color: var(--text-tertiary);
+}
+
+/* ── 滑桿（V.13）──────────────────────────────────────────────────────
+   原生外觀在深色底上是亮灰軌道加藍色 thumb，與整份 token 完全脫節。
+   軌道用 raised 色、thumb 用強調色，維持直角以外的最小圓角。 */
+
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+input[type='range']:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--range-accent);
+  border: 2px solid var(--bg-base);
+  cursor: pointer;
+}
+
+input[type='range']::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--range-accent);
+  border: 2px solid var(--bg-base);
+  cursor: pointer;
+}
+
+input[type='range']::-moz-range-track {
+  background: var(--bg-raised);
+  height: 4px;
+  border-radius: 2px;
+}
+
+/* ── 捲軸 ─────────────────────────────────────────────────────────────
+   `color-scheme: dark` 已讓捲軸轉深，這裡再收窄並降低對比：
+   逐手列表是常駐元件，一條高對比的捲軸會一直搶注意力。 */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-hover) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--bg-hover);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
