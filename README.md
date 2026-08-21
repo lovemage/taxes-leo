@@ -96,6 +96,15 @@ pnpm build
 > 執行檔，不會執行 Tauri CLI 的前置命令。
 > 首次建置要編譯 Tauri 與 SQLite 的 C 原始碼，約需數分鐘。
 
+> **權限（capability）改動要實機驗。** Tauri v2 的 ACL 只在執行期生效：
+> 前端呼叫 `event.listen` 若沒有對應權限，TypeScript、Rust release 建置
+> 與 installer 打包全都會過，直到實機點下去才吐
+> `Command plugin:event|listen not allowed by ACL`。
+> 權限宣告在 [`apps/desktop/capabilities/default.json`](apps/desktop/capabilities/default.json)，
+> 目前只給主視窗 `core:event` 的 listen／unlisten——事件由 Rust 端送出，
+> 前端不需要 emit。`generate_handler!` 註冊的自訂 command（`start_run` 等）
+> 不受 ACL 管轄，因此不必逐一列出。
+
 **打包產出**（2026-08-21 於 Windows 實測）：
 
 | 目標 | 結果 |
@@ -148,7 +157,7 @@ cargo run --release --example attribute_feedback
 
 ## 目前進度
 
-`cargo test --workspace` 全綠，共 291 個測試。
+`cargo test --workspace` 全綠，共 294 個測試。
 
 | 里程碑 | 狀態 |
 |---|---|

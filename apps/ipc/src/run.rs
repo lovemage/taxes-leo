@@ -151,10 +151,24 @@ pub struct RunProgress {
 pub struct RunControl {
     pub paused: AtomicBool,
     pub cancelled: AtomicBool,
+    /// 背景執行緒已離開 [`execute`]，不論是跑完、被取消還是出錯。
+    ///
+    /// 沒有這個旗標的話，正常跑完的 run 其 `cancelled` 仍是 false，
+    /// 下一次啟動會被誤判為「已有 run 正在執行」而永久拒絕
+    pub finished: AtomicBool,
     pub hands_done: AtomicU64,
 }
 
 impl RunControl {
+    /// 這個 run 是否仍佔用執行權。
+    ///
+    /// 呼叫端據此決定要不要拒絕新的 run。判斷放在這裡而不是桌面殼裡，
+    /// 是因為桌面殼在 Linux 編不動，寫在那邊就測不到。
+    #[must_use]
+    pub fn is_active(&self) -> bool {
+        !self.finished.load(Ordering::Relaxed) && !self.cancelled.load(Ordering::Relaxed)
+    }
+
     /// 於手與手之間檢查暫停與取消。
     ///
     /// 回傳 `false` 代表應中止。暫停時在此自旋等待，
@@ -181,6 +195,10 @@ pub fn execute(
     created_at: i64,
     mut on_progress: impl FnMut(RunProgress),
 ) -> Result<i64, String> {
+    // 不論走哪條路徑離開（跑完、取消、中途錯誤、panic），這個 control
+    // 都不再代表「進行中的 run」。用 guard 而非在每個 return 前手動標記，
+    // 是因為漏掉任何一條路徑的後果都是「之後再也開不了新的 run」
+    let _guard = FinishGuard(control);
     let manifest = build_manifest(config, created_at);
     let run_id = {
         let mut guard = store.lock().map_err(|_| "資料庫鎖已毀損")?;
@@ -264,6 +282,9 @@ pub fn execute(
     }
 
     let done = control.hands_done.load(Ordering::Relaxed);
+    // 先標記再送事件：前端一收到 finished 就可能立刻按下一個 run，
+    // 順序反過來會有一小段時間新 run 被誤拒
+    control.finished.store(true, Ordering::Relaxed);
     on_progress(RunProgress {
         hands_done: done,
         hands_total: config.hand_limit,
@@ -279,6 +300,15 @@ pub fn execute(
     });
 
     Ok(run_id)
+}
+
+/// 離開 [`execute`] 時標記 control 已結束。
+struct FinishGuard<'a>(&'a RunControl);
+
+impl Drop for FinishGuard<'_> {
+    fn drop(&mut self) {
+        self.0.finished.store(true, Ordering::Relaxed);
+    }
 }
 
 fn build_manifest(config: &SessionConfig, created_at: i64) -> RunManifest {

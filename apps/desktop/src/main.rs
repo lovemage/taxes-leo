@@ -49,11 +49,14 @@ fn start_run(
 ) -> CommandResult<()> {
     let config = request.to_session_config()?;
 
-    // 已有 run 在跑時拒絕啟動，避免兩個 run 同時寫入
+    // 已有 run 在跑時拒絕啟動，避免兩個 run 同時寫入。
+    //
+    // 判斷用 `is_active()` 而不是只看 cancelled：正常跑完的 run 其
+    // cancelled 仍是 false，只看那個旗標會讓第二次執行永遠被拒
     {
         let guard = state.control.lock().map_err(|_| "狀態鎖已毀損")?;
         if let Some(existing) = guard.as_ref() {
-            if !existing.cancelled.load(Ordering::Relaxed) {
+            if existing.is_active() {
                 return Err("已有 run 正在執行，請先取消或等待完成".to_owned());
             }
         }

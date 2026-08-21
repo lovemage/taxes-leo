@@ -71,15 +71,21 @@ async function http<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-function desktopOnly(what: string): never {
-  throw new Error(`${what}需要桌面版；瀏覽器模式只能檢視既有資料`);
+/**
+ * 回傳 rejected promise 而非同步 throw。
+ *
+ * 呼叫端都是 `startRun(...).catch(...)` 的形狀；同步 throw 會在 `.catch`
+ * 掛上之前就炸開，錯誤不但沒被接住，UI 還會永遠卡在「啟動中」。
+ */
+function desktopOnly<T>(what: string): Promise<T> {
+  return Promise.reject(new Error(`${what}需要桌面版；瀏覽器模式只能檢視既有資料`));
 }
 
 // ── 執行控制（面板 E）────────────────────────────────────────────────
 
 export function startRun(request: RunRequest): Promise<void> {
   const bridge = tauri();
-  if (!bridge) desktopOnly('執行模擬');
+  if (!bridge) return desktopOnly('執行模擬');
   // created_at 由前端提供：引擎自身不讀系統時鐘，以免時間進入可重現路徑
   return bridge.core.invoke('start_run', {
     request,
@@ -89,13 +95,13 @@ export function startRun(request: RunRequest): Promise<void> {
 
 export function pauseRun(paused: boolean): Promise<void> {
   const bridge = tauri();
-  if (!bridge) desktopOnly('暫停');
+  if (!bridge) return desktopOnly('暫停');
   return bridge.core.invoke('pause_run', { paused });
 }
 
 export function cancelRun(): Promise<void> {
   const bridge = tauri();
-  if (!bridge) desktopOnly('取消');
+  if (!bridge) return desktopOnly('取消');
   return bridge.core.invoke('cancel_run');
 }
 

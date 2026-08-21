@@ -57,7 +57,12 @@ export function App() {
           if (disposed) off();
           else unsubscribers.push(off);
         })
-        .catch(() => {});
+        .catch((error: unknown) => {
+          // 訂閱失敗不能默默吞掉。最常見的原因是 Tauri capability 沒給
+          // core:event:allow-listen；吞掉的話畫面會停在 0% 不動，
+          // 看起來像引擎當掉，實際上只是事件永遠收不到
+          if (!disposed) setFailure(`無法接收執行事件：${String(error)}`);
+        });
     };
 
     track(
@@ -71,6 +76,8 @@ export function App() {
         setRunning(false);
         // run 寫完才換資料來源，否則重播會讀到半成品
         setReloadToken((token) => token + 1);
+        // 跑完就是要看結果，停在進度條上等使用者自己點一下沒有意義
+        setPanel('replay');
       }),
     );
     track(

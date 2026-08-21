@@ -196,3 +196,57 @@ fn 取消可解除暫停的等待() {
         "暫停中取消必須能結束執行"
     );
 }
+
+// ── 執行權的釋放 ────────────────────────────────────────────────────────
+
+/// 桌面殼用 `is_active()` 決定要不要拒絕新的 run。
+///
+/// 這組測試存在的原因是實機回報：第一個 run 正常跑完後，第二次啟動被
+/// 「已有 run 正在執行」永久拒絕——因為跑完的 control 其 `cancelled`
+/// 仍是 false，只看那個旗標判斷不出「已結束」。
+#[test]
+fn 正常完成後釋放執行權() {
+    let control = Arc::new(RunControl::default());
+    assert!(control.is_active(), "尚未執行時視為佔用中，避免重複啟動");
+
+    run_with(Arc::clone(&control), 1_000);
+
+    assert!(
+        !control.is_active(),
+        "跑完的 run 必須釋放執行權，否則第二個 run 永遠開不起來"
+    );
+}
+
+#[test]
+fn 取消後釋放執行權() {
+    let control = Arc::new(RunControl::default());
+    control.cancelled.store(true, Ordering::Relaxed);
+    run_with(Arc::clone(&control), 10_000);
+    assert!(!control.is_active());
+}
+
+/// 執行中不得釋放執行權，否則兩個 run 會同時寫入同一個資料庫。
+#[test]
+fn 執行中維持佔用() {
+    let control = Arc::new(RunControl::default());
+    let observed = Arc::new(Mutex::new(Vec::new()));
+
+    let mut request = request();
+    request.hand_limit = 5_000;
+    let config = request.to_session_config().expect("轉換");
+    let store = Arc::new(Mutex::new(Store::open_in_memory().expect("資料庫")));
+
+    let control_for_probe = Arc::clone(&control);
+    let sink = Arc::clone(&observed);
+    execute(&config, &store, &control, 1_771_200_000, move |progress| {
+        // 在進度回呼裡檢查，此時執行緒確實還在 execute 內
+        if !progress.finished {
+            sink.lock().expect("鎖").push(control_for_probe.is_active());
+        }
+    })
+    .expect("執行");
+
+    let observed = observed.lock().expect("鎖");
+    assert!(!observed.is_empty(), "應有中途進度可供觀察");
+    assert!(observed.iter().all(|active| *active), "執行中必須維持佔用");
+}
