@@ -10,6 +10,7 @@
     "beforeBuildCommand": "pnpm --filter @taxes-leo/ui build"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "title": "9max 模擬平台",

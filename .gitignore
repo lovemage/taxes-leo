@@ -5,6 +5,7 @@
 node_modules/
 dist/
 .vite/
+*.tsbuildinfo
 
 # Rust
 target/
@@ -18,3 +19,7 @@ Thumbs.db
 
 # Rust build
 /target/
+
+# Tauri 產生檔與本機圖示候選
+apps/desktop/gen/schemas/
+apps/desktop/icon-candidates/
