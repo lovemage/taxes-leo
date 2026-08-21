@@ -31,7 +31,12 @@ export function Replay({ reloadToken, bigBlind }: { reloadToken: number; bigBlin
   const [run, setRun] = useState<RunView | null>(null);
   const [selected, setSelected] = useState(0);
   const [hand, setHand] = useState<HandView | null>(null);
-  const [visibility, setVisibility] = useState<HoleCardVisibility>('revealedOnly');
+  // 預設全部攤開（核心規格 2.4）。這是策略分析工具，複盤就是要看清楚
+  // 每個位置手上是什麼；遮住等於讓工具失去意義。
+  //
+  // 隔離的約束對象是引擎的決策路徑，不是這個畫面——牌桌上的 Bot 拿不到
+  // 他人底牌（DecisionView 結構上就沒有那個欄位），桌外複盤的人看得到
+  const [visibility, setVisibility] = useState<HoleCardVisibility>('all');
   const [error, setError] = useState<string | null>(null);
   const player = useReplayPlayer(hand?.frames ?? NO_FRAMES);
 
@@ -125,13 +130,14 @@ export function Replay({ reloadToken, bigBlind }: { reloadToken: number; bigBlin
               color: 'var(--text-secondary)',
               cursor: 'pointer',
             }}
+            title="切到限制模式後，未亮出的底牌不會傳到前端，可用來驗證自己的讀牌"
           >
             <input
               type="checkbox"
-              checked={visibility === 'all'}
-              onChange={(e) => setVisibility(e.target.checked ? 'all' : 'revealedOnly')}
+              checked={visibility === 'revealedOnly'}
+              onChange={(e) => setVisibility(e.target.checked ? 'revealedOnly' : 'all')}
             />
-            顯示未攤牌底牌
+            只顯示實際亮出的底牌
           </label>
         </header>
 

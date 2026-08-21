@@ -125,6 +125,10 @@ fn prepared() -> (IpcHandler, i64) {
 #[test]
 fn 未亮出的底牌不得出現在_ipc_回傳中() {
     let (handler, run_id) = prepared();
+    // 使用者自己的座位是明確的例外（UI 規格 G.2），由
+    // `使用者自己的底牌在預設可見範圍下仍然可見` 單獨驗證。
+    // 這條守的是**他人**的底牌不外流
+    let hero = config().hero_seat;
 
     let mut checked_any_muck = false;
     for index in 0..50u64 {
@@ -133,6 +137,9 @@ fn 未亮出的底牌不得出現在_ipc_回傳中() {
             .expect("取得手牌");
 
         for seat in &view.seats {
+            if usize::from(seat.seat) == hero {
+                continue;
+            }
             if seat.occupied && !seat.revealed {
                 assert!(
                     seat.hole_cards.is_none(),
@@ -258,4 +265,40 @@ fn dto_序列化為_camel_case_供前端直接使用() {
     assert!(json.contains("handIndex"), "欄位須為 camelCase");
     assert!(json.contains("deadButton"));
     assert!(!json.contains("hand_index"), "不得混入 snake_case");
+}
+
+/// 使用者自己的底牌恆可見（UI 規格 G.2）。
+///
+/// 牌本來就是發給他的，他在牌桌上一直看得到；重播遮掉自己的牌會讓畫面
+/// 對不上他當時的視角。這與隱藏資訊隔離不衝突——被遮的一直是**別人**
+/// 的牌。
+#[test]
+fn 使用者自己的底牌在預設可見範圍下仍然可見() {
+    let (handler, run_id) = prepared();
+    let hero = config().hero_seat;
+
+    let mut hidden_opponents = 0;
+    for index in 0..30 {
+        let view = handler
+            .get_hand(run_id, index, HoleCardVisibility::RevealedOnly)
+            .expect("取得手牌");
+        let seat = &view.seats[hero];
+        if !seat.occupied {
+            continue;
+        }
+        assert!(
+            seat.hole_cards.is_some(),
+            "第 {index} 手：使用者座位的底牌不得被遮蔽"
+        );
+        hidden_opponents += view
+            .seats
+            .iter()
+            .filter(|s| usize::from(s.seat) != hero && s.occupied && s.hole_cards.is_none())
+            .count();
+    }
+
+    assert!(
+        hidden_opponents > 0,
+        "他人未攤牌的底牌仍必須被遮蔽，否則就不是隔離而是全開"
+    );
 }

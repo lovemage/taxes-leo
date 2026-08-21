@@ -44,7 +44,15 @@ pub fn hand_view(
 ) -> Result<HandView, IpcError> {
     let record = store.load_hand(run_id, hand_index)?;
     let positions = resolve(&record.occupied, usize::from(record.big_blind_seat));
-    Ok(HandView::from_record(&record, &positions, visibility))
+    // 使用者座位取自 manifest，不由呼叫端指定：那是這個 run 的既成事實，
+    // 讓呼叫端傳等於開了一個「宣稱自己是別人」的入口
+    let hero_seat = store.load_manifest(run_id)?.hero_seat;
+    Ok(HandView::from_record(
+        &record,
+        &positions,
+        visibility,
+        hero_seat,
+    ))
 }
 
 /// 逐手摘要分頁。

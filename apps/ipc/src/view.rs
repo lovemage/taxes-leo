@@ -170,12 +170,14 @@ fn card_text(card: Card) -> String {
 impl HandView {
     /// 由儲存的紀錄組出可傳給 UI 的檢視。
     ///
-    /// `positions` 來自引擎的位置解析；`visibility` 決定底牌遮蔽範圍。
+    /// `positions` 來自引擎的位置解析；`visibility` 決定其他座位的底牌遮蔽
+    /// 範圍。`hero_seat` 的底牌不受 `visibility` 影響，恆可見。
     #[must_use]
     pub fn from_record(
         record: &HandRecord,
         positions: &Positions,
         visibility: HoleCardVisibility,
+        hero_seat: usize,
     ) -> Self {
         let seats = record
             .occupied
@@ -183,8 +185,14 @@ impl HandView {
             .enumerate()
             .map(|(seat, &occupied)| {
                 let revealed = record.revealed.get(seat).copied().unwrap_or(false);
-                // 遮蔽發生在這裡：未亮出且未開啟全揭露時，底牌根本不進入 DTO
-                let visible = matches!(visibility, HoleCardVisibility::All) || revealed;
+                // 遮蔽發生在這裡：未亮出且未開啟全揭露時，底牌根本不進入 DTO。
+                //
+                // 使用者自己的底牌是例外，**恆可見**（UI 規格 G.2）。這不是
+                // 放寬遮蔽：牌本來就是發給他的，他在牌桌上一直看得到。
+                // 遮掉自己的牌反而讓重播對不上他當時的視角
+                let visible = matches!(visibility, HoleCardVisibility::All)
+                    || revealed
+                    || seat == hero_seat;
                 let hole_cards = record
                     .hole_cards
                     .get(seat)

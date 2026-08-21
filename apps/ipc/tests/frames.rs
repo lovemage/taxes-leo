@@ -179,3 +179,70 @@ fn 底池在收池前只增不減() {
         }
     }
 }
+
+/// 每一個記錄下來的行動都必須有對應的幀，一個都不能少。
+///
+/// 這條回答「動畫只有二十幾步，其他的呢」：一手牌本來就只有二十幾個
+/// 事件。統計的樣本數是**手數**，不是每手的步數——十萬手各自有自己的
+/// 二十幾步，動畫一次播一手。
+#[test]
+fn 幀涵蓋全部強制下注與行動且不重複() {
+    const ACTION_KINDS: [&str; 5] = ["fold", "check", "call", "raiseTo", "allIn"];
+    const POST_KINDS: [&str; 4] = ["ante", "smallBlind", "bigBlind", "straddle"];
+
+    for record in collect(&config(RakeConfig::NONE, 300)) {
+        let built = frames::build(&record);
+
+        let action_frames = built
+            .iter()
+            .filter(|f| ACTION_KINDS.contains(&f.kind.as_str()))
+            .count();
+        assert_eq!(
+            action_frames,
+            record.actions.len(),
+            "第 {} 手：log 有 {} 個行動，幀只有 {action_frames} 個",
+            record.hand_index,
+            record.actions.len()
+        );
+
+        let post_frames = built
+            .iter()
+            .filter(|f| POST_KINDS.contains(&f.kind.as_str()))
+            .count();
+        assert_eq!(
+            post_frames,
+            record.posts.len(),
+            "第 {} 手：強制下注的幀數不符",
+            record.hand_index
+        );
+
+        // 收池必須是最後一幀，且只有一個
+        assert_eq!(
+            built.iter().filter(|f| f.kind == "settle").count(),
+            1,
+            "第 {} 手：收池幀應恰好一個",
+            record.hand_index
+        );
+        assert_eq!(
+            built.last().map(|f| f.kind.as_str()),
+            Some("settle"),
+            "收池必須是最後一幀"
+        );
+
+        // 發牌幀數 = 實際發出的街數
+        let expected_deals = match record.board.len() {
+            0 => 0,
+            3 => 1,
+            4 => 2,
+            _ => 3,
+        };
+        assert_eq!(
+            built.iter().filter(|f| f.kind == "deal").count(),
+            expected_deals,
+            "第 {} 手：{} 張公共牌應有 {expected_deals} 次發牌",
+            record.hand_index,
+            record.board.len()
+        );
+    }
+}
+
