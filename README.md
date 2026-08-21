@@ -61,6 +61,41 @@ pnpm --filter @taxes-leo/ui dev
 > 的傳輸層實作。Tauri 在 Linux 需要 webkit2gtk，開發機沒有時仍可用
 > 這條路徑完整開發與測試。
 
+## 在 Windows 上跑桌面殼
+
+產品最終形態是 Tauri 桌面應用。**`apps/desktop` 刻意排除在 Cargo workspace 之外**
+（根 `Cargo.toml` 的 `exclude`）：Tauri 在 Linux 需要 webkit2gtk，若併入 workspace，
+開發機的 `cargo test` 會因為它編不過而全部停擺。Windows 用的是系統內建的 WebView2，
+不需要 webkit2gtk。
+
+**Windows 端一次性準備**：
+
+1. [Rust](https://rustup.rs/)（安裝時會提示一併裝 MSVC build tools，必須裝）
+2. [Node.js 22+](https://nodejs.org/) 與 `npm i -g pnpm`
+3. WebView2 —— Win10/11 通常已內建；沒有的話裝
+   [Evergreen Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)
+
+**執行**：
+
+```powershell
+git pull
+pnpm install
+
+# 開發模式：自動啟動 Vite 並開出桌面視窗
+cd apps\desktop
+cargo run
+
+# 打包成 installer（產出 NSIS 與 MSI）
+cargo build --release
+```
+
+> `cargo run` 會依 `tauri.conf.json` 的 `beforeDevCommand` 自動起 Vite。
+> 首次建置要編譯 Tauri 與 SQLite 的 C 原始碼，約需數分鐘。
+
+**前端如何分辨環境**：`apps/ui/src/api.ts` 偵測 `window.__TAURI__` 是否存在，
+有就走 Tauri command，沒有就打 devserver 的 HTTP 端點。兩邊的 command 名稱與參數
+形狀一致，因此切換只發生在該檔，其餘前端程式碼不需要知道自己跑在哪裡。
+
 ## 牌手顧問校準流程
 
 顧問**不需要安裝任何開發工具**，用瀏覽器開啟單一 HTML 檔即可。
