@@ -94,6 +94,20 @@ pnpm build
 > 執行檔，不會執行 Tauri CLI 的前置命令。
 > 首次建置要編譯 Tauri 與 SQLite 的 C 原始碼，約需數分鐘。
 
+**打包產出**（2026-08-21 於 Windows 實測）：
+
+| 目標 | 結果 |
+|---|---|
+| NSIS installer | 2.82 MB |
+| MSI installer | 4.06 MB |
+
+> **MSI 必須指定 `wix.language: "zh-TW"`**。WiX 預設走 `en-US`／code page 1252，
+> 而產品名稱 `9max 模擬平台` 含中文字元，在該 code page 下無法編碼，MSI 打包會失敗
+> （NSIS 不受影響）。改為 `zh-TW`／code page 950 後正常。
+>
+> 若日後把 `productName` 改為純 ASCII，這行設定就不再是必要的；
+> 但只要產品名稱保有中文，就不能移除。
+
 **前端如何分辨環境**：`apps/ui/src/api.ts` 偵測 `window.__TAURI__` 是否存在，
 有就走 Tauri command，沒有就打 devserver 的 HTTP 端點。兩邊的 command 名稱與參數
 形狀一致，因此切換只發生在該檔，其餘前端程式碼不需要知道自己跑在哪裡。
