@@ -82,6 +82,7 @@ export function RunControl({
             }
           />
           <Summary label="手數" value={`${(request.handLimit / 1000).toFixed(0)}K`} />
+          <Summary label="Bot" value={botSummary(request)} />
           <Summary label="Seed" value={request.masterSeed} />
         </div>
       </section>
@@ -191,6 +192,14 @@ const STRADDLE_LABEL: Record<RunRequest['straddleMode'], string> = {
   single: '單 straddle',
   double: 'double straddle',
 };
+
+/** 有幾個座位調過參數。全預設時說「全預設」，而不是列出九個「標準」。 */
+function botSummary(request: RunRequest): string {
+  const tuned = request.bots.filter((bot) => Object.keys(bot.params).length > 0);
+  if (tuned.length === 0) return '全部預設';
+  const names = [...new Set(tuned.map((bot) => bot.name || '未命名'))];
+  return `${tuned.length} 座已調整（${names.join('、')}）`;
+}
 
 function statusText(progress: RunProgress | null, running: boolean): string {
   if (progress === null) return running ? '啟動中…' : '尚未執行。設定完成後按「開始執行」。';

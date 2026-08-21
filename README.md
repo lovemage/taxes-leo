@@ -157,14 +157,14 @@ cargo run --release --example attribute_feedback
 
 ## 目前進度
 
-`cargo test --workspace` 全綠，共 302 個測試。
+`cargo test --workspace` 全綠，共 316 個測試。
 
 | 里程碑 | 狀態 |
 |---|---|
 | M0 垂直切片 | 全鏈路可跑通；兩道硬閘門未過（見下） |
 | M1 規則層 | 完成 |
-| M2 策略與 Bot 層 | 型別骨架與校準工作台已建，baseline 內容待顧問回填 |
-| M3 桌面應用 UI | App shell、面板 A（牌桌設定）、面板 E（執行）可用；B／C／D／F／G 未做 |
+| M2 策略與 Bot 層 | 翻前參數化 baseline 已接進執行層，翻後無內容一律 fallback |
+| M3 桌面應用 UI | App shell 與面板 A／B／C／E／G 可用；D／F 未做 |
 | M4 收尾與發佈 | 未開始 |
 
 **已完成**
@@ -187,5 +187,9 @@ cargo run --release --example attribute_feedback
 **其他未完成的 M0 凍結項**：多人 Equity spike、變異數削減 spike、258V 基準測試環境。
 面板 A／C／E／G 的欄位級規格已補進 [`UI面板詳細規格.md`](UI面板詳細規格.md)。
 
-**M2 待做**：RangeTracker、preflop／postflop 策略表、7 組人格、多人 Equity、
-Analytics 與報表、顧問校準工具。
+**M2 待做**：翻後策略表（顧問內容）、7 組官方人格、多人 Equity、Analytics 與報表。
+
+> **翻後目前一律走 fallback**（`checkFold/v0`）。顧問的翻後規則表還沒進來，
+> 寫成別的樣子只會是我們自己編的內容，而編出來的內容會混進統計裡，
+> 讓人以為那是校準過的結果。翻前走的是參數化 baseline，位置、籌碼 bucket
+> 與情境都真的會影響分佈，因此面板 C 的參數調整看得到效果。

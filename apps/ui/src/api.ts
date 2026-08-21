@@ -11,9 +11,11 @@
 // （實做計劃第七章：型別單一來源）。
 
 import type {
+  BotSeatConfig,
   HandSummaryView,
   HandView,
   HoleCardVisibility,
+  ParamSpecView,
   PowerPreviewView,
   RunView,
 } from '../../../packages/poker-types/src/index';
@@ -37,6 +39,8 @@ export interface RunRequest {
   /** u64 以字串傳遞，避免在 JS 失去精度 */
   masterSeed: string;
   heroSeat: number;
+  /** 逐座 Bot 設定（面板 B／C）。索引即座位序 */
+  bots: BotSeatConfig[];
 }
 
 /** 背景執行推送的進度。 */
@@ -134,6 +138,26 @@ export function previewPower(handLimit: number, players: number): Promise<PowerP
   const bridge = tauri();
   if (!bridge) return Promise.resolve([]);
   return bridge.core.invoke<PowerPreviewView[]>('preview_power', { handLimit, players });
+}
+
+// ── Bot 設定（面板 B／C）─────────────────────────────────────────────
+
+/**
+ * 21 個 Bot 參數的規格。
+ *
+ * 鍵、單位、上下限與說明全部從引擎取得，前端不抄一份。抄一份的後果是
+ * 引擎改了範圍而 UI 不知道，使用者會拉到一個引擎會拒絕的值。
+ */
+export function listBotParams(): Promise<ParamSpecView[]> {
+  const bridge = tauri();
+  if (!bridge) return Promise.resolve([]);
+  return bridge.core.invoke<ParamSpecView[]>('list_bot_params');
+}
+
+export function listBotPresets(): Promise<BotSeatConfig[]> {
+  const bridge = tauri();
+  if (!bridge) return Promise.resolve([]);
+  return bridge.core.invoke<BotSeatConfig[]>('list_bot_presets');
 }
 
 // ── 資料查詢（面板 F／G）─────────────────────────────────────────────

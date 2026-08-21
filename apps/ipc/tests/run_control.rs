@@ -27,6 +27,7 @@ fn request() -> RunRequest {
         hand_limit: 2_000,
         master_seed: "20260821".to_owned(),
         hero_seat: 0,
+        bots: Vec::new(),
     }
 }
 
@@ -113,7 +114,7 @@ fn run_with(control: Arc<RunControl>, hand_limit: u64) -> (Vec<RunProgress>, u64
 
     let updates = Arc::new(Mutex::new(Vec::new()));
     let sink = Arc::clone(&updates);
-    execute(&config, &store, &control, 1_771_200_000, move |progress| {
+    execute(&config, &[], &store, &control, 1_771_200_000, move |progress| {
         sink.lock().expect("鎖").push(progress);
     })
     .expect("執行");
@@ -246,7 +247,7 @@ fn 執行中維持佔用() {
 
     let control_for_probe = Arc::clone(&control);
     let sink = Arc::clone(&observed);
-    execute(&config, &store, &control, 1_771_200_000, move |progress| {
+    execute(&config, &[], &store, &control, 1_771_200_000, move |progress| {
         // 在進度回呼裡檢查，此時執行緒確實還在 execute 內
         if !progress.finished {
             sink.lock().expect("鎖").push(control_for_probe.is_active());

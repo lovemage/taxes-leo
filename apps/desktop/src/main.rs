@@ -48,6 +48,10 @@ fn start_run(
     created_at: i64,
 ) -> CommandResult<()> {
     let config = request.to_session_config()?;
+    // 逐座 Bot 設定隨 request 一起進來；驗證在這裡就做，
+    // 不合法的參數不該等到背景執行緒跑起來才失敗
+    let bots = request.bots.clone();
+    poker_ipc::bots::to_bot_configs(&bots, config.players)?;
 
     // 已有 run 在跑時拒絕啟動，避免兩個 run 同時寫入。
     //
@@ -69,7 +73,7 @@ fn start_run(
     let app_for_thread = app.clone();
 
     std::thread::spawn(move || {
-        let result = run::execute(&config, &store, &control, created_at, |progress| {
+        let result = run::execute(&config, &bots, &store, &control, created_at, |progress| {
             let _ = app_for_thread.emit("run-progress", &progress);
         });
         match result {
@@ -115,6 +119,20 @@ fn cancel_run(state: State<'_, AppState>) -> CommandResult<()> {
 #[tauri::command]
 fn preview_power(hand_limit: u64, players: usize) -> Vec<PowerPreviewView> {
     poker_ipc::views::power_previews(hand_limit, players)
+}
+
+// ── Bot 設定（面板 B／C）─────────────────────────────────────────────
+
+/// 21 個 Bot 參數的規格。前端據此渲染欄位，不自行抄一份範圍
+#[tauri::command]
+fn list_bot_params() -> Vec<poker_ipc::ParamSpecView> {
+    poker_ipc::bots::all_specs()
+}
+
+/// 工程用示範組合。**不是校準過的人格**，顧問內容進來前的替代品
+#[tauri::command]
+fn list_bot_presets() -> Vec<poker_ipc::BotSeatConfig> {
+    poker_ipc::bots::demo_presets()
 }
 
 // ── 資料查詢（面板 F／G）─────────────────────────────────────────────
@@ -190,6 +208,8 @@ fn main() {
             pause_run,
             cancel_run,
             preview_power,
+            list_bot_params,
+            list_bot_presets,
             get_run,
             list_hands,
             get_hand

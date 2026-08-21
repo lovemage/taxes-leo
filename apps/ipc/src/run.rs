@@ -21,13 +21,16 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use poker_engine::betting::Action;
+use std::collections::BTreeMap;
+use std::sync::OnceLock;
+
+use poker_engine::bot::BotAgent;
 use poker_engine::chips::Chips;
 use poker_engine::pot::RakeConfig;
-use poker_engine::hand::ActionProvider;
 use poker_engine::rng::RNG_VERSION;
 use poker_engine::session::{run_session, SessionConfig};
-use poker_engine::strategy::DecisionView;
+use poker_engine::strategy::baseline::BaselineRules;
+use poker_engine::strategy::ranking::EquityRanking;
 use poker_engine::table::{AnteConfig, AnteMode, MuckPolicy, StraddleConfig, TableConfig};
 use poker_storage::codec::{HandRecord, LOG_FORMAT_VERSION};
 use poker_storage::manifest::{
@@ -65,6 +68,9 @@ pub struct RunRequest {
     /// master seed。字串傳遞，避免 u64 在 JS 失去精度
     pub master_seed: String,
     pub hero_seat: usize,
+    /// 逐座 Bot 設定（面板 B／C）。長度不足時以預設補齊
+    #[serde(default)]
+    pub bots: Vec<crate::bots::BotSeatConfig>,
 }
 
 impl RunRequest {
@@ -201,6 +207,7 @@ impl RunControl {
 /// 不得逐手觸發，否則 UI 執行緒會被重繪吃滿。
 pub fn execute(
     config: &SessionConfig,
+    bots: &[crate::bots::BotSeatConfig],
     store: &Arc<Mutex<Store>>,
     control: &Arc<RunControl>,
     created_at: i64,
@@ -210,7 +217,7 @@ pub fn execute(
     // 都不再代表「進行中的 run」。用 guard 而非在每個 return 前手動標記，
     // 是因為漏掉任何一條路徑的後果都是「之後再也開不了新的 run」
     let _guard = FinishGuard(control);
-    let manifest = build_manifest(config, created_at);
+    let manifest = build_manifest(config, bots, created_at);
     let run_id = {
         let mut guard = store.lock().map_err(|_| "資料庫鎖已毀損")?;
         guard
@@ -224,7 +231,14 @@ pub fn execute(
     let mut delta_sum = 0.0f64;
     let mut aborted = false;
 
-    let summary = run_session(config, &mut CallingStation, |played| {
+    let mut agent = BotAgent::new(
+        BaselineRules::engineering_placeholder(),
+        rankings(),
+        crate::bots::to_bot_configs(bots, config.players)?,
+        config.master_seed,
+    );
+
+    let summary = run_session(config, &mut agent, |played| {
         if aborted || !control.checkpoint() {
             aborted = true;
             return;
@@ -270,7 +284,7 @@ pub fn execute(
         }
     }
 
-    let mut final_manifest = build_manifest(config, created_at);
+    let mut final_manifest = build_manifest(config, bots, created_at);
     final_manifest.instances = summary
         .instances
         .iter()
@@ -322,7 +336,11 @@ impl Drop for FinishGuard<'_> {
     }
 }
 
-fn build_manifest(config: &SessionConfig, created_at: i64) -> RunManifest {
+fn build_manifest(
+    config: &SessionConfig,
+    bots: &[crate::bots::BotSeatConfig],
+    created_at: i64,
+) -> RunManifest {
     RunManifest {
         engine_version: env!("CARGO_PKG_VERSION").to_owned(),
         schema_version: SCHEMA_VERSION,
@@ -352,13 +370,33 @@ fn build_manifest(config: &SessionConfig, created_at: i64) -> RunManifest {
         stack_policy: "bustOut".to_owned(),
         auto_refill_target: config.auto_refill,
         rule_variants: RuleVariants::default(),
+        // 核心規格 3.3：內容本身必須保存，只留 hash 不合格。
+        // 逐座設定寫進來，日後才看得出「這個 run 到底調了什麼」
         hero_strategy: ContentSnapshot::new(
-            "示範策略",
-            "v0",
-            serde_json::json!({ "note": "顧問內容就緒前的佔位" }),
+            "參數化 baseline",
+            BASELINE_VERSION,
+            serde_json::json!({
+                "preflop": "BaselineRules::engineering_placeholder",
+                "postflop": poker_engine::bot::POSTFLOP_FALLBACK_VERSION,
+                "note": "翻後無內容表，一律 check／fold；顧問規則進來前不得當成校準結果",
+            }),
         ),
-        bot_personas: Vec::new(),
-        baseline_version: "none".to_owned(),
+        bot_personas: bots
+            .iter()
+            .enumerate()
+            .map(|(seat, bot)| {
+                ContentSnapshot::new(
+                    if bot.name.is_empty() {
+                        format!("座位 {seat}")
+                    } else {
+                        bot.name.clone()
+                    },
+                    BASELINE_VERSION,
+                    serde_json::to_value(&bot.params).unwrap_or(serde_json::Value::Null),
+                )
+            })
+            .collect(),
+        baseline_version: BASELINE_VERSION.to_owned(),
         instances: Vec::new(),
         created_at,
         completed: false,
@@ -367,17 +405,22 @@ fn build_manifest(config: &SessionConfig, created_at: i64) -> RunManifest {
 }
 
 /// 示範用的行動來源。M2 內容就緒後由使用者策略與 Bot 決策取代。
-struct CallingStation;
+/// 進程層級的 equity 排序快取。
+///
+/// 20,000 次取樣要跑近兩秒。它只取決於取樣數，因此每個 run 重算一次
+/// 純粹是讓使用者多等——第一個 run 付這兩秒，之後免費。
+static RANKINGS: OnceLock<BTreeMap<usize, EquityRanking>> = OnceLock::new();
 
-impl ActionProvider for CallingStation {
-    fn choose(&mut self, view: &DecisionView) -> Action {
-        let legal = &view.legal;
-        if legal.can_check {
-            Action::Check
-        } else if legal.call_to.is_some() {
-            Action::Call
-        } else {
-            Action::AllIn
-        }
-    }
+/// 內容級取樣數（`EquityRanking::is_content_grade` 的門檻）。
+///
+/// 取樣不足時可玩性調整會被雜訊蓋過，產生的範圍與工作台顯示的對不上。
+const RANKING_SAMPLES: u64 = 20_000;
+
+/// 基準內容的版本字串，寫入 `RunManifest`。
+const BASELINE_VERSION: &str = "engineeringPlaceholder/v0";
+
+fn rankings() -> BTreeMap<usize, EquityRanking> {
+    RANKINGS
+        .get_or_init(|| BotAgent::rankings(RANKING_SAMPLES))
+        .clone()
 }

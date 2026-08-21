@@ -112,6 +112,54 @@ pub struct BaselineRules {
 }
 
 impl BaselineRules {
+    /// 依萬分比乘數縮放**全部範圍寬度**，回傳新的規則集。
+    ///
+    /// 這是人格層 `rangeWidth` 的實際作用點。把它做成後段的行動權重縮放
+    /// 是行不通的：基準內容絕大多數格子是純策略（fold 權重就是 10000），
+    /// 乘上倍率再正規化仍然是 100%，參數等於沒有作用。「範圍寬度」的語意
+    /// 本來就是**進池範圍**，作用在寬度上才對得起這個名字。
+    ///
+    /// 加注尺度與可玩性調整不縮放——那是另外兩個參數的職責。
+    #[must_use]
+    pub fn scaled(&self, multiplier: Myriad) -> Self {
+        if multiplier == FULL {
+            return self.clone();
+        }
+        let scale = |width: Myriad| -> Myriad {
+            let scaled = u64::from(width) * u64::from(multiplier) / u64::from(FULL);
+            Myriad::try_from(scaled.min(u64::from(FULL))).unwrap_or(FULL)
+        };
+        let scale_widths = |widths: ScenarioWidths| ScenarioWidths {
+            aggressive_earliest: scale(widths.aggressive_earliest),
+            aggressive_latest: scale(widths.aggressive_latest),
+            call_extra: scale(widths.call_extra),
+            // 混合帶不縮放：它是邊界的柔化幅度，不是範圍大小。
+            // 跟著縮的話，緊的 Bot 會連帶失去混合，變成硬邊界
+            mix_band: widths.mix_band,
+        };
+
+        let mut opening = self.opening.clone();
+        for ((seated, position), width) in self.opening.entries() {
+            opening.set(seated, position, scale(width));
+        }
+        let mut vs_open_width = self.vs_open_width.clone();
+        for ((seated, hero, opener), width) in self.vs_open_width.entries() {
+            vs_open_width.set(seated, hero, opener, scale(width));
+        }
+
+        Self {
+            unopened: scale_widths(self.unopened),
+            vs_limp: scale_widths(self.vs_limp),
+            vs_open: scale_widths(self.vs_open),
+            vs_three_bet: scale_widths(self.vs_three_bet),
+            vs_four_bet: scale_widths(self.vs_four_bet),
+            vs_squeeze: scale_widths(self.vs_squeeze),
+            opening,
+            vs_open_width,
+            ..self.clone()
+        }
+    }
+
     /// 工程佔位版本的預設規則。
     ///
     /// 這些數字的來源是常見的緊兇結構（位置越晚越寬、面對加注需更強），

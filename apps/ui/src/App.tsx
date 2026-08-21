@@ -20,6 +20,7 @@ import {
   type RunRequest,
 } from './api';
 import { IconRail, type RailItem } from './components/IconRail';
+import { BotSetup } from './panels/BotSetup';
 import { Replay } from './panels/Replay';
 import { RunControl } from './panels/RunControl';
 import { DEFAULT_REQUEST, TableSetup, validateRequest } from './panels/TableSetup';
@@ -27,7 +28,7 @@ import { DEFAULT_REQUEST, TableSetup, validateRequest } from './panels/TableSetu
 const RAIL: readonly RailItem[] = [
   { key: 'run', glyph: '▶', label: '執行', enabled: true },
   { key: 'replay', glyph: '⏱', label: '重播', enabled: true },
-  { key: 'bots', glyph: '◍', label: 'Bot', enabled: false },
+  { key: 'bots', glyph: '◍', label: 'Bot', enabled: true },
   { key: 'strategy', glyph: '▦', label: '策略', enabled: false },
   { key: 'report', glyph: '◫', label: '報表', enabled: false },
 ];
@@ -129,13 +130,19 @@ export function App() {
           padding: 16,
         }}
       >
-        <h2 style={{ fontSize: 13, margin: '0 0 16px' }}>牌桌設定</h2>
-        <TableSetup request={request} onChange={setRequest} locked={running} />
+        <h2 style={{ fontSize: 13, margin: '0 0 16px' }}>
+          {panel === 'bots' ? 'Bot 設定' : '牌桌設定'}
+        </h2>
+        {panel === 'bots' ? (
+          <BotSetup request={request} onChange={setRequest} locked={running} />
+        ) : (
+          <TableSetup request={request} onChange={setRequest} locked={running} />
+        )}
       </aside>
 
       {/* 右：主內容 */}
       <main style={{ flex: 1, overflow: 'auto', background: 'var(--bg-base)' }}>
-        {panel === 'run' ? (
+        {panel === 'run' || panel === 'bots' ? (
           <RunControl
             request={request}
             progress={progress}

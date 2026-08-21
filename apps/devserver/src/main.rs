@@ -13,10 +13,9 @@
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 
-use poker_engine::betting::Action;
 use poker_engine::chips::Chips;
-use poker_engine::hand::ActionProvider;
-use poker_engine::strategy::DecisionView;
+use poker_engine::bot::{BotAgent, BotConfig};
+use poker_engine::strategy::baseline::BaselineRules;
 use poker_engine::rng::RNG_VERSION;
 use poker_engine::session::{run_session, SessionConfig};
 use poker_engine::table::TableConfig;
@@ -30,23 +29,11 @@ use poker_storage::Store;
 const ADDR: &str = "127.0.0.1:7801";
 const HERO_SEAT: usize = 0;
 
-/// 示範用的行動來源：能過牌就過牌，否則跟注。
+/// 示範資料的 equity 取樣數。
 ///
-/// M2 會由使用者策略與 Bot 決策取代。
-struct CallingStation;
-
-impl ActionProvider for CallingStation {
-    fn choose(&mut self, view: &DecisionView) -> Action {
-        let legal = &view.legal;
-        if legal.can_check {
-            Action::Check
-        } else if legal.call_to.is_some() {
-            Action::Call
-        } else {
-            Action::AllIn
-        }
-    }
-}
+/// 遠低於內容級門檻，因為這只是開發鷹架的示範資料，
+/// 不會拿來當統計依據；用 20,000 會讓 dev server 每次啟動多等兩秒。
+const DEMO_RANKING_SAMPLES: u64 = 2_000;
 
 fn seed_run() -> (IpcHandler, i64) {
     let config = SessionConfig {
@@ -64,7 +51,16 @@ fn seed_run() -> (IpcHandler, i64) {
     let run_id = store.create_run(&manifest).expect("建立 run");
 
     let mut rows = Vec::new();
-    let summary = run_session(&config, &mut CallingStation, |played| {
+    // 與桌面版走同一條決策路徑，示範資料才會有加注與棄牌，
+    // 而不是九個人從頭 check 到底
+    let mut agent = BotAgent::new(
+        BaselineRules::engineering_placeholder(),
+        BotAgent::rankings(DEMO_RANKING_SAMPLES),
+        vec![BotConfig::defaults("示範"); config.players],
+        config.master_seed,
+    );
+
+    let summary = run_session(&config, &mut agent, |played| {
         let record = HandRecord::from_played(played);
         let contributed = played.result.total_contributions[HERO_SEAT];
         let delta = record.hero_delta(HERO_SEAT, contributed);
