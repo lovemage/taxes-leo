@@ -160,6 +160,8 @@ fn 格式版本不符時拒絕解碼() {
         revealed: vec![false; 6],
         board: Vec::new(),
         actions: Vec::new(),
+        starting_stacks: vec![Chips::new(400); 6],
+        posts: Vec::new(),
         payouts: vec![Chips::ZERO; 6],
         refunds: vec![Chips::ZERO; 6],
         rake: Chips::ZERO,
@@ -365,6 +367,34 @@ fn 可取回最近一個_run() {
 
     // 桌面殼重開視窗時靠這個接回上次的結果，取到舊的那個等於接錯
     assert_eq!(store.latest_run_id().expect("查詢"), Some(second));
+}
+
+/// log 格式跳版後，舊 run 本版解不開，接回去只會讓使用者一開啟就撞到錯誤。
+#[test]
+fn 接回上次結果時跳過格式不相容的_run() {
+    let config = session_config(20);
+    let mut store = Store::open_in_memory().expect("建立資料庫");
+
+    let good = store.create_run(&manifest_for(&config)).expect("建立可讀 run");
+
+    // 舊格式的 run 過不了 create_run 的驗證——它本來就只會出現在
+    // 舊版程式寫下的資料庫裡，所以這裡直接寫進資料表模擬那個情況
+    let mut json = serde_json::to_value(manifest_for(&config)).expect("序列化");
+    json["logFormatVersion"] =
+        serde_json::json!(poker_storage::codec::LOG_FORMAT_VERSION - 1);
+    store
+        .connection()
+        .execute(
+            "INSERT INTO run(manifest, created_at, completed) VALUES (?1, ?2, 1)",
+            rusqlite::params![json.to_string(), 1_771_200_000i64],
+        )
+        .expect("寫入舊格式 run");
+
+    assert_eq!(
+        store.latest_run_id().expect("查詢"),
+        Some(good),
+        "應跳過舊格式，接回最近一個讀得懂的 run"
+    );
 }
 
 // ── 重播一致性 ──────────────────────────────────────────────────────────

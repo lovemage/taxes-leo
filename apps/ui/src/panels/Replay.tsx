@@ -12,7 +12,15 @@ import type {
 import { getHand, getRun } from '../api';
 import { ActionChip } from '../components/ActionChip';
 import { HandList } from '../components/HandList';
+import {
+  frameCaption,
+  ReplayControls,
+  useReplayPlayer,
+} from '../components/ReplayPlayer';
 import { TableView } from '../components/TableView';
+
+/** 手牌未載入時的空幀，讓 hook 的呼叫順序不隨資料變動 */
+const NO_FRAMES: never[] = [];
 
 /**
  * @param reloadToken 每次遞增就重新抓取。run 跑完後 App shell 會遞增它，
@@ -25,6 +33,7 @@ export function Replay({ reloadToken, bigBlind }: { reloadToken: number; bigBlin
   const [hand, setHand] = useState<HandView | null>(null);
   const [visibility, setVisibility] = useState<HoleCardVisibility>('revealedOnly');
   const [error, setError] = useState<string | null>(null);
+  const player = useReplayPlayer(hand?.frames ?? NO_FRAMES);
 
   useEffect(() => {
     setError(null);
@@ -126,9 +135,32 @@ export function Replay({ reloadToken, bigBlind }: { reloadToken: number; bigBlin
           </label>
         </header>
 
-        {hand ? (
+        {hand && hand.frames.length > 0 ? (
           <>
-            <TableView hand={hand} heroSeat={run?.heroSeat ?? 0} bigBlind={bigBlind} />
+            <TableView
+              hand={hand}
+              frame={hand.frames[Math.min(player.index, hand.frames.length - 1)]}
+              heroSeat={run?.heroSeat ?? 0}
+              bigBlind={bigBlind}
+            />
+
+            <div
+              style={{
+                marginTop: 10,
+                fontSize: 13,
+                color: 'var(--text-primary)',
+                textAlign: 'center',
+                minHeight: 18,
+              }}
+            >
+              {frameCaption(
+                hand.frames[Math.min(player.index, hand.frames.length - 1)],
+                hand.seats.map((seat) => seat.position),
+                bigBlind,
+              )}
+            </div>
+
+            <ReplayControls frames={hand.frames} {...player} />
 
             <section
               style={{

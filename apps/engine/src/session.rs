@@ -221,6 +221,11 @@ pub struct PlayedHand {
     pub instance_index: u64,
     pub positions: Positions,
     pub result: HandResult,
+    /// 本手開打前各座籌碼。
+    ///
+    /// 重播要顯示「這一刻各家還剩多少」就得從這裡減；`bustOut` 政策下
+    /// 籌碼跨手結轉，所以每手的起點都不一樣，不能拿設定裡的起始深度充當
+    pub starting_stacks: Vec<Chips>,
     /// 本手在桌人數。逐位置統計必須依此切片（核心規格 5.3）
     pub seated: usize,
 }
@@ -267,6 +272,7 @@ pub fn run_session(
 
             let setup = instance.setup();
             let positions = instance.positions();
+            let starting_stacks = instance.stacks.clone();
             let mut rng = Rng::derive(config.master_seed, hands_played, RngDomain::Deal);
             let result = play_hand(&config.table, &setup, &mut rng, provider);
 
@@ -278,6 +284,7 @@ pub fn run_session(
                 instance_index,
                 positions,
                 result,
+                starting_stacks,
                 seated: instance.seated(),
             };
             on_hand(&played);

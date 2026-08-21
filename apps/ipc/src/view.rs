@@ -105,6 +105,39 @@ pub struct SeatView {
     pub refund: u64,
 }
 
+/// 重播動畫的一幀（UI 規格 G.4）。
+///
+/// 每一幀是「牌桌在某個時間點的完整狀態」，不是「相對前一幀的變化」。
+/// 前端因此可以直接跳到任意幀，不必從頭累加——逐步、拖曳與倒帶都成立。
+///
+/// 金額全部由引擎算好。G.4 明訂底池與各座籌碼不得由 UI 重算，
+/// 因為那等於把下注規則複製一份到前端。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
+#[serde(rename_all = "camelCase")]
+pub struct FrameView {
+    /// ante／smallBlind／bigBlind／straddle／deal／fold／check／call／raiseTo／allIn／settle
+    pub kind: String,
+    pub street: StreetView,
+    /// 這一幀由誰行動。發牌與收池為 null
+    pub seat: Option<u8>,
+    /// 金額。`raiseTo` 為加注到的本街累計額，`call`／`allIn` 為跟到的額度，
+    /// 強制下注為該筆金額，其餘為 null
+    #[ts(type = "number | null")]
+    pub to: Option<u64>,
+    /// **這一幀已發出**的公共牌。未發的牌不在此，UI 拿不到就畫不出來
+    pub board: Vec<String>,
+    #[ts(type = "number")]
+    pub pot: u64,
+    /// 各座本手累計投入
+    #[ts(type = "number[]")]
+    pub committed: Vec<u64>,
+    /// 各座剩餘籌碼
+    #[ts(type = "number[]")]
+    pub stacks: Vec<u64>,
+    pub folded: Vec<bool>,
+}
+
 /// 一手牌的可視化資料。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
@@ -122,6 +155,8 @@ pub struct HandView {
     pub seats: Vec<SeatView>,
     pub board: Vec<String>,
     pub actions: Vec<ActionView>,
+    /// 重播動畫的逐幀狀態。順序即播放順序
+    pub frames: Vec<FrameView>,
     #[ts(type = "number")]
     pub rake: u64,
     /// 本手實際套用的底牌可見範圍，供 UI 顯示「重播已開啟全底牌」之類的提示
@@ -184,6 +219,7 @@ impl HandView {
             seats,
             board: record.board.iter().copied().map(card_text).collect(),
             actions: record.actions.iter().map(ActionView::from).collect(),
+            frames: crate::frames::build(record),
             rake: record.rake.units(),
             visibility,
         }

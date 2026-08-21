@@ -18,7 +18,12 @@ use poker_engine::session::PlayedHand;
 ///
 /// v2：新增 `revealed` 遮罩。重播時必須知道哪些底牌依現實規則實際亮出過，
 /// 否則 IPC 層無從判定可傳給 UI 的範圍（核心規格 2.4）。
-pub const LOG_FORMAT_VERSION: u16 = 2;
+///
+/// v3：新增起始籌碼、強制下注紀錄與每個行動的 `committed_to`。
+/// UI 規格 G.4 要求重播的底池與各座籌碼「一律取自 log 的事件，不由 UI
+/// 重算」；只存 (街別, 座位, 行動) 的話，跟注與 all-in 的金額必須靠
+/// 重跑下注規則才推得出來，等於把規則邏輯複製到讀取端。
+pub const LOG_FORMAT_VERSION: u16 = 3;
 
 const MAGIC: [u8; 2] = *b"9M";
 
@@ -27,6 +32,29 @@ pub struct RecordedAction {
     pub street: Street,
     pub seat: u8,
     pub action: Action,
+    /// 該座在**本街**行動後的累計投入。
+    ///
+    /// 由引擎的 `HandEvent::Acted` 原樣保存。`Call` 與 `AllIn` 的金額
+    /// 不出現在行動本身，重播要顯示底池就只能靠這個值
+    pub committed_to: Chips,
+}
+
+/// 強制下注（ante／盲注／straddle）。
+///
+/// 底池在第一個自願行動之前就已經有錢，這些錢不在 `actions` 裡。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RecordedPost {
+    pub seat: u8,
+    pub kind: PostKind,
+    pub amount: Chips,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PostKind {
+    Ante,
+    SmallBlind,
+    BigBlind,
+    Straddle,
 }
 
 /// 一手牌的完整可重播紀錄。
@@ -47,6 +75,9 @@ pub struct HandRecord {
     pub revealed: Vec<bool>,
     pub board: Vec<Card>,
     pub actions: Vec<RecordedAction>,
+    /// 本手開打前各座籌碼（未入座者為 0）
+    pub starting_stacks: Vec<Chips>,
+    pub posts: Vec<RecordedPost>,
     pub payouts: Vec<Chips>,
     pub refunds: Vec<Chips>,
     pub rake: Chips,
@@ -57,21 +88,45 @@ impl HandRecord {
     #[must_use]
     pub fn from_played(played: &PlayedHand) -> Self {
         let result: &HandResult = &played.result;
+        use poker_engine::hand::HandEvent;
+
         let actions = result
             .events
             .iter()
             .filter_map(|event| match event {
-                poker_engine::hand::HandEvent::Acted {
+                HandEvent::Acted {
                     street,
                     seat,
                     action,
-                    ..
+                    committed_to,
                 } => Some(RecordedAction {
                     street: *street,
                     seat: u8::try_from(*seat).expect("座位索引必小於 256"),
                     action: *action,
+                    committed_to: *committed_to,
                 }),
                 _ => None,
+            })
+            .collect();
+
+        let posts = result
+            .events
+            .iter()
+            .filter_map(|event| {
+                let (seat, kind, amount) = match event {
+                    HandEvent::PostAnte { seat, amount } => (seat, PostKind::Ante, amount),
+                    HandEvent::PostSmallBlind { seat, amount } => {
+                        (seat, PostKind::SmallBlind, amount)
+                    }
+                    HandEvent::PostBigBlind { seat, amount } => (seat, PostKind::BigBlind, amount),
+                    HandEvent::PostStraddle { seat, amount } => (seat, PostKind::Straddle, amount),
+                    _ => return None,
+                };
+                Some(RecordedPost {
+                    seat: u8::try_from(*seat).expect("座位索引必小於 256"),
+                    kind,
+                    amount: *amount,
+                })
             })
             .collect();
 
@@ -85,6 +140,8 @@ impl HandRecord {
             revealed: result.revealed.clone(),
             board: result.board.clone(),
             actions,
+            starting_stacks: played.starting_stacks.clone(),
+            posts,
             payouts: result.distribution.payouts.clone(),
             refunds: result.distribution.refunds.clone(),
             rake: result.distribution.rake,
@@ -109,6 +166,7 @@ pub enum CodecError {
     BadCard(u8),
     BadAction(u8),
     BadStreet(u8),
+    BadPost(u8),
 }
 
 // ── 編碼 ────────────────────────────────────────────────────────────────
@@ -180,6 +238,24 @@ pub fn encode(record: &HandRecord) -> Vec<u8> {
         out.push(card_byte(card));
     }
 
+    // 起始籌碼（v3）。座位數已寫在前面，這裡逐座寫值
+    for &stack in &record.starting_stacks {
+        put_varint(&mut out, stack.units());
+    }
+
+    // 強制下注（v3）
+    put_varint(&mut out, record.posts.len() as u64);
+    for post in &record.posts {
+        out.push(post.seat);
+        out.push(match post.kind {
+            PostKind::Ante => 0,
+            PostKind::SmallBlind => 1,
+            PostKind::BigBlind => 2,
+            PostKind::Straddle => 3,
+        });
+        put_varint(&mut out, post.amount.units());
+    }
+
     put_varint(&mut out, record.actions.len() as u64);
     for action in &record.actions {
         out.push(street_byte(action.street));
@@ -194,6 +270,7 @@ pub fn encode(record: &HandRecord) -> Vec<u8> {
                 put_varint(&mut out, to.units());
             }
         }
+        put_varint(&mut out, action.committed_to.units());
     }
 
     for &amount in &record.payouts {
@@ -297,6 +374,29 @@ pub fn decode(bytes: &[u8]) -> Result<HandRecord, CodecError> {
         board.push(r.card()?);
     }
 
+    let mut starting_stacks = Vec::with_capacity(seats);
+    for _ in 0..seats {
+        starting_stacks.push(Chips::new(r.varint()?));
+    }
+
+    let post_count = usize::try_from(r.varint()?).map_err(|_| CodecError::Truncated)?;
+    let mut posts = Vec::with_capacity(post_count);
+    for _ in 0..post_count {
+        let seat = r.u8()?;
+        let kind = match r.u8()? {
+            0 => PostKind::Ante,
+            1 => PostKind::SmallBlind,
+            2 => PostKind::BigBlind,
+            3 => PostKind::Straddle,
+            other => return Err(CodecError::BadPost(other)),
+        };
+        posts.push(RecordedPost {
+            seat,
+            kind,
+            amount: Chips::new(r.varint()?),
+        });
+    }
+
     let action_count = usize::try_from(r.varint()?).map_err(|_| CodecError::Truncated)?;
     let mut actions = Vec::with_capacity(action_count);
     for _ in 0..action_count {
@@ -320,6 +420,7 @@ pub fn decode(bytes: &[u8]) -> Result<HandRecord, CodecError> {
             street,
             seat,
             action,
+            committed_to: Chips::new(r.varint()?),
         });
     }
 
@@ -342,6 +443,8 @@ pub fn decode(bytes: &[u8]) -> Result<HandRecord, CodecError> {
         revealed,
         board,
         actions,
+        starting_stacks,
+        posts,
         payouts,
         refunds,
         rake,

@@ -3,7 +3,7 @@
 // 使用者座位以醒目底色標示；未公開的底牌畫成佔位方塊，
 // 資料本身就沒有送到前端（遮蔽發生在 IPC 邊界）。
 
-import type { HandView } from '../../../../packages/poker-types/src/index';
+import type { FrameView, HandView } from '../../../../packages/poker-types/src/index';
 import { Card, HiddenCard } from './Card';
 
 /** 依座位數把座位平均分佈在橢圓上，起點在正下方（使用者側）。 */
@@ -17,10 +17,13 @@ function seatPosition(index: number, total: number) {
 
 export function TableView({
   hand,
+  frame,
   heroSeat,
   bigBlind,
 }: {
   hand: HandView;
+  /** 目前播放到的一幀。公共牌、底池與各座籌碼一律取自這裡（UI 規格 G.4） */
+  frame: FrameView;
   heroSeat: number;
   bigBlind: number;
 }) {
@@ -58,14 +61,23 @@ export function TableView({
           gap: 8,
         }}
       >
-        <div style={{ display: 'flex', gap: 4 }}>
-          {hand.board.length > 0 ? (
-            hand.board.map((code, i) => <Card key={i} code={code} size="large" />)
+        <div style={{ display: 'flex', gap: 4, minHeight: 62, alignItems: 'center' }}>
+          {frame.board.length > 0 ? (
+            frame.board.map((code, i) => <Card key={i} code={code} size="large" />)
           ) : (
-            <span className="dim">翻前結束，未發公共牌</span>
+            <span className="dim">未發公共牌</span>
           )}
         </div>
-        {hand.rake > 0 && (
+        <div
+          className="num"
+          style={{ fontSize: 18, color: 'var(--text-primary)', textAlign: 'center' }}
+        >
+          {(frame.pot / bigBlind).toFixed(1)}
+          <span className="dim" style={{ fontSize: 11, marginLeft: 4 }}>
+            BB 底池
+          </span>
+        </div>
+        {frame.kind === 'settle' && hand.rake > 0 && (
           <span className="dim" style={{ fontSize: 11 }}>
             抽水 <span className="num">{(hand.rake / bigBlind).toFixed(1)}</span> BB
           </span>
@@ -76,6 +88,10 @@ export function TableView({
       {hand.seats.map((seat, index) => {
         const isHero = seat.seat === heroSeat;
         const pos = seatPosition(index, hand.seats.length);
+        const acting = frame.seat === seat.seat;
+        const folded = frame.folded[seat.seat] ?? false;
+        const committed = frame.committed[seat.seat] ?? 0;
+        const stack = frame.stacks[seat.seat] ?? 0;
         return (
           <div
             key={seat.seat}
@@ -83,13 +99,21 @@ export function TableView({
               position: 'absolute',
               ...pos,
               transform: 'translate(-50%, -50%)',
-              width: 96,
+              width: 104,
               padding: 8,
               borderRadius: 'var(--radius-panel)',
-              border: `1px solid ${isHero ? 'var(--accent)' : 'var(--border)'}`,
-              background: isHero ? 'var(--bg-raised)' : 'var(--bg-surface)',
-              opacity: seat.occupied ? 1 : 0.35,
+              border: `1px solid ${
+                acting ? 'var(--accent)' : isHero ? 'var(--accent)' : 'var(--border)'
+              }`,
+              background: acting
+                ? 'var(--bg-hover)'
+                : isHero
+                  ? 'var(--bg-raised)'
+                  : 'var(--bg-surface)',
+              // 棄牌者淡出但不消失，才看得出還剩誰在牌局裡
+              opacity: !seat.occupied ? 0.35 : folded ? 0.4 : 1,
               textAlign: 'center',
+              transition: 'opacity 120ms linear, background 120ms linear',
             }}
           >
             <div
@@ -119,11 +143,25 @@ export function TableView({
                 </span>
               )}
             </div>
-            {seat.payout > 0 && (
+            {seat.occupied && (
               <div
-                className="num positive"
-                style={{ fontSize: 12, marginTop: 4 }}
+                className="num"
+                style={{ fontSize: 11, marginTop: 4, color: 'var(--text-secondary)' }}
               >
+                {(stack / bigBlind).toFixed(1)}
+                <span className="dim" style={{ marginLeft: 2 }}>BB</span>
+              </div>
+            )}
+            {committed > 0 && (
+              <div
+                className="num"
+                style={{ fontSize: 11, color: 'var(--warning)' }}
+              >
+                投入 {(committed / bigBlind).toFixed(1)}
+              </div>
+            )}
+            {frame.kind === 'settle' && seat.payout > 0 && (
+              <div className="num positive" style={{ fontSize: 12, marginTop: 2 }}>
                 +{(seat.payout / bigBlind).toFixed(1)}
               </div>
             )}

@@ -7,6 +7,7 @@
 // 前端只消費產生結果，兩邊不各自手寫，避免型別漂移。
 
 export type { ActionView } from './generated/ActionView';
+export type { FrameView } from './generated/FrameView';
 export type { HandSummaryView } from './generated/HandSummaryView';
 export type { HandView } from './generated/HandView';
 export type { HoleCardVisibility } from './generated/HoleCardVisibility';

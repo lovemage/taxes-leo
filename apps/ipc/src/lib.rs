@@ -12,6 +12,7 @@
 //! 呼叫這裡的 handler 並把結果序列化，因此 IPC 契約可在無 GUI 環境下
 //! 完整測試。
 
+pub mod frames;
 pub mod handler;
 pub mod run;
 pub mod view;
@@ -20,6 +21,6 @@ pub mod views;
 pub use handler::{IpcError, IpcHandler};
 pub use run::{execute, RunControl, RunProgress, RunRequest};
 pub use view::{
-    ActionView, HandSummaryView, HandView, HoleCardVisibility, PowerPreviewView, RunView, SeatView,
-    StreetView,
+    ActionView, FrameView, HandSummaryView, HandView, HoleCardVisibility, PowerPreviewView, RunView,
+    SeatView, StreetView,
 };
