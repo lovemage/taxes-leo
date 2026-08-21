@@ -17,6 +17,7 @@ pub mod vs_open;
 pub mod baseline;
 pub mod calibration;
 pub mod cell_override;
+pub mod range;
 pub mod ranking;
 
 pub use decision::{DecisionView, OpponentPublic, PublicAction, StackBucket};
@@ -29,6 +30,7 @@ pub use vs_open::VsOpenWidths;
 pub use baseline::{BaselineRules, ScenarioWidths};
 pub use calibration::{Attribution, MatrixCell, ParameterRef, RangeMatrix, Verdict};
 pub use cell_override::{CellOverrides, OverrideCell};
+pub use range::{Range, RangeTracker, COMBO_COUNT};
 pub use ranking::{ClassEquity, EquityRanking};
 
 /// 自身 range：169 類各自的到達權重（萬分比）。
