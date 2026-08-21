@@ -1,6 +1,7 @@
 packages:
   - 'packages/*'
   - 'apps/ui'
+  - 'apps/desktop'
 
 # Vite 的 esbuild 需要執行安裝腳本取得原生執行檔
 allowBuilds:

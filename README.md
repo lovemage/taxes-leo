@@ -83,13 +83,15 @@ pnpm install
 
 # 開發模式：自動啟動 Vite 並開出桌面視窗
 cd apps\desktop
-cargo run
+pnpm dev
 
 # 打包成 installer（產出 NSIS 與 MSI）
-cargo build --release
+pnpm build
 ```
 
-> `cargo run` 會依 `tauri.conf.json` 的 `beforeDevCommand` 自動起 Vite。
+> `pnpm dev` 會透過 Tauri CLI 讀取 `tauri.conf.json`，並由
+> `beforeDevCommand` 自動啟動 Vite。直接執行 `cargo run` 只會啟動 Rust
+> 執行檔，不會執行 Tauri CLI 的前置命令。
 > 首次建置要編譯 Tauri 與 SQLite 的 C 原始碼，約需數分鐘。
 
 **前端如何分辨環境**：`apps/ui/src/api.ts` 偵測 `window.__TAURI__` 是否存在，
@@ -130,7 +132,7 @@ cargo run --release --example attribute_feedback
 
 ## 目前進度
 
-`cargo test --workspace` 全綠，共 113 個測試。
+`cargo test --workspace` 全綠，共 279 個測試。
 
 | 里程碑 | 狀態 |
 |---|---|
