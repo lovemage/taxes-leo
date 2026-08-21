@@ -18,7 +18,7 @@ use poker_engine::strategy::preflop::{positions_for, PreflopNode, PreflopScenari
 use poker_engine::strategy::playability::PlayabilityCategory;
 use poker_engine::strategy::ranking::EquityRanking;
 
-/// 報告涵蓋的節點。全部 4,302 個沒有人調得完，挑最具代表性的。
+/// 報告涵蓋的節點。全部 4,068 個沒有人調得完，挑最具代表性的。
 ///
 /// 開牌範圍**由 `positions_for` 產生而非手寫清單**。初版手寫時漏掉了
 /// UTG+1 與 UTG+2（由牌手顧問於 2026-08-19 指出），改為依桌型展開後，
@@ -242,16 +242,19 @@ table.matrix td{{width:52px;height:40px;text-align:center;vertical-align:middle;
 <h2>目前的規則參數（顧問實際要調的就是這些數字）</h2>
 <table>
 <tr><th>參數</th><th>值</th><th>說明</th></tr>
-<tr><td><code>unopened.aggressive_earliest</code></td><td class="num">{:.1}%</td><td>最早位置（UTG）的開牌寬度</td></tr>
-<tr><td><code>unopened.aggressive_latest</code></td><td class="num">{:.1}%</td><td>最晚非盲注位置（BTN）的開牌寬度</td></tr>
-<tr><td><code>unopened.mix_band</code></td><td class="num">{:.1}%</td><td>邊界混合帶寬度</td></tr>
-<tr><td><code>sb_aggressive</code></td><td class="num">{:.1}%</td><td>SB 專用寬度（不套用「越晚越寬」）</td></tr>
-<tr><td><code>bb_aggressive</code></td><td class="num">{:.1}%</td><td>BB 專用寬度</td></tr>
+<tr><td><code>opening[9max.UTG]</code></td><td class="num">{:.1}%</td><td>UTG 的開牌寬度</td></tr>
+<tr><td><code>opening[9max.BTN]</code></td><td class="num">{:.1}%</td><td>BTN 的開牌寬度</td></tr>
+<tr><td><code>unopened.mix_band</code></td><td class="num">{:.1}%</td><td>開牌情境的邊界混合帶寬度</td></tr>
+<tr><td><code>opening[9max.SB]</code></td><td class="num">{:.1}%</td><td>SB 的開牌寬度（不套用「越晚越寬」）</td></tr>
+<tr><td><code>opening[9max.BB]</code></td><td class="num">{:.1}%</td><td>BB 的主動寬度</td></tr>
+<tr><td><code>vs_open_width[9max.BTN.CO]</code></td><td class="num">{:.1}%</td><td>BTN 面對 CO 開牌的 3-bet 寬度</td></tr>
+<tr><td><code>vs_open_width[9max.BB.BTN]</code></td><td class="num">{:.1}%</td><td>BB 面對 BTN 開牌的 3-bet 寬度</td></tr>
 <tr><td><code>open_size_centi_bb</code></td><td class="num">{:.2} BB</td><td>開牌尺度</td></tr>
 <tr><td><code>three_bet_size_centi_bb</code></td><td class="num">{:.2} BB</td><td>3-bet 尺度</td></tr>
 </table>
-<p class="meta">另有各情境的寬度、9 檔 bucket 乘數與尺度參數，合計數十個數字。
-調整任何一個即可全表重算（727,038 格，耗時約 0.02 秒）。</p>
+<p class="meta">開牌寬度逐（桌型 × 位置）各一個參數，3-bet 寬度逐（桌型 × 位置 × 開牌者）
+各一個參數，兩者都不是端點內插——上表只列出其中幾個。另有 9 檔 bucket 乘數、
+可玩性偏移與尺度參數。調整任何一個即可全表重算（687,492 格，耗時約 0.02 秒）。</p>
 </div>
 
 <div class="params">
@@ -274,6 +277,16 @@ table.matrix td{{width:52px;height:40px;text-align:center;vertical-align:middle;
         f64::from(widths.mix_band) / 100.0,
         f64::from(rules.opening.get(9, PositionLabel::Sb)) / 100.0,
         f64::from(rules.opening.get(9, PositionLabel::Bb)) / 100.0,
+        f64::from(
+            rules
+                .vs_open_width
+                .get(9, PositionLabel::Btn, PositionLabel::Co)
+        ) / 100.0,
+        f64::from(
+            rules
+                .vs_open_width
+                .get(9, PositionLabel::Bb, PositionLabel::Btn)
+        ) / 100.0,
         f64::from(rules.open_size_centi_bb) / 100.0,
         f64::from(rules.three_bet_size_centi_bb) / 100.0,
     );

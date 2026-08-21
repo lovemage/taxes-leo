@@ -81,7 +81,7 @@ impl OpeningWidths {
 /// 非盲注位隨身後人數遞減；盲注位另行給值，因為它們翻後不利，
 /// 不能照「身後人數少就該寬」推。
 #[must_use]
-fn default_width(position: PositionLabel, players_behind: usize) -> Myriad {
+pub(crate) fn default_width(position: PositionLabel, players_behind: usize) -> Myriad {
     match position {
         // SB 身後只有 1 人，但翻後最不利，因此窄於 BTN
         PositionLabel::Sb => 3_800,

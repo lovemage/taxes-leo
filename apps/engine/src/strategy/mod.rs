@@ -13,8 +13,10 @@ pub mod hand_class;
 pub mod opening;
 pub mod playability;
 pub mod preflop;
+pub mod vs_open;
 pub mod baseline;
 pub mod calibration;
+pub mod cell_override;
 pub mod ranking;
 
 pub use decision::{DecisionView, OpponentPublic, PublicAction, StackBucket};
@@ -23,8 +25,10 @@ pub use hand_class::HandClass;
 pub use opening::OpeningWidths;
 pub use playability::{PlayabilityAdjustments, PlayabilityCategory};
 pub use preflop::{PreflopNode, PreflopScenario};
+pub use vs_open::VsOpenWidths;
 pub use baseline::{BaselineRules, ScenarioWidths};
 pub use calibration::{Attribution, MatrixCell, ParameterRef, RangeMatrix, Verdict};
+pub use cell_override::{CellOverrides, OverrideCell};
 pub use ranking::{ClassEquity, EquityRanking};
 
 /// 自身 range：169 類各自的到達權重（萬分比）。

@@ -2,7 +2,7 @@
 //!
 //! # 這是什麼
 //!
-//! 把 **727,038 格**的 preflop baseline 由**數十個可讀參數**展開而成。
+//! 把 **687,492 格**的 preflop baseline 由**數十個可讀參數**展開而成。
 //! 規則以「取 equity 排序的前 X%」表達，顧問調整的是 [`BaselineRules`]
 //! 裡的數十個數字，審查的是規則與抽樣，不是逐格填寫。
 //!
@@ -36,14 +36,23 @@ use crate::position::PositionLabel;
 use crate::strategy::opening::OpeningWidths;
 use crate::strategy::playability::PlayabilityAdjustments;
 use crate::strategy::preflop::{positions_for, PreflopNode, PreflopScenario};
+use crate::strategy::cell_override::CellOverrides;
+use crate::strategy::vs_open::VsOpenWidths;
 use crate::strategy::ranking::EquityRanking;
 
 /// 情境的範圍寬度參數。寬度以「equity 排序的前 X%」表示（萬分比）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScenarioWidths {
-    /// 最早位置的主動行動（開牌／加注）寬度
+    /// 最早位置的主動行動（開牌／加注）寬度。
+    ///
+    /// **`unopened` 與 `vs_open` 不再讀這個欄位**——兩者已分別改為
+    /// [`OpeningWidths`] 與 [`VsOpenWidths`] 的逐節點查表。仍保留是為了
+    /// `vs_limp`／`vs_three_bet`／`vs_four_bet`／`vs_squeeze` 四個尚未
+    /// 改造的情境
     pub aggressive_earliest: Myriad,
-    /// 最晚位置的主動行動寬度。位置越晚越寬是撲克的基本結構
+    /// 最晚位置的主動行動寬度。位置越晚越寬是撲克的基本結構。
+    ///
+    /// 與 `aggressive_earliest` 同樣不再適用於 `unopened` 與 `vs_open`
     pub aggressive_latest: Myriad,
     /// 跟注的追加寬度，接在主動範圍之後
     pub call_extra: Myriad,
@@ -80,6 +89,17 @@ pub struct BaselineRules {
     /// 偏寬（9-max 的 UTG+1 被算成 17.7%，實際應在 13% 附近），
     /// 且顧問無法直接調整任一位置。見 `opening` 模組。
     pub opening: OpeningWidths,
+
+    /// 面對開牌（3-bet）範圍寬度，**逐（桌型 × 英雄位置 × 開牌者位置）各自設定**。
+    ///
+    /// 取代原本的端點內插。舊模型有兩個實際錯誤：`aggressive_earliest`
+    /// 永遠算不到（內插終點與盲注位分支都落在 `aggressive_latest`），
+    /// 且「面對誰開牌」完全不影響寬度。見 `vs_open` 模組。
+    pub vs_open_width: VsOpenWidths,
+
+    /// 顧問逐格覆寫。**參數表達不出來的意見**才會落到這裡，
+    /// 因此這份清單同時是「模型還缺哪些參數」的證據（見 `cell_override` 模組）
+    pub overrides: CellOverrides,
 
     /// 可玩性調整：修正 raw equity 排序無法表達的翻後價值差異。
     /// 七個具名偏移，是顧問的首要調整對象（見 `playability` 模組）
@@ -161,6 +181,8 @@ impl BaselineRules {
             push_fold_below: StackBucket::Short,
 
             opening: OpeningWidths::engineering_placeholder(),
+            vs_open_width: VsOpenWidths::engineering_placeholder(),
+            overrides: CellOverrides::new(),
 
             playability: PlayabilityAdjustments::engineering_placeholder(),
 
@@ -296,12 +318,15 @@ pub fn distribution_for(
         .position(|&p| p == node.hero)
         .unwrap_or(0);
 
-    // 開牌情境逐位置查表；其餘情境仍以端點內插，因為顧問目前只對
-    // 開牌範圍逐位置調整（見 opening 模組的說明）
-    let interpolated = if matches!(node.scenario, PreflopScenario::Unopened) {
-        i64::from(rules.opening.get(node.seated, node.hero))
-    } else {
-        match node.hero {
+    // 開牌與面對開牌都逐節點查表；其餘情境仍以端點內插，因為顧問目前
+    // 只對這兩類逐節點調整（見 opening 與 vs_open 模組的說明）
+    let interpolated = match node.scenario {
+        PreflopScenario::Unopened => i64::from(rules.opening.get(node.seated, node.hero)),
+        // 面對開牌的寬度取決於「開牌者是誰」，端點內插表達不了這件事
+        PreflopScenario::VsOpen { opener } => {
+            i64::from(rules.vs_open_width.get(node.seated, node.hero, opener))
+        }
+        _ => match node.hero {
             // 盲注位在面對加注的情境仍套用端點值，避免比 BTN 更寬
             PositionLabel::Sb | PositionLabel::Bb => i64::from(widths.aggressive_latest),
             _ => {
@@ -313,7 +338,7 @@ pub fn distribution_for(
                     + span * i64::try_from(position_index).unwrap_or(0)
                         / i64::try_from(last_index).unwrap_or(1)
             }
-        }
+        },
     };
 
     // 套用 bucket 乘數
@@ -334,6 +359,22 @@ pub fn distribution_for(
     } else {
         Action::RaiseTo(Chips::new(u64::from(raise_size(node.scenario, rules))))
     };
+
+    // 逐格覆寫在此套用：位置必須在 aggressive_action 決定之後，
+    // 覆寫才能沿用該節點正確的主動動作（短碼是 AllIn，其餘是 RaiseTo）
+    if let Some(cell) = rules.overrides.get(node, class) {
+        let mut entries = Vec::with_capacity(3);
+        if cell.aggressive() > 0 {
+            entries.push((aggressive_action, cell.aggressive()));
+        }
+        if cell.call() > 0 {
+            entries.push((Action::Call, cell.call()));
+        }
+        if cell.fold() > 0 {
+            entries.push((Action::Fold, cell.fold()));
+        }
+        return ActionDistribution::new(entries);
+    }
 
     let weights = if percentile + band <= aggressive_width {
         // 完全落在主動範圍內
@@ -374,12 +415,89 @@ fn raise_size(scenario: PreflopScenario, rules: &BaselineRules) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::strategy::cell_override::OverrideCell;
     use crate::strategy::ranking::{class_of, CONTENT_GRADE_SAMPLES};
     use crate::card::Rank;
 
     /// 快速排序表，供不依賴精細排序的測試使用。
     fn ranking() -> EquityRanking {
         EquityRanking::compute(5, 800)
+    }
+
+    fn override_node() -> PreflopNode {
+        PreflopNode {
+            seated: 9,
+            hero: PositionLabel::Btn,
+            bucket: StackBucket::VeryDeep,
+            scenario: PreflopScenario::Unopened,
+        }
+    }
+
+    fn labelled(label: &str) -> HandClass {
+        HandClass::all()
+            .into_iter()
+            .find(|c| c.label() == label)
+            .expect("牌類存在")
+    }
+
+    fn shares(d: &ActionDistribution) -> (Myriad, Myriad, Myriad) {
+        let (mut a, mut c, mut f) = (0, 0, 0);
+        for &(action, w) in d.entries() {
+            match action {
+                Action::RaiseTo(_) | Action::AllIn => a += w,
+                Action::Call => c += w,
+                Action::Fold | Action::Check => f += w,
+            }
+        }
+        (a, c, f)
+    }
+
+    #[test]
+    fn 逐格覆寫勝過參數且不外溢到其他格() {
+        let base = BaselineRules::engineering_placeholder();
+        let ranking = ranking();
+        let node = override_node();
+        let (a5s, a6s) = (labelled("A5s"), labelled("A6s"));
+        let before_a6s = shares(&distribution_for(&node, a6s, &base, &ranking).expect("可產生"));
+
+        let mut rules = base.clone();
+        rules
+            .overrides
+            .set(node, a5s, OverrideCell::new(5_000, 2_000).expect("合法"));
+
+        let after = distribution_for(&node, a5s, &rules, &ranking).expect("可產生");
+        assert_eq!(shares(&after), (5_000, 2_000, 3_000), "覆寫值必須原封不動出現");
+
+        assert_eq!(
+            shares(&distribution_for(&node, a6s, &rules, &ranking).expect("可產生")),
+            before_a6s,
+            "覆寫 A5s 不得改變相鄰的 A6s——參數調整才會連帶，覆寫不會"
+        );
+
+        let mut other = node;
+        other.hero = PositionLabel::Co;
+        assert_eq!(
+            shares(&distribution_for(&other, a5s, &rules, &ranking).expect("可產生")),
+            shares(&distribution_for(&other, a5s, &base, &ranking).expect("可產生")),
+            "覆寫綁定節點，不得外溢到其他位置"
+        );
+    }
+
+    #[test]
+    fn 短碼節點的覆寫仍用推入而非小額加注() {
+        let mut rules = BaselineRules::engineering_placeholder();
+        let mut node = override_node();
+        node.bucket = StackBucket::Short;
+        let class = labelled("72o");
+        rules
+            .overrides
+            .set(node, class, OverrideCell::new(FULL, 0).expect("合法"));
+
+        let d = distribution_for(&node, class, &rules, &ranking()).expect("可產生");
+        assert!(
+            d.entries().iter().any(|&(a, _)| a == Action::AllIn),
+            "短碼的主動動作是 AllIn，覆寫不得把它變成 RaiseTo"
+        );
     }
 
     /// 內容等級排序表。計算成本高，因此整個測試 binary 只算一次。

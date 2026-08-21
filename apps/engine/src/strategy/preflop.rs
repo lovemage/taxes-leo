@@ -27,7 +27,11 @@ pub enum PreflopScenario {
     VsThreeBet { by: PositionLabel },
     /// 英雄 3-bet 後被 4-bet
     VsFourBet { by: PositionLabel },
-    /// 英雄開牌、有人跟注後被擠壓
+    /// 英雄開牌、有人跟注後被擠壓。
+    ///
+    /// **與 [`Self::VsThreeBet`] 的差別是中間那個跟注者。** 因此 `by` 必須與
+    /// 英雄之間隔著至少一個座位；相鄰時無人能跟注，該情境不存在
+    /// （見 [`scenarios_for`]）。
     VsSqueeze { by: PositionLabel },
 }
 
@@ -106,6 +110,11 @@ pub fn all_buckets() -> Vec<StackBucket> {
 ///
 /// 合法性依行動順序判定，例如 UTG 不可能「面對 UTG 開牌」，
 /// BB 不可能被更晚的位置開牌。列舉不合法節點會虛增內容量。
+///
+/// 擠壓另有一個容易漏掉的前提：擠壓者與英雄之間必須有座位可以先跟注。
+/// 「UTG 被 UTG+1 擠壓」不存在，因為兩者之間沒有人能跟注，那個情境就是
+/// 「UTG 被 UTG+1 3-bet」。非相鄰時兩者仍是不同節點——中間有人跟注會
+/// 改變底池大小、賠率與對手範圍——因此只排除相鄰的情形。
 #[must_use]
 pub fn scenarios_for(seated: u8, hero: PositionLabel) -> Vec<PreflopScenario> {
     let order = positions_for(seated);
@@ -131,9 +140,14 @@ pub fn scenarios_for(seated: u8, hero: PositionLabel) -> Vec<PreflopScenario> {
     }
 
     // 英雄開牌後被 3-bet：3-bet 者必須在英雄之後
-    for &by in later {
+    for (gap, &by) in later.iter().enumerate() {
         out.push(PreflopScenario::VsThreeBet { by });
-        out.push(PreflopScenario::VsSqueeze { by });
+        // 擠壓比 3-bet 多一個前提：英雄與加注者之間至少要有一個座位，
+        // 那個座位才可能先跟注。相鄰時無人能跟注，該節點到不了。
+        // `gap` 為 `later` 內的索引，0 代表緊鄰英雄的下一個位置。
+        if gap >= 1 {
+            out.push(PreflopScenario::VsSqueeze { by });
+        }
     }
 
     // 英雄 3-bet 後被 4-bet：原開牌者在英雄之前
@@ -209,6 +223,63 @@ mod tests {
                 .any(|s| matches!(s, PreflopScenario::VsThreeBet { .. })),
             "BB 是最後行動者，其後無人可 3-bet"
         );
+    }
+
+    #[test]
+    fn 相鄰位置不產生擠壓節點() {
+        let scenarios = scenarios_for(9, PositionLabel::Utg);
+        assert!(
+            !scenarios.contains(&PreflopScenario::VsSqueeze {
+                by: PositionLabel::Utg1
+            }),
+            "UTG 與 UTG+1 之間沒有座位可以跟注，該擠壓情境不存在"
+        );
+        assert!(
+            scenarios.contains(&PreflopScenario::VsThreeBet {
+                by: PositionLabel::Utg1
+            }),
+            "同一個位置的 3-bet 情境仍然成立，不可一併刪掉"
+        );
+    }
+
+    #[test]
+    fn 非相鄰的擠壓與_3bet_仍是兩個節點() {
+        let scenarios = scenarios_for(9, PositionLabel::Utg);
+        for by in [PositionLabel::Utg2, PositionLabel::Btn] {
+            assert!(
+                scenarios.contains(&PreflopScenario::VsSqueeze { by }),
+                "{} 與 UTG 之間有座位可跟注，擠壓情境必須保留",
+                by.as_str()
+            );
+            assert!(
+                scenarios.contains(&PreflopScenario::VsThreeBet { by }),
+                "中間有人跟注會改變底池與對手範圍，3-bet 與擠壓不得合併"
+            );
+        }
+    }
+
+    #[test]
+    fn 全部桌型的擠壓者都與英雄隔著座位() {
+        for seated in 6u8..=9 {
+            let order = positions_for(seated);
+            for (hero_index, &hero) in order.iter().enumerate() {
+                for scenario in scenarios_for(seated, hero) {
+                    let PreflopScenario::VsSqueeze { by } = scenario else {
+                        continue;
+                    };
+                    let by_index = order
+                        .iter()
+                        .position(|&p| p == by)
+                        .expect("擠壓者必須是本桌型的位置");
+                    assert!(
+                        by_index > hero_index + 1,
+                        "{seated}max：{} 被 {} 擠壓時中間沒有座位可跟注",
+                        hero.as_str(),
+                        by.as_str()
+                    );
+                }
+            }
+        }
     }
 
     #[test]

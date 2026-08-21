@@ -51,6 +51,23 @@ impl HandClass {
         self.suited
     }
 
+    /// 該類別涵蓋的實際 combo 數：對子 6、同花 4、非同花 12。
+    ///
+    /// 169 類**不等權**。牌手講的「範圍寬度 X%」是 1,326 個 combo 的
+    /// 百分比，不是 169 類的百分比。用類別等權會把同花高估近一倍
+    /// （46.2% vs 23.5%）、非同花低估三分之一（46.2% vs 70.6%），
+    /// 算出來的寬度與顧問心中的數字對不上。
+    #[must_use]
+    pub const fn combos(self) -> u16 {
+        if self.is_pair() {
+            6
+        } else if self.suited {
+            4
+        } else {
+            12
+        }
+    }
+
     /// 兩張牌之間的間隔。相連為 0（AK、87），一洞為 1（AQ、86）。
     /// 對子恆為 0。
     #[must_use]
@@ -179,6 +196,48 @@ mod tests {
         let suited = all.iter().filter(|c| c.is_suited()).count();
         let offsuit = all.iter().filter(|c| !c.is_pair() && !c.is_suited()).count();
         assert_eq!((pairs, suited, offsuit), (13, 78, 78), "13 對子 + 78 同花 + 78 非同花");
+    }
+
+    #[test]
+    fn combo_數逐類與實際發牌一致() {
+        let deck = full_deck();
+        let mut counted = std::collections::HashMap::new();
+        for (i, &a) in deck.iter().enumerate() {
+            for &b in &deck[i + 1..] {
+                *counted.entry(HandClass::from_cards(a, b)).or_insert(0_u16) += 1;
+            }
+        }
+        for class in HandClass::all() {
+            assert_eq!(
+                class.combos(),
+                counted[&class],
+                "{} 的 combo 數與實際發牌不符",
+                class.label()
+            );
+        }
+    }
+
+    #[test]
+    fn combo_總數為_1326() {
+        let total: u32 = HandClass::all().iter().map(|c| u32::from(c.combos())).sum();
+        assert_eq!(total, 1_326, "C(52,2) = 1326");
+    }
+
+    #[test]
+    fn 三種牌型的_combo_權重與類別權重顯著不同() {
+        let all = HandClass::all();
+        let suited_combos: u32 = all
+            .iter()
+            .filter(|c| c.is_suited())
+            .map(|c| u32::from(c.combos()))
+            .sum();
+        // 同花占 78/169 = 46.2% 的類別，卻只占 312/1326 = 23.5% 的 combo。
+        // 這個差距正是「必須以 combo 加權」的理由
+        assert_eq!(suited_combos, 312);
+        assert!(
+            suited_combos * 169 < 78 * 1_326 * 3 / 5,
+            "同花的 combo 權重應遠低於類別權重"
+        );
     }
 
     #[test]

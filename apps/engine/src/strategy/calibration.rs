@@ -21,7 +21,7 @@ use crate::strategy::baseline::{distribution_for, BaselineRules};
 use crate::strategy::distribution::{Myriad, FULL};
 use crate::strategy::hand_class::HandClass;
 use crate::strategy::preflop::{PreflopNode, PreflopScenario};
-use crate::strategy::ranking::EquityRanking;
+use crate::strategy::ranking::{EquityRanking, TOTAL_COMBOS};
 
 /// 矩陣中一格的行動頻率彙總。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,11 +112,19 @@ impl RangeMatrix {
             .collect()
     }
 
-    /// 範圍寬度：169 格主動頻率的平均（萬分比）。
+    /// 範圍寬度：**以 combo 加權**的主動頻率（萬分比）。
+    ///
+    /// 169 類等權平均會與牌手慣用的講法對不上——AA 是 6 個 combo、
+    /// AKs 是 4 個、AKo 是 12 個，等權會把同花高估近一倍。改以
+    /// 1,326 個 combo 為分母後，這個數字就是顧問心中的「範圍寬度」。
     #[must_use]
     pub fn width_myriad(&self) -> Myriad {
-        let total: u64 = self.cells.iter().map(|c| u64::from(c.aggressive)).sum();
-        Myriad::try_from(total / 169).unwrap_or(FULL)
+        let total: u64 = self
+            .cells
+            .iter()
+            .map(|c| u64::from(c.aggressive) * u64::from(c.class.combos()))
+            .sum();
+        Myriad::try_from(total / TOTAL_COMBOS).unwrap_or(FULL)
     }
 
     /// 混合格清單，供顧問優先檢視邊界。
@@ -147,6 +155,9 @@ pub enum ParameterRef {
     /// 該（桌型 × 位置）的開牌寬度。開牌情境改為逐位置參數後，
     /// 調整只影響該位置，不再牽動其他位置
     OpeningWidth,
+    /// 該（桌型 × 英雄位置 × 開牌者位置）的 3-bet 寬度。面對開牌情境
+    /// 改為逐節點參數後，調整只影響該節點，且「面對誰」真的有差別
+    VsOpenWidth,
     /// 該 bucket 的乘數
     BucketMultiplier,
 }
@@ -158,6 +169,7 @@ impl ParameterRef {
             Self::AggressiveEarliest => "aggressive_earliest",
             Self::AggressiveLatest => "aggressive_latest",
             Self::OpeningWidth => "opening_width（該位置）",
+            Self::VsOpenWidth => "vs_open_width（該節點）",
             Self::BucketMultiplier => "bucket_multiplier",
         }
     }
@@ -196,6 +208,15 @@ pub fn attribute(
     rules: &BaselineRules,
     ranking: &EquityRanking,
 ) -> Vec<Attribution> {
+    // 目標格自己的覆寫要先拿掉。覆寫勝過參數，留著會讓每個候選值都算出
+    // 同樣的結果，歸因於是永遠回報「做不到」。要問的是：**不靠覆寫**，
+    // 參數能不能達成這個意見
+    let rules = &{
+        let mut without = rules.clone();
+        without.overrides.clear(&node, class);
+        without
+    };
+
     let before = RangeMatrix::build(node, rules, ranking);
     let current_cell = before.cell(class);
 
@@ -246,9 +267,12 @@ pub fn attribute(
 fn candidate_parameters(node: &PreflopNode, rules: &BaselineRules) -> Vec<ParameterRef> {
     use crate::position::PositionLabel;
     let _ = rules;
-    // 開牌情境的寬度是逐位置參數，直接調該位置即可
+    // 開牌與面對開牌的寬度都是逐節點參數，直接調該節點即可
     if matches!(node.scenario, PreflopScenario::Unopened) {
         return vec![ParameterRef::OpeningWidth, ParameterRef::BucketMultiplier];
+    }
+    if matches!(node.scenario, PreflopScenario::VsOpen { .. }) {
+        return vec![ParameterRef::VsOpenWidth, ParameterRef::BucketMultiplier];
     }
     let position_param = match node.hero {
         PositionLabel::Utg => ParameterRef::AggressiveEarliest,
@@ -264,6 +288,13 @@ fn current_value(parameter: ParameterRef, node: &PreflopNode, rules: &BaselineRu
         ParameterRef::AggressiveEarliest => widths.aggressive_earliest,
         ParameterRef::AggressiveLatest => widths.aggressive_latest,
         ParameterRef::OpeningWidth => rules.opening.get(node.seated, node.hero),
+        ParameterRef::VsOpenWidth => match node.scenario {
+            PreflopScenario::VsOpen { opener } => {
+                rules.vs_open_width.get(node.seated, node.hero, opener)
+            }
+            // 非面對開牌的節點不會產生這個候選參數
+            _ => 0,
+        },
         ParameterRef::BucketMultiplier => rules.bucket_multiplier_of(node.bucket),
     }
 }
@@ -279,6 +310,11 @@ fn apply(
         ParameterRef::AggressiveEarliest => out.set_aggressive_earliest(node.scenario, value),
         ParameterRef::AggressiveLatest => out.set_aggressive_latest(node.scenario, value),
         ParameterRef::OpeningWidth => out.opening.set(node.seated, node.hero, value),
+        ParameterRef::VsOpenWidth => {
+            if let PreflopScenario::VsOpen { opener } = node.scenario {
+                out.vs_open_width.set(node.seated, node.hero, opener, value);
+            }
+        }
         ParameterRef::BucketMultiplier => out.set_bucket_multiplier(node.bucket, value),
     }
     out
@@ -458,7 +494,7 @@ mod tests {
 
 /// 由校準工作台匯出的 JSON 還原規則集。
 ///
-/// 工作台只負責預覽，**正式的 727,038 格全表一律由引擎展開**，
+/// 工作台只負責預覽，**正式的 687,492 格全表一律由引擎展開**，
 /// 因此回讀後必須重新驗證每個值是否在合法範圍內——不能假設前端已擋過。
 ///
 /// 刻意手寫解析而不引入 JSON crate：引擎維持零外部相依，而工作台匯出的

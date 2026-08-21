@@ -1,7 +1,7 @@
 //! 169 類起手牌的 equity 排序表。
 //!
 //! 這是參數化策略產生器的基礎：策略規則以「取 equity 排序的前 X%」表達，
-//! 而不是逐格指定頻率。核心規格 4.1 要求的 727,038 格因此由**數十個百分比**
+//! 而不是逐格指定頻率。核心規格 4.1 要求的 687,492 格因此由**數十個百分比**
 //! 展開而成，顧問審的是規則與抽樣，不是逐格。
 //!
 //! **排序是機械推導的**：對 N 個隨機對手跑 Monte Carlo，用固定 seed，
@@ -51,7 +51,12 @@ pub struct EquityRanking {
     by_class: Vec<ClassEquity>,
     /// 依強度由高到低的類別索引
     order: Vec<usize>,
+    /// 依索引存放的累積 combo 百分位（萬分比）
+    combo_percentile: Vec<u64>,
 }
+
+/// 169 類涵蓋的 combo 總數，C(52,2)。
+pub const TOTAL_COMBOS: u64 = 1_326;
 
 impl EquityRanking {
     /// 量測全部 169 類對 `opponents` 個隨機對手的 equity 並排序。
@@ -97,11 +102,22 @@ impl EquityRanking {
             order.push(class.index());
         }
 
+        // 百分位以累積 combo 計算：某類別的百分位 =「比它強的 combo 數」
+        // 占 1,326 的比例。類別等權會讓「前 X%」的 X 不是牌手講的那個 X
+        let mut combo_percentile = vec![0_u64; 169];
+        let mut cumulative = 0_u64;
+        for &(class, _) in &measured {
+            combo_percentile[class.index()] = cumulative * 10_000 / TOTAL_COMBOS;
+            cumulative += u64::from(class.combos());
+        }
+        debug_assert_eq!(cumulative, TOTAL_COMBOS, "169 類的 combo 總和必為 C(52,2)");
+
         Self {
             opponents,
             samples,
             by_class,
             order,
+            combo_percentile,
         }
     }
 
@@ -126,10 +142,13 @@ impl EquityRanking {
     }
 
     /// 該類別落在前百分之幾（萬分比）。0 為最強。
+    ///
+    /// 以**累積 combo 數**計算，不是類別排名。「前 43%」因此是
+    /// 1,326 個 combo 的前 43%，與牌手慣用的講法一致
+    /// （見 [`HandClass::combos`]）。
     #[must_use]
     pub fn percentile_myriad(&self, class: HandClass) -> u64 {
-        let rank = self.of(class).rank as u64;
-        rank * 10_000 / 169
+        self.combo_percentile[class.index()]
     }
 }
 
@@ -188,6 +207,40 @@ mod tests {
         ranks.sort_unstable();
         ranks.dedup();
         assert_eq!(ranks.len(), 169, "每個類別必須有唯一排名");
+    }
+
+    #[test]
+    fn 百分位以累積_combo_而非類別排名計算() {
+        let ranking = EquityRanking::compute(1, 400);
+        let ordered = ranking.strongest_first();
+
+        // 最強的類別百分位為 0
+        assert_eq!(ranking.percentile_myriad(ordered[0]), 0);
+
+        // 相鄰兩類的百分位差 = 前者的 combo 數占 1,326 的比例。
+        // 類別等權會讓每一步都相同（10000/169 ≈ 59），combo 加權不會
+        let mut steps = std::collections::HashSet::new();
+        let mut cumulative = 0_u64;
+        for pair in ordered.windows(2) {
+            cumulative += u64::from(pair[0].combos());
+            assert_eq!(
+                ranking.percentile_myriad(pair[1]),
+                cumulative * 10_000 / TOTAL_COMBOS,
+                "{} 的百分位必須等於比它強的 combo 占比",
+                pair[1].label()
+            );
+            steps.insert(
+                ranking.percentile_myriad(pair[1]) - ranking.percentile_myriad(pair[0]),
+            );
+        }
+        assert!(
+            steps.len() > 1,
+            "步長必須隨牌型變化（對子 6、同花 4、非同花 12），全部相同代表又退回類別等權"
+        );
+
+        // 最弱的類別加上自己的 combo 後恰好填滿
+        cumulative += u64::from(ordered[168].combos());
+        assert_eq!(cumulative, TOTAL_COMBOS);
     }
 
     #[test]
