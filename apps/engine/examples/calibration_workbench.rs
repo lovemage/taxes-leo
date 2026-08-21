@@ -446,7 +446,13 @@ fn main() {
     );
 
     // 驗證產生器本身仍可用（避免匯出與實際產生脫節）
-    let sample = distribution_for(&default_nodes()[4].1, all_classes[0], &rules, ranking_for(2));
+    let sample = distribution_for(
+        &default_nodes()[4].1,
+        all_classes[0],
+        &rules,
+        ranking_for(2),
+        poker_engine::chips::Chips::new(2),
+    );
     assert!(sample.is_ok(), "產生器本身必須可用");
 }
 

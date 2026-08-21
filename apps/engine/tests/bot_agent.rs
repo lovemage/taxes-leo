@@ -35,6 +35,7 @@ fn view_with(history: Vec<PublicAction>, seat: usize) -> DecisionView {
         effective_stack_bucket: StackBucket::Deep,
         pot: Chips::new(3),
         to_call: Chips::new(2),
+        big_blind: Chips::new(2),
         legal: LegalActions {
             seat,
             can_fold: true,
@@ -52,11 +53,30 @@ fn view_with(history: Vec<PublicAction>, seat: usize) -> DecisionView {
 }
 
 fn acted(seat: usize, position: PositionLabel, action: Action) -> PublicAction {
+    let raised = matches!(action, Action::RaiseTo(_));
+    let committed_to = match action {
+        Action::RaiseTo(to) => to,
+        _ => Chips::new(2),
+    };
     PublicAction {
         street: Street::Preflop,
         seat,
         position,
         action,
+        raised,
+        committed_to,
+    }
+}
+
+/// 籌碼不足的全下——沒有推高注額，實質是部分跟注。
+fn short_all_in(seat: usize, position: PositionLabel, committed_to: Chips) -> PublicAction {
+    PublicAction {
+        street: Street::Preflop,
+        seat,
+        position,
+        action: Action::AllIn,
+        raised: false,
+        committed_to,
     }
 }
 
@@ -245,7 +265,8 @@ fn 棄牌紀律改變混合格的棄牌權重() {
     let mixed = HandClass::all()
         .into_iter()
         .filter_map(|class| {
-            let distribution = distribution_for(&node, class, &rules, ranking).ok()?;
+            let distribution =
+                distribution_for(&node, class, &rules, ranking, Chips::new(2)).ok()?;
             (distribution.entries().len() > 1).then_some((class, distribution))
         })
         .next()
@@ -392,6 +413,240 @@ fn 可以免費過牌時不棄牌() {
             agent.choose(&view),
             Action::Fold,
             "免費過牌的情境下不得棄牌"
+        );
+    }
+}
+
+// ── review 指出的缺口 ───────────────────────────────────────────────────
+
+/// 加注金額必須是**真的籌碼**，不是 centi-BB。
+///
+/// 內容表寫 250 意思是 2.5BB。直接當成 250 個籌碼單位的話，1/2 桌的
+/// 「開牌」會變成 125BB——每一手都等同全下，統計毫無意義。
+#[test]
+fn 開牌尺度為兩點五倍大盲而非兩百五十個籌碼() {
+    use poker_engine::strategy::baseline::distribution_for;
+    use poker_engine::strategy::{HandClass, PreflopNode, PreflopScenario};
+
+    let rules = BaselineRules::engineering_placeholder();
+    let rankings = BotAgent::rankings(FAST_SAMPLES);
+    let node = PreflopNode {
+        seated: 9,
+        hero: PositionLabel::Btn,
+        bucket: StackBucket::Deep,
+        scenario: PreflopScenario::Unopened,
+    };
+
+    for (big_blind, expected) in [(2u64, 5u64), (4, 10), (10, 25)] {
+        let distribution = distribution_for(
+            &node,
+            HandClass::from_cards(
+                Card::new(Rank::Ace, Suit::Spades),
+                Card::new(Rank::Ace, Suit::Hearts),
+            ),
+            &rules,
+            &rankings[&2],
+            Chips::new(big_blind),
+        )
+        .expect("可產生");
+
+        let raise = distribution
+            .entries()
+            .iter()
+            .find_map(|&(action, _)| match action {
+                Action::RaiseTo(to) => Some(to.units()),
+                _ => None,
+            })
+            .expect("AA 在 BTN 開牌必有加注");
+
+        assert_eq!(
+            raise, expected,
+            "大盲 {big_blind} 時 2.5BB 應為 {expected} 個籌碼單位，實得 {raise}"
+        );
+    }
+}
+
+/// `expected_opponents` 要得到的每一種對手數都必須有排序可用。
+///
+/// 少算的話 `preflop_baseline` 會取不到排序而整個節點退回 fallback，
+/// 多人跛入的範圍就完全不見了。
+#[test]
+fn 排序涵蓋全部可能的預期對手數() {
+    use poker_engine::bot::agent::MAX_EXPECTED_OPPONENTS;
+    use poker_engine::strategy::baseline::expected_opponents;
+    use poker_engine::strategy::{PreflopNode, PreflopScenario};
+
+    let rankings = BotAgent::rankings(500);
+
+    let scenarios = [
+        PreflopScenario::Unopened,
+        PreflopScenario::VsLimp { limpers: 1 },
+        PreflopScenario::VsLimp { limpers: 2 },
+        PreflopScenario::VsLimp { limpers: 3 },
+        PreflopScenario::VsLimp { limpers: 7 },
+        PreflopScenario::VsOpen {
+            opener: PositionLabel::Utg,
+        },
+        PreflopScenario::VsThreeBet {
+            by: PositionLabel::Bb,
+        },
+        PreflopScenario::VsFourBet {
+            by: PositionLabel::Utg,
+        },
+        PreflopScenario::VsSqueeze {
+            by: PositionLabel::Bb,
+        },
+    ];
+
+    for scenario in scenarios {
+        let node = PreflopNode {
+            seated: 9,
+            hero: PositionLabel::Btn,
+            bucket: StackBucket::Deep,
+            scenario,
+        };
+        let needed = expected_opponents(&node);
+        assert!(
+            needed <= MAX_EXPECTED_OPPONENTS,
+            "{scenario:?} 要 {needed} 名對手，超過常數宣告的上界"
+        );
+        assert!(
+            rankings.contains_key(&needed),
+            "{scenario:?} 要 {needed} 名對手的排序，但沒有建立"
+        );
+    }
+}
+
+/// 籌碼不足的全下只是部分跟注，不得算成一次加注。
+///
+/// 算成加注的話，「有人開牌 ＋ 短碼全下跟」會被後手看成 3-bet，
+/// 套用完全不同（而且錯誤）的範圍。
+#[test]
+fn 短碼全下跟注不算加注() {
+    use poker_engine::strategy::PreflopScenario;
+
+    let hero = 8;
+    let history = vec![
+        acted(2, PositionLabel::Utg1, Action::RaiseTo(Chips::new(6))),
+        // 這名玩家只剩 4 個籌碼，全下也追不上 6，注額沒被推高
+        short_all_in(3, PositionLabel::Utg2, Chips::new(4)),
+    ];
+
+    assert_eq!(
+        scenario_of(&view_with(history, hero)),
+        PreflopScenario::VsOpen {
+            opener: PositionLabel::Utg1
+        },
+        "只有一次真正的加注，後手面對的仍是開牌而不是 3-bet"
+    );
+}
+
+/// 推高注額的全下才是加注。
+#[test]
+fn 推高注額的全下算加注() {
+    use poker_engine::strategy::PreflopScenario;
+
+    let hero = 8;
+    let mut shove = short_all_in(3, PositionLabel::Utg2, Chips::new(200));
+    shove.raised = true;
+    let history = vec![
+        acted(2, PositionLabel::Utg1, Action::RaiseTo(Chips::new(6))),
+        shove,
+    ];
+
+    assert_eq!(
+        scenario_of(&view_with(history, hero)),
+        PreflopScenario::VsThreeBet {
+            by: PositionLabel::Utg2
+        }
+    );
+}
+
+/// 標成未實作的參數必須**真的沒有作用**。
+///
+/// 這條守的是旗標與實作之間的漂移。若哪天某個欄位接上了決策路徑卻忘了
+/// 把旗標翻成 true，UI 會繼續把它畫成停用，使用者調不到一個其實有用的
+/// 參數；反過來旗標亂標 true，使用者會拉一個沒作用的滑桿。
+#[test]
+fn 未實作的參數不影響決策() {
+    use poker_engine::bot::params::{BEHAVIOR_SPECS, PERSONA_SPECS};
+
+    let rankings = BotAgent::rankings(FAST_SAMPLES);
+    let reference = play(vec![BotConfig::defaults("基準"); 9], &rankings);
+
+    for spec in PERSONA_SPECS.iter().chain(BEHAVIOR_SPECS.iter()) {
+        if spec.implemented {
+            continue;
+        }
+        for extreme in [spec.min, spec.max] {
+            let mut config = BotConfig::defaults("極端");
+            let value = match spec.default {
+                poker_engine::bot::ParamValue::Myriad(_) => {
+                    poker_engine::bot::ParamValue::Myriad(extreme)
+                }
+                poker_engine::bot::ParamValue::Count(_) => {
+                    poker_engine::bot::ParamValue::Count(extreme)
+                }
+                poker_engine::bot::ParamValue::Enum(_) => poker_engine::bot::ParamValue::Enum(
+                    u8::try_from(extreme).expect("列舉索引小於 256"),
+                ),
+                poker_engine::bot::ParamValue::Flag(_) => {
+                    poker_engine::bot::ParamValue::Flag(extreme != 0)
+                }
+            };
+            let applied = config
+                .set_persona(spec.key, value)
+                .or_else(|_| config.set_behavior(spec.key, value));
+            applied.expect("端點值必在合法範圍內");
+
+            let result = play(vec![config; 9], &rankings);
+            assert_eq!(
+                (result.folds, result.raises, result.total),
+                (reference.folds, reference.raises, reference.total),
+                "{} 標成未實作，但把它設成 {extreme} 改變了決策",
+                spec.key
+            );
+        }
+    }
+}
+
+/// 標成已實作的參數必須至少在某個情境改變決策。
+///
+/// 與上一條相反的方向：擋掉「宣告接了但其實沒接」的情況——
+/// `rangeWidth` 在修正之前正是這樣。
+#[test]
+fn 已實作的參數確實會改變決策() {
+    use poker_engine::bot::params::{ParamValue, BEHAVIOR_SPECS, PERSONA_SPECS};
+
+    let rankings = BotAgent::rankings(FAST_SAMPLES);
+
+    for spec in PERSONA_SPECS.iter().chain(BEHAVIOR_SPECS.iter()) {
+        if !spec.implemented {
+            continue;
+        }
+        let outcome = |raw: u32| {
+            // 底子先偏離基準：`exploitAdjustmentCapPp` 夾的是「偏移後與
+            // 基準的差距」，全預設時沒有差距可夾，測不出它的作用
+            let mut config = with(&[("preflopAggression", 14_000)]);
+            let value = match spec.default {
+                ParamValue::Myriad(_) => ParamValue::Myriad(raw),
+                ParamValue::Count(_) => ParamValue::Count(raw),
+                ParamValue::Enum(_) => ParamValue::Enum(u8::try_from(raw).unwrap_or(0)),
+                ParamValue::Flag(_) => ParamValue::Flag(raw != 0),
+            };
+            config
+                .set_persona(spec.key, value)
+                .or_else(|_| config.set_behavior(spec.key, value))
+                .expect("端點值合法");
+            let result = play(vec![config; 9], &rankings);
+            (result.folds, result.raises, result.total)
+        };
+
+        assert_ne!(
+            outcome(spec.min),
+            outcome(spec.max),
+            "{} 標成已實作，但端點之間的決策完全相同",
+            spec.key
         );
     }
 }

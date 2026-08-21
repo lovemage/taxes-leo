@@ -157,7 +157,7 @@ cargo run --release --example attribute_feedback
 
 ## 目前進度
 
-`cargo test --workspace` 全綠，共 316 個測試。
+`cargo test --workspace` 全綠，共 325 個測試。
 
 | 里程碑 | 狀態 |
 |---|---|
@@ -193,3 +193,8 @@ cargo run --release --example attribute_feedback
 > 寫成別的樣子只會是我們自己編的內容，而編出來的內容會混進統計裡，
 > 讓人以為那是校準過的結果。翻前走的是參數化 baseline，位置、籌碼 bucket
 > 與情境都真的會影響分佈，因此面板 C 的參數調整看得到效果。
+>
+> **21 個 Bot 參數目前只有 6 個會改變決策。** 其餘的已依核心規格 4.3 宣告，
+> 但決策路徑尚未讀到，因此 `ParamSpec::implemented` 標為 false，UI 列在
+> 「尚未生效」區並停用。兩個方向都由測試守住：標 false 卻有效果、
+> 標 true 卻沒效果，都會讓 `bot_agent` 那組測試失敗。

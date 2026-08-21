@@ -349,6 +349,21 @@ pub fn expected_opponents(node: &PreflopNode) -> usize {
     }
 }
 
+/// 把「BB 的百分之一」換算為籌碼。
+///
+/// 內容表的加注尺度一律以 centi-BB 表示（250 = 2.5BB），與桌上的盲注
+/// 大小脫鉤，同一份內容才能用在不同注級。換算必須在**產生 `Chips` 的
+/// 那一刻**做完——把 centi-BB 直接塞進 `Chips` 再指望下游修正，
+/// 就是 `RaiseTo(250)` 在 1/2 桌變成 125BB 的成因。
+///
+/// 四捨五入而非無條件捨去：1/2 桌的 2.5BB 是 5 個籌碼單位，
+/// 但 0.5/1 桌的 2.5BB 是 2.5 個單位，捨去會讓尺度系統性偏小。
+#[must_use]
+pub fn centi_bb_to_chips(centi_bb: u32, big_blind: Chips) -> Chips {
+    let units = (u64::from(centi_bb) * big_blind.units() + 50) / 100;
+    Chips::new(units.max(1))
+}
+
 /// 依節點與規則產生該格的行動分佈。
 ///
 /// # Errors
@@ -358,6 +373,7 @@ pub fn distribution_for(
     class: HandClass,
     rules: &BaselineRules,
     ranking: &EquityRanking,
+    big_blind: Chips,
 ) -> Result<ActionDistribution, DistributionError> {
     let widths = rules.widths_for(node.scenario);
     let order = positions_for(node.seated);
@@ -405,7 +421,7 @@ pub fn distribution_for(
     let aggressive_action = if node.bucket <= rules.push_fold_below {
         Action::AllIn
     } else {
-        Action::RaiseTo(Chips::new(u64::from(raise_size(node.scenario, rules))))
+        Action::RaiseTo(centi_bb_to_chips(raise_size(node.scenario, rules), big_blind))
     };
 
     // 逐格覆寫在此套用：位置必須在 aggressive_action 決定之後，
@@ -462,6 +478,9 @@ fn raise_size(scenario: PreflopScenario, rules: &BaselineRules) -> u32 {
 
 #[cfg(test)]
 mod tests {
+    /// 測試只看行動類別的權重，加注金額不影響斷言。
+    const TEST_BB: Chips = Chips::new(2);
+
     use super::*;
     use crate::strategy::cell_override::OverrideCell;
     use crate::strategy::ranking::{class_of, CONTENT_GRADE_SAMPLES};
@@ -506,18 +525,18 @@ mod tests {
         let ranking = ranking();
         let node = override_node();
         let (a5s, a6s) = (labelled("A5s"), labelled("A6s"));
-        let before_a6s = shares(&distribution_for(&node, a6s, &base, &ranking).expect("可產生"));
+        let before_a6s = shares(&distribution_for(&node, a6s, &base, &ranking, TEST_BB).expect("可產生"));
 
         let mut rules = base.clone();
         rules
             .overrides
             .set(node, a5s, OverrideCell::new(5_000, 2_000).expect("合法"));
 
-        let after = distribution_for(&node, a5s, &rules, &ranking).expect("可產生");
+        let after = distribution_for(&node, a5s, &rules, &ranking, TEST_BB).expect("可產生");
         assert_eq!(shares(&after), (5_000, 2_000, 3_000), "覆寫值必須原封不動出現");
 
         assert_eq!(
-            shares(&distribution_for(&node, a6s, &rules, &ranking).expect("可產生")),
+            shares(&distribution_for(&node, a6s, &rules, &ranking, TEST_BB).expect("可產生")),
             before_a6s,
             "覆寫 A5s 不得改變相鄰的 A6s——參數調整才會連帶，覆寫不會"
         );
@@ -525,8 +544,8 @@ mod tests {
         let mut other = node;
         other.hero = PositionLabel::Co;
         assert_eq!(
-            shares(&distribution_for(&other, a5s, &rules, &ranking).expect("可產生")),
-            shares(&distribution_for(&other, a5s, &base, &ranking).expect("可產生")),
+            shares(&distribution_for(&other, a5s, &rules, &ranking, TEST_BB).expect("可產生")),
+            shares(&distribution_for(&other, a5s, &base, &ranking, TEST_BB).expect("可產生")),
             "覆寫綁定節點，不得外溢到其他位置"
         );
     }
@@ -541,7 +560,7 @@ mod tests {
             .overrides
             .set(node, class, OverrideCell::new(FULL, 0).expect("合法"));
 
-        let d = distribution_for(&node, class, &rules, &ranking()).expect("可產生");
+        let d = distribution_for(&node, class, &rules, &ranking(), TEST_BB).expect("可產生");
         assert!(
             d.entries().iter().any(|&(a, _)| a == Action::AllIn),
             "短碼的主動動作是 AllIn，覆寫不得把它變成 RaiseTo"
@@ -590,7 +609,7 @@ mod tests {
             for bucket in [StackBucket::VeryShort, StackBucket::Deep, StackBucket::VeryDeep] {
                 for class in HandClass::all() {
                     let node = node(PositionLabel::Co, scenario, bucket);
-                    let d = distribution_for(&node, class, &rules, &ranking)
+                    let d = distribution_for(&node, class, &rules, &ranking, TEST_BB)
                         .expect("必有 fold 保底，不應失敗");
                     let total: Myriad = d.entries().iter().map(|(_, w)| *w).sum();
                     assert_eq!(total, FULL, "{} 的頻率合計必須為 100%", class.label());
@@ -613,14 +632,16 @@ mod tests {
             marginal,
             &rules,
             &ranking,
-        )
+                         TEST_BB,
+                     )
         .expect("產生");
         let btn = distribution_for(
             &node(PositionLabel::Btn, PreflopScenario::Unopened, StackBucket::VeryDeep),
             marginal,
             &rules,
             &ranking,
-        )
+                         TEST_BB,
+                     )
         .expect("產生");
 
         let raise_weight = |d: &ActionDistribution| -> Myriad {
@@ -654,7 +675,8 @@ mod tests {
                         class,
                         &rules,
                         &ranking,
-                    )
+                                     TEST_BB,
+                                 )
                     .expect("產生");
                     let raise: Myriad = d
                         .entries()
@@ -715,7 +737,7 @@ mod tests {
         let node = node(PositionLabel::Utg, PreflopScenario::Unopened, StackBucket::VeryDeep);
 
         let aggressive = |class: HandClass| -> Myriad {
-            distribution_for(&node, class, &rules, &ranking)
+            distribution_for(&node, class, &rules, &ranking, TEST_BB)
                 .expect("產生")
                 .entries()
                 .iter()
@@ -747,7 +769,7 @@ mod tests {
         let node = node(PositionLabel::Btn, PreflopScenario::Unopened, StackBucket::VeryDeep);
 
         let aggressive = |class: HandClass| -> Myriad {
-            distribution_for(&node, class, &rules, ranking)
+            distribution_for(&node, class, &rules, ranking, TEST_BB)
                 .expect("產生")
                 .entries()
                 .iter()
@@ -787,7 +809,8 @@ mod tests {
                     aces,
                     &rules,
                     &ranking,
-                )
+                                 TEST_BB,
+                             )
                 .expect("產生");
                 assert_eq!(
                     d.weight_of(Action::Fold),
@@ -809,7 +832,8 @@ mod tests {
             worst,
             &rules,
             &ranking,
-        )
+                         TEST_BB,
+                     )
         .expect("產生");
         assert_eq!(d.weight_of(Action::Fold), FULL, "72o 在 UTG 應 100% 棄牌");
     }
@@ -825,7 +849,8 @@ mod tests {
             strong,
             &rules,
             &ranking,
-        )
+                         TEST_BB,
+                     )
         .expect("產生");
         assert!(
             d.entries()

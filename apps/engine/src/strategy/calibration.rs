@@ -17,6 +17,7 @@
 //! 因此本工具刻意把連帶效果攤開，而不是自動找一個最小改動了事。
 
 use crate::betting::Action;
+use crate::chips::Chips;
 use crate::strategy::baseline::{distribution_for, BaselineRules};
 use crate::strategy::distribution::{Myriad, FULL};
 use crate::strategy::hand_class::HandClass;
@@ -51,6 +52,12 @@ pub struct RangeMatrix {
     cells: Vec<MatrixCell>,
 }
 
+/// 範圍矩陣換算加注尺度時用的名目大盲。
+///
+/// 矩陣只統計主動／跟注／棄牌三類的權重，不看加注金額，因此這個值
+/// 不影響輸出；固定成常數是為了讓結果可重現，而不是隨手取一個數字。
+const MATRIX_BIG_BLIND: Chips = Chips::new(2);
+
 impl RangeMatrix {
     /// 產生某節點的矩陣。
     #[must_use]
@@ -68,7 +75,9 @@ impl RangeMatrix {
         );
 
         for class in HandClass::all() {
-            let distribution = distribution_for(&node, class, rules, ranking)
+            // 矩陣只統計主動／跟注／棄牌三類的權重，不看加注金額，
+            // 因此換算尺度用哪個 BB 都不影響輸出
+            let distribution = distribution_for(&node, class, rules, ranking, MATRIX_BIG_BLIND)
                 .unwrap_or_else(|e| panic!("產生 {} 的分佈失敗：{e:?}", class.label()));
 
             let mut aggressive = 0;

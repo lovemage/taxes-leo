@@ -58,8 +58,11 @@ export function BotSetup({
     updateSeat({ ...current, params });
   };
 
-  const persona = specs.filter((spec) => spec.layer === 'persona');
-  const behavior = specs.filter((spec) => spec.layer === 'behavior');
+  const persona = specs.filter((spec) => spec.layer === 'persona' && spec.implemented);
+  const behavior = specs.filter((spec) => spec.layer === 'behavior' && spec.implemented);
+  // 決策路徑還沒讀到的欄位單獨列在最後並停用。混在可調的欄位裡會讓
+  // 使用者拉一個不會有事的滑桿，然後以為自己調到了東西
+  const pending = specs.filter((spec) => !spec.implemented);
 
   return (
     <>
@@ -186,6 +189,34 @@ export function BotSetup({
         onChange={setParam}
         locked={locked}
       />
+
+      {pending.length > 0 && (
+        <section style={{ marginBottom: 20 }}>
+          <SectionTitle>尚未生效（{pending.length}）</SectionTitle>
+          <div className="dim" style={{ fontSize: 10, marginBottom: 8, lineHeight: 1.5 }}>
+            這些欄位已在核心規格 4.3 宣告，但決策路徑目前不會讀到，
+            調了不會改變任何結果，因此停用而不是讓你白拉。
+          </div>
+          {pending.map((spec) => (
+            <div
+              key={spec.key}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'baseline',
+                padding: '3px 0',
+                opacity: 0.45,
+                fontSize: 11,
+              }}
+            >
+              <span>{spec.display}</span>
+              <span className="num dim" style={{ fontSize: 10 }}>
+                {spec.kind === 'myriad' ? `${spec.default / 100}%` : spec.default}
+              </span>
+            </div>
+          ))}
+        </section>
+      )}
     </>
   );
 }

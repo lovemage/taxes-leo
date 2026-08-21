@@ -259,3 +259,118 @@ fn 執行中維持佔用() {
     assert!(!observed.is_empty(), "應有中途進度可供觀察");
     assert!(observed.iter().all(|active| *active), "執行中必須維持佔用");
 }
+
+// ── 內容快照（核心規格 3.3）─────────────────────────────────────────────
+
+/// 使用者沒開過 Bot 面板時，manifest 仍必須記下實際在桌上的九個 Bot。
+///
+/// request 的 `bots` 是空陣列，但引擎會補九份預設設定——manifest 只遍歷
+/// 原始請求的話會記成「沒有 Bot」，那份紀錄就無法重現這個 run。
+#[test]
+fn 未指定_bot_時_manifest_仍記下實際使用的九組設定() {
+    let mut request = request();
+    request.hand_limit = 200;
+    request.bots = Vec::new();
+    let config = request.to_session_config().expect("轉換");
+
+    let store = Arc::new(Mutex::new(Store::open_in_memory().expect("資料庫")));
+    let control = Arc::new(RunControl::default());
+    let run_id = execute(&config, &request.bots, &store, &control, 1_771_200_000, |_| {})
+        .expect("執行");
+
+    let manifest = store
+        .lock()
+        .expect("鎖")
+        .load_manifest(run_id)
+        .expect("讀 manifest");
+
+    assert_eq!(
+        manifest.bot_personas.len(),
+        9,
+        "桌上有九個座位，快照就該有九份設定"
+    );
+}
+
+/// 快照必須是**自足的內容**，不是名稱或「與預設的差異」。
+///
+/// 核心規格 3.3：「內容本身必須保存，只留 hash 不合格。」差異需要配上
+/// 當時的預設值才讀得回完整設定，而預設值會隨版本改變。
+#[test]
+fn manifest_保存全部參數生效值與完整基準內容() {
+    use poker_engine::bot::params::{BEHAVIOR_SPECS, PERSONA_SPECS};
+
+    let mut request = request();
+    request.hand_limit = 200;
+    request.bots = vec![poker_ipc::BotSeatConfig {
+        name: "緊凶".to_owned(),
+        params: [("rangeWidth".to_owned(), 8_000)].into_iter().collect(),
+    }];
+    let config = request.to_session_config().expect("轉換");
+
+    let store = Arc::new(Mutex::new(Store::open_in_memory().expect("資料庫")));
+    let control = Arc::new(RunControl::default());
+    let run_id = execute(&config, &request.bots, &store, &control, 1_771_200_000, |_| {})
+        .expect("執行");
+    let manifest = store
+        .lock()
+        .expect("鎖")
+        .load_manifest(run_id)
+        .expect("讀 manifest");
+
+    // 逐座快照：全部 21 欄都在，不只改過的那一欄
+    let first = &manifest.bot_personas[0];
+    let params = first.content["params"]
+        .as_object()
+        .expect("params 應為物件");
+    assert_eq!(
+        params.len(),
+        PERSONA_SPECS.len() + BEHAVIOR_SPECS.len(),
+        "應記下全部參數的生效值"
+    );
+    assert_eq!(params["rangeWidth"], 8_000, "改過的值要記對");
+    assert_eq!(
+        params["foldDiscipline"], 10_000,
+        "沒改過的欄位也要記，否則日後還原不出當初跑了什麼"
+    );
+
+    // 基準內容：實際數字要在，不能只有名稱
+    let preflop = &manifest.hero_strategy.content["preflop"];
+    assert!(
+        preflop["openingWidths"].as_object().is_some_and(|m| !m.is_empty()),
+        "開牌寬度表必須存進快照"
+    );
+    assert!(
+        preflop["playability"].as_object().is_some_and(|m| !m.is_empty()),
+        "可玩性調整必須存進快照"
+    );
+    assert_eq!(
+        preflop["raiseSizesCentiBb"]["open"], 250,
+        "加注尺度必須存進快照"
+    );
+    assert!(manifest.hero_strategy.verify(), "內容與 hash 必須相符");
+}
+
+/// 補位的 Bot 名稱必須可辨識，不能全是「未命名」。
+#[test]
+fn 未指定的座位以座位序命名() {
+    let mut request = request();
+    request.hand_limit = 200;
+    request.bots = vec![poker_ipc::BotSeatConfig {
+        name: "自訂".to_owned(),
+        params: std::collections::BTreeMap::new(),
+    }];
+    let config = request.to_session_config().expect("轉換");
+
+    let store = Arc::new(Mutex::new(Store::open_in_memory().expect("資料庫")));
+    let control = Arc::new(RunControl::default());
+    let run_id = execute(&config, &request.bots, &store, &control, 1_771_200_000, |_| {})
+        .expect("執行");
+    let manifest = store
+        .lock()
+        .expect("鎖")
+        .load_manifest(run_id)
+        .expect("讀 manifest");
+
+    assert_eq!(manifest.bot_personas[0].name, "自訂");
+    assert_eq!(manifest.bot_personas[8].name, "座位 8");
+}

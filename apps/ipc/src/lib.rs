@@ -16,6 +16,7 @@ pub mod bots;
 pub mod frames;
 pub mod handler;
 pub mod run;
+pub mod snapshot;
 pub mod view;
 pub mod views;
 

@@ -217,7 +217,10 @@ pub fn execute(
     // 都不再代表「進行中的 run」。用 guard 而非在每個 return 前手動標記，
     // 是因為漏掉任何一條路徑的後果都是「之後再也開不了新的 run」
     let _guard = FinishGuard(control);
-    let manifest = build_manifest(config, bots, created_at);
+    let rules = BaselineRules::engineering_placeholder();
+    let bot_configs = crate::bots::to_bot_configs(bots, config.players)?;
+
+    let manifest = build_manifest(config, &rules, &bot_configs, created_at);
     let run_id = {
         let mut guard = store.lock().map_err(|_| "資料庫鎖已毀損")?;
         guard
@@ -232,9 +235,9 @@ pub fn execute(
     let mut aborted = false;
 
     let mut agent = BotAgent::new(
-        BaselineRules::engineering_placeholder(),
+        rules.clone(),
         rankings(),
-        crate::bots::to_bot_configs(bots, config.players)?,
+        bot_configs.clone(),
         config.master_seed,
     );
 
@@ -284,7 +287,7 @@ pub fn execute(
         }
     }
 
-    let mut final_manifest = build_manifest(config, bots, created_at);
+    let mut final_manifest = build_manifest(config, &rules, &bot_configs, created_at);
     final_manifest.instances = summary
         .instances
         .iter()
@@ -338,7 +341,8 @@ impl Drop for FinishGuard<'_> {
 
 fn build_manifest(
     config: &SessionConfig,
-    bots: &[crate::bots::BotSeatConfig],
+    rules: &BaselineRules,
+    bots: &[poker_engine::bot::BotConfig],
     created_at: i64,
 ) -> RunManifest {
     RunManifest {
@@ -346,7 +350,10 @@ fn build_manifest(
         schema_version: SCHEMA_VERSION,
         log_format_version: LOG_FORMAT_VERSION,
         rng_algorithm: RNG_VERSION.to_owned(),
-        stream_derivation: "splitmix64(master_seed, hand_index, domain) → xoshiro256**".to_owned(),
+        // 發牌用手序，策略取樣用全域決策序號——兩者是不同的 stream 索引，
+        // 寫成同一句會讓日後想重現的人找錯地方
+        stream_derivation: "splitmix64(master_seed, index, domain) → xoshiro256**；             deal 的 index 為手序，strategyMix 的 index 為全域決策序號"
+            .to_owned(),
         master_seed: config.master_seed,
         execution_mode: ExecutionMode::Batch,
         hand_limit: config.hand_limit,
@@ -371,32 +378,31 @@ fn build_manifest(
         auto_refill_target: config.auto_refill,
         rule_variants: RuleVariants::default(),
         // 核心規格 3.3：內容本身必須保存，只留 hash 不合格。
-        // 逐座設定寫進來，日後才看得出「這個 run 到底調了什麼」
+        // 因此存的是整份規則與逐座全部 21 個生效值，不是名稱或差異
         hero_strategy: ContentSnapshot::new(
-            "參數化 baseline",
-            BASELINE_VERSION,
+            rules.name.clone(),
+            rules.version.clone(),
             serde_json::json!({
-                "preflop": "BaselineRules::engineering_placeholder",
-                "postflop": poker_engine::bot::POSTFLOP_FALLBACK_VERSION,
-                "note": "翻後無內容表，一律 check／fold；顧問規則進來前不得當成校準結果",
+                "preflop": crate::snapshot::baseline(rules),
+                "postflopFallback": poker_engine::bot::POSTFLOP_FALLBACK_VERSION,
+                "postflopNote": "翻後無內容表，一律 check／fold；顧問規則進來前不得當成校準結果",
+                "equityRankingSamples": RANKING_SAMPLES,
             }),
         ),
+        // 存的是**實際送進引擎**的設定。使用者沒開過 Bot 面板時
+        // request 的 bots 是空的，但桌上仍然坐著九個用預設值的 Bot——
+        // 記空陣列等於謊稱這個 run 沒有 Bot
         bot_personas: bots
             .iter()
-            .enumerate()
-            .map(|(seat, bot)| {
+            .map(|bot| {
                 ContentSnapshot::new(
-                    if bot.name.is_empty() {
-                        format!("座位 {seat}")
-                    } else {
-                        bot.name.clone()
-                    },
-                    BASELINE_VERSION,
-                    serde_json::to_value(&bot.params).unwrap_or(serde_json::Value::Null),
+                    bot.name.clone(),
+                    rules.version.clone(),
+                    crate::snapshot::bot(bot),
                 )
             })
             .collect(),
-        baseline_version: BASELINE_VERSION.to_owned(),
+        baseline_version: rules.version.clone(),
         instances: Vec::new(),
         created_at,
         completed: false,
@@ -416,8 +422,6 @@ static RANKINGS: OnceLock<BTreeMap<usize, EquityRanking>> = OnceLock::new();
 /// 取樣不足時可玩性調整會被雜訊蓋過，產生的範圍與工作台顯示的對不上。
 const RANKING_SAMPLES: u64 = 20_000;
 
-/// 基準內容的版本字串，寫入 `RunManifest`。
-const BASELINE_VERSION: &str = "engineeringPlaceholder/v0";
 
 fn rankings() -> BTreeMap<usize, EquityRanking> {
     RANKINGS

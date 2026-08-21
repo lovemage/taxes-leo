@@ -90,6 +90,14 @@ pub struct PublicAction {
     pub seat: usize,
     pub position: PositionLabel,
     pub action: Action,
+    /// 這個行動是否**提高了當前注額**。
+    ///
+    /// 由引擎判定並記錄，策略層不得自行推導（核心規格 2.2）。
+    /// `AllIn` 是否為加注取決於籌碼夠不夠：籌碼不足的全下只是部分跟注，
+    /// 把它當成加注會讓後手把「開牌 ＋ 短碼全下跟」誤判成 3-bet
+    pub raised: bool,
+    /// 行動後該座在**本街**的累計投入
+    pub committed_to: Chips,
 }
 
 /// 對手的公開狀態。**刻意沒有底牌欄位。**
@@ -122,6 +130,12 @@ pub struct DecisionView {
     pub effective_stack_bucket: StackBucket,
     pub pot: Chips,
     pub to_call: Chips,
+    /// 本桌的大盲金額。
+    ///
+    /// 內容表的加注尺度以「BB 的百分之一」表示，換算成籌碼需要它。
+    /// 少了這個欄位，換算只能在別處硬編一個 BB 值——那正是
+    /// `RaiseTo(250)` 被當成 250 個籌碼單位而不是 2.5BB 的成因
+    pub big_blind: Chips,
     /// 由引擎產生的合法行動。策略層不得自行推導（核心規格 2.2）
     pub legal: LegalActions,
     /// 完整的公開行動歷史（核心規格 4.1 的 node 要素）

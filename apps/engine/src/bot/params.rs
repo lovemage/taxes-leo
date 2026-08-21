@@ -86,6 +86,21 @@ pub struct ParamSpec {
     /// 合法範圍（含端點）。列舉與布林以索引界定
     pub min: u32,
     pub max: u32,
+    /// 在**目前的內容**下，調整這個欄位會不會改變決策。
+    ///
+    /// 語意刻意定成「有沒有效果」而不是「管線有沒有讀」。兩者不一樣：
+    /// `allowedBetSizes` 確實接在管線第 3 步上，但現行 baseline 每個節點
+    /// 只產生一個加注尺度，限制尺度數等於沒作用。從使用者的角度，
+    /// 那個滑桿拉了不會有事——UI 該告訴他的是這件事。
+    ///
+    /// 參數 schema 是照核心規格 4.3 一次宣告完的，決策路徑只實作了一部分。
+    /// 沒有這個旗標，UI 會把 21 個滑桿一視同仁地畫出來，使用者拉了沒作用
+    /// 的那些卻以為調到了東西——那跟接線之前的「調參數是假動作」沒兩樣。
+    ///
+    /// 兩個方向都由測試守住，不會與實作漂開：
+    /// `未實作的參數不影響決策` 擋「標 false 卻有效果」，
+    /// `已實作的參數確實會改變決策` 擋「標 true 卻沒效果」。
+    pub implemented: bool,
 }
 
 impl ParamSpec {
@@ -164,6 +179,7 @@ pub const PERSONA_SPECS: [ParamSpec; 11] = [
         default: ParamValue::Myriad(10_000),
         min: 5_000,
         max: 16_000,
+        implemented: true,
     },
     ParamSpec {
         key: "preflopAggression",
@@ -174,6 +190,7 @@ pub const PERSONA_SPECS: [ParamSpec; 11] = [
         default: ParamValue::Myriad(10_000),
         min: 5_000,
         max: 18_000,
+        implemented: true,
     },
     ParamSpec {
         key: "postflopAggression",
@@ -184,6 +201,7 @@ pub const PERSONA_SPECS: [ParamSpec; 11] = [
         default: ParamValue::Myriad(10_000),
         min: 5_000,
         max: 18_000,
+        implemented: false,
     },
     ParamSpec {
         key: "callPersistence",
@@ -194,6 +212,7 @@ pub const PERSONA_SPECS: [ParamSpec; 11] = [
         default: ParamValue::Myriad(10_000),
         min: 5_000,
         max: 18_000,
+        implemented: true,
     },
     ParamSpec {
         key: "foldDiscipline",
@@ -204,6 +223,7 @@ pub const PERSONA_SPECS: [ParamSpec; 11] = [
         default: ParamValue::Myriad(10_000),
         min: 5_000,
         max: 18_000,
+        implemented: true,
     },
     ParamSpec {
         key: "bluffFrequency",
@@ -214,6 +234,7 @@ pub const PERSONA_SPECS: [ParamSpec; 11] = [
         default: ParamValue::Myriad(10_000),
         min: 0,
         max: 20_000,
+        implemented: false,
     },
     ParamSpec {
         key: "valueThreshold",
@@ -224,6 +245,7 @@ pub const PERSONA_SPECS: [ParamSpec; 11] = [
         default: ParamValue::Myriad(10_000),
         min: 5_000,
         max: 16_000,
+        implemented: false,
     },
     ParamSpec {
         key: "betSizePreference",
@@ -234,6 +256,7 @@ pub const PERSONA_SPECS: [ParamSpec; 11] = [
         default: ParamValue::Myriad(10_000),
         min: 5_000,
         max: 16_000,
+        implemented: false,
     },
     ParamSpec {
         key: "trapFrequency",
@@ -244,6 +267,7 @@ pub const PERSONA_SPECS: [ParamSpec; 11] = [
         default: ParamValue::Myriad(10_000),
         min: 0,
         max: 20_000,
+        implemented: false,
     },
     ParamSpec {
         key: "tiltResistance",
@@ -254,6 +278,7 @@ pub const PERSONA_SPECS: [ParamSpec; 11] = [
         default: ParamValue::Myriad(10_000),
         min: 0,
         max: 10_000,
+        implemented: false,
     },
     ParamSpec {
         key: "adaptationStyle",
@@ -264,6 +289,7 @@ pub const PERSONA_SPECS: [ParamSpec; 11] = [
         default: ParamValue::Enum(0),
         min: 0,
         max: 2,
+        implemented: false,
     },
 ];
 
@@ -278,6 +304,7 @@ pub const BEHAVIOR_SPECS: [ParamSpec; 10] = [
         default: ParamValue::Myriad(0),
         min: 0,
         max: 3_000,
+        implemented: true,
     },
     ParamSpec {
         key: "preflopCoverage",
@@ -288,6 +315,7 @@ pub const BEHAVIOR_SPECS: [ParamSpec; 10] = [
         default: ParamValue::Myriad(10_000),
         min: 0,
         max: 10_000,
+        implemented: false,
     },
     ParamSpec {
         key: "postflopBucketCount",
@@ -298,6 +326,7 @@ pub const BEHAVIOR_SPECS: [ParamSpec; 10] = [
         default: ParamValue::Count(8),
         min: 2,
         max: 24,
+        implemented: false,
     },
     ParamSpec {
         key: "allowedBetSizes",
@@ -308,6 +337,7 @@ pub const BEHAVIOR_SPECS: [ParamSpec; 10] = [
         default: ParamValue::Count(4),
         min: 1,
         max: 10,
+        implemented: false,
     },
     ParamSpec {
         key: "bluffComplexity",
@@ -318,6 +348,7 @@ pub const BEHAVIOR_SPECS: [ParamSpec; 10] = [
         default: ParamValue::Count(1),
         min: 0,
         max: 3,
+        implemented: false,
     },
     ParamSpec {
         key: "multiStreetPlanningDepth",
@@ -328,6 +359,7 @@ pub const BEHAVIOR_SPECS: [ParamSpec; 10] = [
         default: ParamValue::Count(1),
         min: 0,
         max: 3,
+        implemented: false,
     },
     ParamSpec {
         key: "opponentModelEnabled",
@@ -338,6 +370,7 @@ pub const BEHAVIOR_SPECS: [ParamSpec; 10] = [
         default: ParamValue::Flag(false),
         min: 0,
         max: 1,
+        implemented: false,
     },
     ParamSpec {
         key: "opponentModelUpdateHands",
@@ -348,6 +381,7 @@ pub const BEHAVIOR_SPECS: [ParamSpec; 10] = [
         default: ParamValue::Count(100),
         min: 10,
         max: 10_000,
+        implemented: false,
     },
     ParamSpec {
         key: "exploitAdjustmentCapPp",
@@ -358,6 +392,7 @@ pub const BEHAVIOR_SPECS: [ParamSpec; 10] = [
         default: ParamValue::Myriad(1_000),
         min: 0,
         max: 3_000,
+        implemented: true,
     },
     ParamSpec {
         key: "explanationDepth",
@@ -368,6 +403,7 @@ pub const BEHAVIOR_SPECS: [ParamSpec; 10] = [
         default: ParamValue::Count(2),
         min: 0,
         max: 3,
+        implemented: false,
     },
 ];
 

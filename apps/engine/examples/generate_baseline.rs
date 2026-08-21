@@ -14,6 +14,10 @@ use poker_engine::strategy::hand_class::HandClass;
 use poker_engine::strategy::preflop::{enumerate_nodes, PreflopNode, PreflopScenario};
 use poker_engine::strategy::ranking::EquityRanking;
 
+/// 產生器只統計行動類別的權重，不看加注金額，因此換算尺度用哪個 BB
+/// 都不影響輸出；固定成常數是為了讓結果可重現。
+const BIG_BLIND: poker_engine::chips::Chips = poker_engine::chips::Chips::new(2);
+
 fn main() {
     let rules = BaselineRules::engineering_placeholder();
     println!("規則集：{}（{}）", rules.name, rules.version);
@@ -44,7 +48,7 @@ fn main() {
     for node in &nodes {
         let ranking = pick_ranking(&rankings, node);
         for class in HandClass::all() {
-            match distribution_for(node, class, &rules, ranking) {
+            match distribution_for(node, class, &rules, ranking, BIG_BLIND) {
                 Ok(d) => {
                     debug_assert_eq!(
                         d.entries().iter().map(|(_, w)| *w).sum::<u32>(),
@@ -88,7 +92,7 @@ fn main() {
         let ranking = pick_ranking(&rankings, &node);
         let mut total_raise = 0u64;
         for class in HandClass::all() {
-            let d = distribution_for(&node, class, &rules, ranking).expect("產生");
+            let d = distribution_for(&node, class, &rules, ranking, BIG_BLIND).expect("產生");
             let raise: u32 = d
                 .entries()
                 .iter()
@@ -113,7 +117,7 @@ fn main() {
     let ranking = pick_ranking(&rankings, &node);
     let mut mixed: Vec<(String, u32)> = Vec::new();
     for class in HandClass::all() {
-        let d = distribution_for(&node, class, &rules, ranking).expect("產生");
+        let d = distribution_for(&node, class, &rules, ranking, BIG_BLIND).expect("產生");
         let raise: u32 = d
             .entries()
             .iter()

@@ -16,4 +16,11 @@ kind: string,
  * 這三個值的量級是萬分比（上限 16000）或小計數，遠在 JS 安全整數之內。
  * 標成 number 而非 bigint，前端才不必為了顯示一個百分比做型別轉換
  */
-default: number, min: number, max: number, };
+default: number, min: number, max: number, 
+/**
+ * 在目前的內容下，調整這個欄位會不會改變決策。
+ *
+ * `false` 的欄位 UI 必須畫成停用並說明原因。畫成可調的話，
+ * 使用者會拉一個不會有事的滑桿，然後以為自己調到了東西
+ */
+implemented: boolean, };

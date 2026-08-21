@@ -469,6 +469,7 @@ fn build_view(
         effective_stack_bucket: StackBucket::from_centi_bb(centi_bb),
         pot,
         to_call: legal.call_to.unwrap_or(round.current_bet()).saturating_sub(round.committed(seat)),
+        big_blind: ctx.big_blind,
         legal: legal.clone(),
         history: ctx.history.clone(),
         opponents,
@@ -489,16 +490,21 @@ fn run_round(
         let before = round.current_bet();
         let view = build_view(round, seat, street, &legal, ctx);
         let action = provider.choose(&view);
+        round
+            .apply(action)
+            .unwrap_or_else(|e| panic!("provider 在座位 {seat} 交回不合法行動 {action:?}：{e:?}"));
+        // 先套用再記錄：「是不是加注」要看注額有沒有被推高，
+        // 那是套用之後才知道的事
+        let raised = round.current_bet() > before;
         ctx.history.push(PublicAction {
             street,
             seat,
             position: ctx.labels[seat].unwrap_or(PositionLabel::Bb),
             action,
+            raised,
+            committed_to: round.committed(seat),
         });
-        round
-            .apply(action)
-            .unwrap_or_else(|e| panic!("provider 在座位 {seat} 交回不合法行動 {action:?}：{e:?}"));
-        if round.current_bet() > before {
+        if raised {
             aggressor = Some(seat);
         }
         events.push(HandEvent::Acted {

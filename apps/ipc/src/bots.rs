@@ -33,6 +33,11 @@ pub struct ParamSpecView {
     pub min: i64,
     #[ts(type = "number")]
     pub max: i64,
+    /// 在目前的內容下，調整這個欄位會不會改變決策。
+    ///
+    /// `false` 的欄位 UI 必須畫成停用並說明原因。畫成可調的話，
+    /// 使用者會拉一個不會有事的滑桿，然後以為自己調到了東西
+    pub implemented: bool,
 }
 
 fn kind_of(value: ParamValue) -> &'static str {
@@ -69,6 +74,7 @@ pub fn all_specs() -> Vec<ParamSpecView> {
             default: numeric(spec.default),
             min: i64::from(spec.min),
             max: i64::from(spec.max),
+            implemented: spec.implemented,
         })
         .collect()
 }

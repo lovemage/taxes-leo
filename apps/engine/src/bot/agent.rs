@@ -31,6 +31,12 @@ use crate::strategy::DecisionView;
 /// 因此這是個具名常數而不是散在程式碼裡的預設行為。
 pub const POSTFLOP_FALLBACK_VERSION: &str = "checkFold/v0";
 
+/// `baseline::expected_opponents` 可能回傳的最大值。
+///
+/// 上界來自 `VsLimp` 的 `limpers.clamp(1, 3) + 1`。這個常數與那個算式
+/// 綁在一起，由 `rankings_cover_expected_opponents` 測試守住。
+pub const MAX_EXPECTED_OPPONENTS: usize = 4;
+
 /// 依 `DecisionView` 決策的 Bot。
 ///
 /// 逐座持有一份 [`BotConfig`]，因此不同座位可以是不同人格。
@@ -86,11 +92,13 @@ impl BotAgent {
 
     /// 以 `samples` 次取樣建立所需的 equity 排序。
     ///
-    /// `baseline::expected_opponents` 只會回傳 1 或 2，因此只算這兩份。
+    /// 涵蓋 1–4 名對手，因為 `baseline::expected_opponents` 在多人跛入的
+    /// 情境會要到 4（`limpers.clamp(1, 3) + 1`）。少算的話那些節點會退回
+    /// 單挑排序，兩名以上跛入者的範圍就系統性偏緊——單挑該打的牌與
+    /// 五人底池該打的牌差很多。
     #[must_use]
     pub fn rankings(samples: u64) -> BTreeMap<usize, EquityRanking> {
-        [1usize, 2]
-            .into_iter()
+        (1..=MAX_EXPECTED_OPPONENTS)
             .map(|opponents| (opponents, EquityRanking::compute(opponents, samples)))
             .collect()
     }
@@ -152,10 +160,11 @@ fn preflop_baseline(
         bucket: view.effective_stack_bucket,
         scenario: scenario_of(view),
     };
-    let ranking = rankings
-        .get(&baseline::expected_opponents(&node))
-        .or_else(|| rankings.values().next())?;
-    baseline::distribution_for(&node, view.hand_class(), rules, ranking).ok()
+    // 取不到對應的排序寧可放棄這個節點走 fallback，也不退回別的人數。
+    // 退回單挑排序會讓多人底池的範圍看起來正常、實際上系統性錯誤——
+    // 那種錯誤不會報錯，只會靜靜地污染統計
+    let ranking = rankings.get(&baseline::expected_opponents(&node))?;
+    baseline::distribution_for(&node, view.hand_class(), rules, ranking, view.big_blind).ok()
 }
 
 /// 由公開行動歷史識別翻前情境（核心規格 4.1 的 node 要素）。
@@ -172,16 +181,18 @@ pub fn scenario_of(view: &DecisionView) -> PreflopScenario {
 
     for action in view.history.iter().filter(|a| a.street == Street::Preflop) {
         match action.action {
-            // all-in 一律當成主動行動。是不是「完整加注」由引擎判定，
-            // 情境識別只在意「前面有人主動出擊」這件事
-            Action::RaiseTo(_) | Action::AllIn => {
+            // 是不是加注看引擎記的 `raised`，不看行動種類。
+            // 籌碼不足的全下只是部分跟注，把它算成一次加注會讓後手把
+            // 「開牌 ＋ 短碼全下跟」誤判成 3-bet，套用完全不同的範圍
+            Action::RaiseTo(_) | Action::AllIn if action.raised => {
                 if action.seat == view.seat {
                     hero_raise_index = Some(raisers.len());
                     callers_since_hero_raise = 0;
                 }
                 raisers.push(action.position);
             }
-            Action::Call => {
+            // 沒推高注額的全下等同跟注
+            Action::Call | Action::AllIn | Action::RaiseTo(_) => {
                 if raisers.is_empty() {
                     limpers = limpers.saturating_add(1);
                 } else if hero_raise_index == Some(raisers.len() - 1) {
