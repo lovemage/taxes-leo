@@ -1,0 +1,26 @@
+[package]
+name = "poker-desktop"
+description = "9-max 模擬平台的 Tauri 桌面殼（Windows 目標）"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "UNLICENSED"
+
+# 本 crate **刻意不列入根 workspace**（根 Cargo.toml 的 exclude）。
+# Tauri 在 Linux 需要 webkit2gtk，開發機沒有；若併入 workspace，
+# 整個 cargo test 會因為它編不過而全部停擺。
+# Windows 端在本目錄直接 cargo/pnpm 建置即可。
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde_json = "1"
+poker-engine = { path = "../engine" }
+poker-storage = { path = "../storage" }
+poker-ipc = { path = "../ipc" }
+
+[features]
+# Tauri 的自訂協定；預設關閉，由 tauri.conf.json 決定
+custom-protocol = ["tauri/custom-protocol"]

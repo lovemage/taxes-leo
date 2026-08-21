@@ -1,6 +1,9 @@
 [workspace]
 resolver = "2"
 members = ["apps/devserver", "apps/engine", "apps/ipc", "apps/storage"]
+# Tauri 殼排除在 workspace 之外：它在 Linux 需要 webkit2gtk，
+# 併入會讓開發機的 cargo test 整個編不過。Windows 端單獨建置。
+exclude = ["apps/desktop"]
 
 [workspace.package]
 version = "0.1.0"
