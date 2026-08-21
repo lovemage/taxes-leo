@@ -26,6 +26,25 @@ pub enum StorageError {
     NotFound,
 }
 
+impl std::fmt::Display for StorageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Sqlite(e) => write!(f, "SQLite 錯誤：{e}"),
+            Self::Json(e) => write!(f, "JSON 錯誤：{e}"),
+            Self::Codec(e) => write!(f, "log 解碼錯誤：{e:?}"),
+            Self::InvalidManifest(reason) => write!(f, "RunManifest 不合法：{reason}"),
+            Self::SchemaMismatch { found, expected } => {
+                write!(f, "schema 版本不符：資料庫為 {found}，程式為 {expected}")
+            }
+            Self::NotFound => write!(f, "找不到指定資料"),
+        }
+    }
+}
+
+/// 實作 `Error` 讓呼叫端能用 `?` 轉成 `Box<dyn Error>`。
+/// Tauri 的 `setup` 閉包正是這種情境。
+impl std::error::Error for StorageError {}
+
 impl From<rusqlite::Error> for StorageError {
     fn from(e: rusqlite::Error) -> Self {
         Self::Sqlite(e)

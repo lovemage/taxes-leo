@@ -15,56 +15,110 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::sync::Mutex;
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex};
 
-use poker_engine::betting::Action;
-use poker_engine::chips::Chips;
-use poker_engine::hand::ActionProvider;
-use poker_engine::rng::RNG_VERSION;
-use poker_engine::session::{run_session, SessionConfig};
-use poker_engine::strategy::DecisionView;
-use poker_engine::table::TableConfig;
-use poker_ipc::{HandSummaryView, HandView, HoleCardVisibility, IpcHandler, RunView};
-use poker_storage::codec::{HandRecord, LOG_FORMAT_VERSION};
-use poker_storage::manifest::{
-    ContentSnapshot, ExecutionMode, InstanceRecord, RuleVariants, RunManifest, SCHEMA_VERSION,
-};
+use poker_ipc::{HandSummaryView, HandView, HoleCardVisibility, RunView};
 use poker_storage::Store;
-use tauri::State;
-
-const HERO_SEAT: usize = 0;
+use poker_ipc::run::{self, RunControl, RunRequest};
+use tauri::{Emitter, Manager, State};
 
 /// 應用程式狀態。
+///
+/// `Store` 由 UI 執行緒與背景執行緒共用，因此包在 `Arc<Mutex<_>>`。
+/// 核心規格 3.2 要求批次執行期間仍可瀏覽既有報表與 log，
+/// 兩邊必然會同時碰到資料庫。
 struct AppState {
-    handler: Mutex<IpcHandler>,
-    run_id: i64,
+    store: Arc<Mutex<Store>>,
+    /// 目前檢視中的 run。尚未執行任何 run 時為 `None`
+    current_run: Mutex<Option<i64>>,
+    control: Mutex<Option<Arc<RunControl>>>,
 }
 
-/// 示範用的行動來源。M2 的策略內容就緒後由使用者策略與 Bot 決策取代。
-struct CallingStation;
+type CommandResult<T> = Result<T, String>;
 
-impl ActionProvider for CallingStation {
-    fn choose(&mut self, view: &DecisionView) -> Action {
-        let legal = &view.legal;
-        if legal.can_check {
-            Action::Check
-        } else if legal.call_to.is_some() {
-            Action::Call
-        } else {
-            Action::AllIn
+// ── 執行控制（面板 E）────────────────────────────────────────────────
+
+/// 啟動一個批次 run。立即回傳，實際執行在背景執行緒。
+#[tauri::command]
+fn start_run(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    request: RunRequest,
+    created_at: i64,
+) -> CommandResult<()> {
+    let config = request.to_session_config()?;
+
+    // 已有 run 在跑時拒絕啟動，避免兩個 run 同時寫入
+    {
+        let guard = state.control.lock().map_err(|_| "狀態鎖已毀損")?;
+        if let Some(existing) = guard.as_ref() {
+            if !existing.cancelled.load(Ordering::Relaxed) {
+                return Err("已有 run 正在執行，請先取消或等待完成".to_owned());
+            }
         }
     }
+
+    let control = Arc::new(RunControl::default());
+    *state.control.lock().map_err(|_| "狀態鎖已毀損")? = Some(Arc::clone(&control));
+
+    let store = Arc::clone(&state.store);
+    let app_for_thread = app.clone();
+
+    std::thread::spawn(move || {
+        let result = run::execute(&config, &store, &control, created_at, |progress| {
+            let _ = app_for_thread.emit("run-progress", &progress);
+        });
+        match result {
+            Ok(run_id) => {
+                // run_id 寫回應用程式狀態，後續查詢才知道要看哪個 run
+                if let Some(state) = app_for_thread.try_state::<AppState>() {
+                    if let Ok(mut slot) = state.current_run.lock() {
+                        *slot = Some(run_id);
+                    }
+                }
+                let _ = app_for_thread.emit("run-ready", run_id);
+            }
+            Err(message) => {
+                let _ = app_for_thread.emit("run-failed", message);
+            }
+        }
+    });
+
+    Ok(())
 }
 
-/// Tauri command 的錯誤型別。前端只會拿到訊息字串。
-type CommandResult<T> = Result<T, String>;
+#[tauri::command]
+fn pause_run(state: State<'_, AppState>, paused: bool) -> CommandResult<()> {
+    let guard = state.control.lock().map_err(|_| "狀態鎖已毀損")?;
+    if let Some(control) = guard.as_ref() {
+        control.paused.store(paused, Ordering::Relaxed);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn cancel_run(state: State<'_, AppState>) -> CommandResult<()> {
+    let guard = state.control.lock().map_err(|_| "狀態鎖已毀損")?;
+    if let Some(control) = guard.as_ref() {
+        control.cancelled.store(true, Ordering::Relaxed);
+        // 取消時一併解除暫停，否則執行緒會卡在等待迴圈
+        control.paused.store(false, Ordering::Relaxed);
+    }
+    Ok(())
+}
+
+// ── 資料查詢（面板 F／G）─────────────────────────────────────────────
 
 #[tauri::command]
 fn get_run(state: State<'_, AppState>) -> CommandResult<RunView> {
-    let handler = state.handler.lock().map_err(|_| "狀態鎖已毀損")?;
-    handler
-        .get_run(state.run_id)
-        .map_err(|e| format!("取得 run 失敗：{e:?}"))
+    let run_id = state
+        .current_run
+        .lock()
+        .map_err(|_| "狀態鎖已毀損")?
+        .ok_or("尚未執行任何 run")?;
+    let store = state.store.lock().map_err(|_| "資料庫鎖已毀損")?;
+    poker_ipc::views::run_view(&store, run_id).map_err(|e| format!("取得 run 失敗：{e:?}"))
 }
 
 #[tauri::command]
@@ -73,9 +127,13 @@ fn list_hands(
     offset: u64,
     limit: u64,
 ) -> CommandResult<Vec<HandSummaryView>> {
-    let handler = state.handler.lock().map_err(|_| "狀態鎖已毀損")?;
-    handler
-        .list_hands(state.run_id, offset, limit.min(500))
+    let run_id = state
+        .current_run
+        .lock()
+        .map_err(|_| "狀態鎖已毀損")?
+        .ok_or("尚未執行任何 run")?;
+    let store = state.store.lock().map_err(|_| "資料庫鎖已毀損")?;
+    poker_ipc::views::hand_summaries(&store, run_id, offset, limit.min(500))
         .map_err(|e| format!("列表失敗：{e:?}"))
 }
 
@@ -88,107 +146,35 @@ fn get_hand(state: State<'_, AppState>, index: u64, reveal_all: bool) -> Command
     } else {
         HoleCardVisibility::RevealedOnly
     };
-    let handler = state.handler.lock().map_err(|_| "狀態鎖已毀損")?;
-    handler
-        .get_hand(state.run_id, index, visibility)
+    let run_id = state
+        .current_run
+        .lock()
+        .map_err(|_| "狀態鎖已毀損")?
+        .ok_or("尚未執行任何 run")?;
+    let store = state.store.lock().map_err(|_| "資料庫鎖已毀損")?;
+    poker_ipc::views::hand_view(&store, run_id, index, visibility)
         .map_err(|e| format!("取得手牌失敗：{e:?}"))
 }
 
-fn build_manifest(config: &SessionConfig) -> RunManifest {
-    RunManifest {
-        engine_version: env!("CARGO_PKG_VERSION").to_owned(),
-        schema_version: SCHEMA_VERSION,
-        log_format_version: LOG_FORMAT_VERSION,
-        rng_algorithm: RNG_VERSION.to_owned(),
-        stream_derivation: "splitmix64(master_seed, hand_index, domain) → xoshiro256**".to_owned(),
-        master_seed: config.master_seed,
-        execution_mode: ExecutionMode::Batch,
-        hand_limit: config.hand_limit,
-        players: config.players,
-        hero_seat: config.hero_seat,
-        starting_stacks: config.starting_stacks.iter().map(|c| c.units()).collect(),
-        small_blind: config.table.small_blind.units(),
-        big_blind: config.table.big_blind.units(),
-        ante_mode: "none".to_owned(),
-        ante_amount: 0,
-        straddle_amounts: Vec::new(),
-        rake_basis_points: 0,
-        rake_cap: 0,
-        rake_no_flop_no_drop: false,
-        stack_policy: "bustOut".to_owned(),
-        auto_refill_target: config.auto_refill,
-        rule_variants: RuleVariants::default(),
-        hero_strategy: ContentSnapshot::new(
-            "示範策略",
-            "v0",
-            serde_json::json!({ "note": "顧問內容就緒前的佔位" }),
-        ),
-        bot_personas: Vec::new(),
-        baseline_version: "none".to_owned(),
-        instances: Vec::new(),
-        created_at: 1_771_200_000,
-        completed: false,
-        checkpoint_version: 1,
-    }
-}
-
-/// 產生示範資料。正式版由面板 A／E 驅動，此處只為讓殼跑得起來。
-fn seed_run() -> (IpcHandler, i64) {
-    let config = SessionConfig {
-        table: TableConfig::simple(1, 2),
-        players: 9,
-        starting_stacks: vec![Chips::new(400); 9],
-        auto_refill: Some(9),
-        hero_seat: HERO_SEAT,
-        hand_limit: 500,
-        master_seed: 20_260_816,
-    };
-
-    let mut store = Store::open_in_memory().expect("建立記憶體資料庫");
-    let manifest = build_manifest(&config);
-    let run_id = store.create_run(&manifest).expect("建立 run");
-
-    let mut rows = Vec::new();
-    let summary = run_session(&config, &mut CallingStation, |played| {
-        let record = HandRecord::from_played(played);
-        let contributed = played.result.total_contributions[HERO_SEAT];
-        let delta = record.hero_delta(HERO_SEAT, contributed);
-        rows.push((record, played.seated, delta));
-    });
-    for chunk in rows.chunks(500) {
-        store.write_hands(run_id, chunk).expect("寫入 log");
-    }
-
-    let mut final_manifest = build_manifest(&config);
-    final_manifest.instances = summary
-        .instances
-        .iter()
-        .map(|i| InstanceRecord {
-            index: i.index,
-            first_hand: 0,
-            last_hand: i.hands.saturating_sub(1),
-            hands: i.hands,
-            end: format!("{:?}", i.end),
-            refills: Vec::new(),
-        })
-        .collect();
-    final_manifest.completed = true;
-    store
-        .finish_run(run_id, &final_manifest, summary.hands_played)
-        .expect("結束 run");
-
-    (IpcHandler::new(store), run_id)
-}
-
 fn main() {
-    let (handler, run_id) = seed_run();
-
     tauri::Builder::default()
-        .manage(AppState {
-            handler: Mutex::new(handler),
-            run_id,
+        .setup(|app| {
+            let store = Store::open_in_memory()?;
+            app.manage(AppState {
+                store: Arc::new(Mutex::new(store)),
+                current_run: Mutex::new(None),
+                control: Mutex::new(None),
+            });
+            Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_run, list_hands, get_hand])
+        .invoke_handler(tauri::generate_handler![
+            start_run,
+            pause_run,
+            cancel_run,
+            get_run,
+            list_hands,
+            get_hand
+        ])
         .run(tauri::generate_context!())
         .expect("啟動 Tauri 應用程式失敗");
 }
