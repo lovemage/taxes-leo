@@ -19,10 +19,17 @@ import type {
   ParamSpecView,
   PowerPreviewView,
   RangeMatrixView,
+  RunPhase,
+  RunProgress,
   RunView,
   StrategyMetaView,
   StrategyNodesView,
 } from '../../../packages/poker-types/src/index';
+
+// 進度與階段同樣由 Rust 產生，前端不自行宣告。手抄一份的話，Rust 端加了
+// 欄位而 TS 端沒跟上時型別檢查照樣過，畫面卻少一塊——這正是 `phase`
+// 這種「用來說明現在到底在做什麼」的欄位最容易出的事
+export type { RunPhase, RunProgress };
 
 /** 面板 A 的設定。欄位語意的權威來源是核心規格 2.1。 */
 export interface RunRequest {
@@ -47,17 +54,6 @@ export interface RunRequest {
   bots: BotSeatConfig[];
   /** 面板 D 的自身策略逐格覆寫。只裝在使用者座位上 */
   heroOverrides: CellOverrideView[];
-}
-
-/** 背景執行推送的進度。 */
-export interface RunProgress {
-  handsDone: number;
-  handsTotal: number;
-  instances: number;
-  bbPer100: number;
-  paused: boolean;
-  finished: boolean;
-  cancelled: boolean;
 }
 
 interface TauriGlobal {

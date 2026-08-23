@@ -58,14 +58,44 @@ pub struct EquityRanking {
 /// 169 類涵蓋的 combo 總數，C(52,2)。
 pub const TOTAL_COMBOS: u64 = 1_326;
 
+/// 由量測值組出排序表時的失敗原因。
+///
+/// 只有兩種：多一類或少一類。兩者都代表資料來源壞了，
+/// 不是可以就地修補的狀況
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RankingError {
+    /// 同一類出現兩次
+    DuplicateClass(HandClass),
+    /// 169 類有缺漏
+    MissingClass(HandClass),
+}
+
+impl std::fmt::Display for RankingError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::DuplicateClass(class) => write!(f, "{} 出現兩次", class.label()),
+            Self::MissingClass(class) => {
+                write!(f, "缺少 {}（169 類必須齊全）", class.label())
+            }
+        }
+    }
+}
+
 impl EquityRanking {
     /// 量測全部 169 類對 `opponents` 個隨機對手的 equity 並排序。
     ///
     /// 每個類別取該類的一個代表 combo。同一類別內不同 combo 的 equity
     /// 差異極小（同花與否已由類別區分），對排序不構成影響。
+    ///
+    /// # 成本：不得放在互動路徑上
+    ///
+    /// [`CONTENT_GRADE_SAMPLES`] 取樣 × 169 類，release 建置約 5 秒、
+    /// **debug 建置約 80 秒**。桌面程式若在啟動或第一次請求時現算，
+    /// 使用者看到的是一個沒有回應的視窗，Windows 會直接判成 AppHangB1。
+    /// 內容級排序改由 [`crate::strategy::ranking_asset`] 離線產製。
     #[must_use]
     pub fn compute(opponents: usize, samples: u64) -> Self {
-        let mut measured: Vec<(HandClass, u64)> = HandClass::all()
+        let measured: Vec<(HandClass, u64)> = HandClass::all()
             .into_iter()
             .enumerate()
             .map(|(index, class)| {
@@ -81,6 +111,37 @@ impl EquityRanking {
             })
             .collect();
 
+        Self::from_measurements(opponents, samples, &measured)
+            .expect("HandClass::all() 必然恰好涵蓋 169 類")
+    }
+
+    /// 由已量測的 equity 組出排序表。
+    ///
+    /// 排名、順序與百分位全部在這裡推導，**離線資產與現算因此走同一段
+    /// 程式碼**。若讓資產自己存排名，格式與 [`Self::compute`] 之間就多一處
+    /// 實作，而兩者漂移的症狀是「面板顯示的範圍與 Bot 實際打的不同」——
+    /// 那種錯誤不會報錯，只會靜靜地污染統計。
+    ///
+    /// # Errors
+    /// `measured` 未恰好涵蓋 169 類（有重複或缺漏）時回傳 [`RankingError`]。
+    pub fn from_measurements(
+        opponents: usize,
+        samples: u64,
+        measured: &[(HandClass, u64)],
+    ) -> Result<Self, RankingError> {
+        let mut seen = [false; 169];
+        for &(class, _) in measured {
+            let index = class.index();
+            if seen[index] {
+                return Err(RankingError::DuplicateClass(class));
+            }
+            seen[index] = true;
+        }
+        if let Some(missing) = seen.iter().position(|present| !present) {
+            return Err(RankingError::MissingClass(HandClass::all()[missing]));
+        }
+
+        let mut measured = measured.to_vec();
         // 由強到弱；equity 相同時以類別索引排序，確保結果確定
         measured.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.index().cmp(&b.0.index())));
 
@@ -112,13 +173,28 @@ impl EquityRanking {
         }
         debug_assert_eq!(cumulative, TOTAL_COMBOS, "169 類的 combo 總和必為 C(52,2)");
 
-        Self {
+        Ok(Self {
             opponents,
             samples,
             by_class,
             order,
             combo_percentile,
-        }
+        })
+    }
+
+    /// 逐類的原始量測值，由強到弱。
+    ///
+    /// 這是排序表裡**唯一不可推導**的部分——排名與百分位都由它算出來，
+    /// 因此離線資產只需要存這一份。
+    #[must_use]
+    pub fn measurements(&self) -> Vec<(HandClass, u64)> {
+        self.order
+            .iter()
+            .map(|&index| {
+                let entry = self.by_class[index];
+                (entry.class, entry.equity_myriad)
+            })
+            .collect()
     }
 
     /// 樣本數是否足以產製正式內容（見 [`CONTENT_GRADE_SAMPLES`]）。

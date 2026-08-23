@@ -7,7 +7,7 @@
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
-use poker_ipc::run::{execute, RunControl, RunProgress, RunRequest};
+use poker_ipc::run::{execute, RunControl, RunPhase, RunProgress, RunRequest};
 use poker_storage::Store;
 
 fn request() -> RunRequest {
@@ -128,6 +128,116 @@ fn run_with(control: Arc<RunControl>, hand_limit: u64) -> (Vec<RunProgress>, u64
     (updates, done)
 }
 
+// ── 準備階段（面板 E 的第一秒）────────────────────────────────────────
+//
+// 這一組守的是實機回報的「按下開始就假死」：舊版在桌面殼啟動時現算
+// 內容級 equity 排序（debug 建置 80 秒），而 `execute` 又要等同一份
+// `OnceLock`。中間那段時間 UI 收不到任何事件，畫面停在 0%，
+// 使用者與 Windows 都判定為當掉。
+
+/// 第一個進度事件必須在**發出任何一手之前**就送出。
+#[test]
+fn 第一個進度事件是準備階段且尚未發牌() {
+    let (updates, _) = run_with(Arc::new(RunControl::default()), 1_000);
+
+    let first = updates.first().expect("至少一次進度");
+    assert_eq!(
+        first.phase,
+        RunPhase::PreparingStrategy,
+        "第一個事件必須是準備階段，否則畫面在載入內容那段時間毫無回饋"
+    );
+    assert_eq!(first.hands_done, 0, "準備階段不得已經發過牌");
+    assert!(!first.finished);
+    assert!(!first.cancelled);
+    assert_eq!(
+        first.hands_total, 1_000,
+        "準備階段就要帶上總手數，進度條才畫得出分母"
+    );
+}
+
+/// 準備階段只出現一次，而且在所有跑牌進度之前。
+#[test]
+fn 準備階段只出現在最前面() {
+    let (updates, _) = run_with(Arc::new(RunControl::default()), 2_000);
+
+    let preparing: Vec<usize> = updates
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| p.phase == RunPhase::PreparingStrategy)
+        .map(|(index, _)| index)
+        .collect();
+    assert_eq!(preparing, vec![0], "準備階段只該推一次，而且必須是第一次");
+
+    assert!(
+        updates[1..]
+            .iter()
+            .all(|p| matches!(p.phase, RunPhase::Running | RunPhase::Finished)),
+        "準備完成之後不得再回到準備階段"
+    );
+}
+
+/// 準備階段必須是**毫秒等級**。
+///
+/// 這正是舊版壞掉的地方：內容級排序現算要 5–80 秒，而那段時間全部落在
+/// 「按下開始」與「第一個事件」之間。排序改由離線資產載入之後，這段只剩
+/// 解析六千多位元組的純文字。
+///
+/// 門檻放寬到一秒是給 CI 的慢機器留餘裕；真正要擋下的是**數十秒**那個量級。
+#[test]
+fn 準備階段在一秒內完成() {
+    let mut request = request();
+    request.hand_limit = 30_000;
+    let config = request.to_session_config().expect("轉換");
+    let store = Arc::new(Mutex::new(Store::open_in_memory().expect("資料庫")));
+    let control = Arc::new(RunControl::default());
+    // 準備階段一結束就取消，避免這個測試真的跑滿三萬手
+    let control_for_thread = Arc::clone(&control);
+
+    let started = std::time::Instant::now();
+    let first_at = Arc::new(Mutex::new(None::<std::time::Duration>));
+    let sink = Arc::clone(&first_at);
+    execute(&config, &[], &[], &store, &control, 1_771_200_000, move |progress| {
+        if progress.phase == RunPhase::PreparingStrategy {
+            *sink.lock().expect("鎖") = Some(started.elapsed());
+            control_for_thread.cancelled.store(true, Ordering::Relaxed);
+        }
+    })
+    .expect("執行");
+
+    let elapsed = first_at.lock().expect("鎖").expect("必須推過準備階段");
+    assert!(
+        elapsed < std::time::Duration::from_secs(1),
+        "準備階段花了 {elapsed:?}——這條路徑不得有任何現算的 Monte Carlo"
+    );
+}
+
+/// 30K 手是驗收用的批次規模，必須真的跑得完。
+#[test]
+fn 三萬手可完整跑完並如實標示階段() {
+    let (updates, done) = run_with(Arc::new(RunControl::default()), 30_000);
+
+    assert_eq!(done, 30_000, "30K run 必須跑滿");
+    let last = updates.last().expect("至少一次進度");
+    assert_eq!(last.phase, RunPhase::Finished);
+    assert!(last.finished);
+    assert!(!last.cancelled);
+    assert_eq!(last.hands_done, 30_000);
+}
+
+/// 取消時最終階段是 `Cancelled` 而不是 `Finished`。
+///
+/// 兩者的 `finished` 都是 true（取消也是一種結束），只有 `phase`
+/// 分得出來——前端據此決定要說「已完成」還是「已取消」。
+#[test]
+fn 取消時最終階段標示為已取消() {
+    let control = Arc::new(RunControl::default());
+    control.cancelled.store(true, Ordering::Relaxed);
+    let (updates, _) = run_with(Arc::clone(&control), 50_000);
+    assert_eq!(updates.last().expect("至少一次進度").phase, RunPhase::Cancelled);
+}
+
+// ── 執行、進度與取消 ────────────────────────────────────────────────────
+
 #[test]
 fn 執行完成後推送最終進度() {
     let (updates, done) = run_with(Arc::new(RunControl::default()), 2_000);
@@ -149,7 +259,12 @@ fn 進度更新經過節流而非逐手推送() {
         "2000 手不應推送 {} 次進度，必須節流",
         updates.len()
     );
-    assert!(updates.len() >= 2, "仍須有中途進度，不能只在結束時推一次");
+    // 準備階段與最終進度各算一次，因此中途進度另外數
+    let running = updates
+        .iter()
+        .filter(|p| p.phase == RunPhase::Running)
+        .count();
+    assert!(running >= 1, "仍須有中途進度，不能只在頭尾各推一次");
 }
 
 #[test]
@@ -249,7 +364,8 @@ fn 執行中維持佔用() {
     let control_for_probe = Arc::clone(&control);
     let sink = Arc::clone(&observed);
     execute(&config, &[], &[], &store, &control, 1_771_200_000, move |progress| {
-        // 在進度回呼裡檢查，此時執行緒確實還在 execute 內
+        // 在進度回呼裡檢查，此時執行緒確實還在 execute 內。
+        // 準備階段同樣算執行中——執行權在那時就已經被佔住了
         if !progress.finished {
             sink.lock().expect("鎖").push(control_for_probe.is_active());
         }
@@ -348,6 +464,13 @@ fn manifest_保存全部參數生效值與完整基準內容() {
         preflop["raiseSizesCentiBb"]["open"], 250,
         "加注尺度必須存進快照"
     );
+    // 用哪一份 equity 排序跑的必須記下來。只記取樣數不夠：事後看到
+    // 「20000」還是得自己去猜那是資產還是現算的
+    let content = &manifest.hero_strategy.content;
+    assert_eq!(content["equityRankingSamples"], 20_000);
+    assert_eq!(content["equityRankingSource"], "asset/v1");
+    assert_eq!(content["equityRankingContentGrade"], true);
+
     assert!(manifest.hero_strategy.verify(), "內容與 hash 必須相符");
 }
 

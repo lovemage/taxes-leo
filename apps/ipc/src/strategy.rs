@@ -57,6 +57,16 @@ pub struct StrategyMetaView {
     /// equity 排序的取樣數。面板與執行層共用同一份，兩邊看到的必須一致
     #[ts(type = "number")]
     pub ranking_samples: u64,
+    /// 排序來源：`asset/v1`（離線資產）／`debugFallback`／`unavailable`
+    pub ranking_source: String,
+    /// 排序的取樣數是否足以產製正式內容。
+    ///
+    /// false 代表面板上畫的範圍**不是正式內容**（debug 低樣本替代品，
+    /// 或內容根本沒載進來）。UI 必須明講——低樣本排序看起來與正式的
+    /// 一模一樣，使用者沒有任何辦法自己分辨
+    pub ranking_content_grade: bool,
+    /// 給使用者看的一句話說明排序來源
+    pub ranking_note: String,
 }
 
 /// 一個有效籌碼分檔（規則細則 8.5）。
@@ -166,6 +176,9 @@ pub struct CellOverrideView {
 pub fn meta() -> StrategyMetaView {
     let rules = BaselineRules::engineering_placeholder();
     let nodes = enumerate_nodes().len() as u64;
+    // 排序的來源與等級隨 meta 一起送出。面板必須說得出自己畫的是什麼
+    // 內容——低樣本替代品畫出來的矩陣與正式的長得一模一樣
+    let status = crate::rankings::status();
     StrategyMetaView {
         baseline_name: rules.name.clone(),
         baseline_version: rules.version.clone(),
@@ -177,7 +190,10 @@ pub fn meta() -> StrategyMetaView {
         postflop_fallback: poker_engine::bot::POSTFLOP_FALLBACK_VERSION.to_owned(),
         preflop_node_count: nodes,
         preflop_cell_count: nodes * 169,
-        ranking_samples: crate::rankings::RANKING_SAMPLES,
+        ranking_samples: status.samples,
+        ranking_source: status.source,
+        ranking_content_grade: status.content_grade,
+        ranking_note: status.note,
     }
 }
 
@@ -238,7 +254,9 @@ pub fn matrix(
     rules.overrides = to_cell_overrides(overrides)?;
 
     let opponents = baseline::expected_opponents(&node);
-    let built = RangeMatrix::build(node, &rules, crate::rankings::for_opponents(opponents));
+    let ranking = crate::rankings::for_opponents(opponents)
+        .map_err(|reason| format!("equity 排序內容不可用：{reason}"))?;
+    let built = RangeMatrix::build(node, &rules, ranking);
 
     let cells: Vec<MatrixCellView> = HandClass::all()
         .into_iter()
@@ -368,10 +386,7 @@ fn parse_scenario(text: &str) -> Option<PreflopScenario> {
 }
 
 fn parse_class(text: &str) -> Result<HandClass, String> {
-    HandClass::all()
-        .into_iter()
-        .find(|c| c.label() == text)
-        .ok_or_else(|| format!("未知的牌類：{text}"))
+    HandClass::from_label(text).ok_or_else(|| format!("未知的牌類：{text}"))
 }
 
 fn scenario_label(scenario: PreflopScenario) -> String {
@@ -420,6 +435,36 @@ fn aggressive_action(node: &PreflopNode, rules: &BaselineRules) -> String {
 mod tests {
     use super::*;
     use poker_engine::strategy::distribution::FULL;
+
+    /// 面板 D 的第一次請求必須是即時的。
+    ///
+    /// 這條守的是實機回報的假死：`strategy_matrix` 是同步 Tauri command，
+    /// 跑在**主執行緒**上；舊版的第一次呼叫要等內容級 equity 排序算完
+    /// （debug 建置 80 秒），視窗因此整段沒有回應，Windows 判成 AppHangB1。
+    ///
+    /// 排序改由離線資產載入之後，這條路徑不得再有任何 Monte Carlo。
+    #[test]
+    fn 第一次取矩陣不得現算_equity_排序() {
+        let start = std::time::Instant::now();
+        let view = matrix(9, "BTN", "160-240", "unopened", &[]).expect("節點合法");
+        let elapsed = start.elapsed();
+
+        assert_eq!(view.cells.len(), 169);
+        assert!(
+            elapsed < std::time::Duration::from_secs(1),
+            "第一次取矩陣花了 {elapsed:?}——這條路徑跑在主執行緒上，不得有現算"
+        );
+    }
+
+    /// 面板必須說得出自己畫的是哪一份排序。
+    #[test]
+    fn 內容現況帶著排序來源與等級() {
+        let meta = meta();
+        assert_eq!(meta.ranking_source, "asset/v1");
+        assert!(meta.ranking_content_grade);
+        assert_eq!(meta.ranking_samples, 20_000);
+        assert!(!meta.ranking_note.is_empty(), "說明不得是空字串");
+    }
 
     #[test]
     fn 情境鍵可以來回轉換() {

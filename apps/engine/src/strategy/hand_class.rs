@@ -128,6 +128,15 @@ impl HandClass {
         }
     }
 
+    /// 由 [`Self::label`] 產生的字串反解回類別。
+    ///
+    /// 兩邊必須對稱：標籤是策略內容、覆寫節點鍵與離線排序資產共用的
+    /// 欄位名，解不回來就等於那筆資料悄悄落在別的類別上。
+    #[must_use]
+    pub fn from_label(text: &str) -> Option<Self> {
+        Self::all().into_iter().find(|class| class.label() == text)
+    }
+
     /// 全部 169 類，依索引遞增。
     #[must_use]
     pub fn all() -> Vec<Self> {

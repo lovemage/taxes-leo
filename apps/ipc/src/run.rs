@@ -12,6 +12,13 @@
 //! 「使用者可在運算中瀏覽既有報表與 log」。若在 command 裡同步跑完
 //! 100 萬手，視窗會整個凍住十幾個小時。
 //!
+//! # 為什麼第一個進度事件在做任何事之前就送出
+//!
+//! 「按下開始」與「第一手跑完」之間，UI 只有一個 0% 的進度條。中間發生
+//! 什麼事使用者完全看不到，於是任何一秒的延遲都被讀成「當掉了」。
+//! [`execute`] 因此在載入內容之前就先推一次 [`RunPhase::PreparingStrategy`]，
+//! 讓畫面在毫秒內就有明確狀態，而不是靠使用者猜。
+//!
 //! # 暫停與取消不得改變結果
 //!
 //! 核心規格 3.2：「暫停／續跑不可改變最終結果」。因此暫停只讓執行緒
@@ -34,6 +41,7 @@ use poker_storage::manifest::{
 };
 use poker_storage::Store;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 /// 面板 A 的設定，由前端傳入。
 ///
@@ -148,18 +156,40 @@ impl RunRequest {
     }
 }
 
+/// 執行所處的階段。
+///
+/// 有這個欄位之前，前端分不出「正在準備內容」與「已經卡死」——兩者
+/// 在畫面上都是一條不動的 0% 進度條。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
+#[serde(rename_all = "camelCase")]
+pub enum RunPhase {
+    /// 載入 equity 排序、驗證設定、建立 run 紀錄。**尚未發出任何一手**
+    PreparingStrategy,
+    /// 正在跑牌
+    Running,
+    Finished,
+    Cancelled,
+}
+
 /// 執行進度，推送給前端。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
 #[serde(rename_all = "camelCase")]
 pub struct RunProgress {
+    #[ts(type = "number")]
     pub hands_done: u64,
+    #[ts(type = "number")]
     pub hands_total: u64,
+    #[ts(type = "number")]
     pub instances: u64,
     /// 目前的 bb/100 點估計
     pub bb_per_100: f64,
     pub paused: bool,
     pub finished: bool,
     pub cancelled: bool,
+    /// 目前階段。前端據此顯示「準備內容中」而不是一條不動的 0%
+    pub phase: RunPhase,
 }
 
 /// 背景執行的控制握把。
@@ -217,6 +247,20 @@ pub fn execute(
     // 都不再代表「進行中的 run」。用 guard 而非在每個 return 前手動標記，
     // 是因為漏掉任何一條路徑的後果都是「之後再也開不了新的 run」
     let _guard = FinishGuard(control);
+
+    // 在做任何事之前先讓畫面有東西看。這一行的成本是一個事件，
+    // 換掉的是「按下開始之後什麼都沒發生」那段沉默
+    on_progress(RunProgress {
+        hands_done: 0,
+        hands_total: config.hand_limit,
+        instances: 0,
+        bb_per_100: 0.0,
+        paused: false,
+        finished: false,
+        cancelled: false,
+        phase: RunPhase::PreparingStrategy,
+    });
+
     let rules = BaselineRules::engineering_placeholder();
     let bot_configs = crate::bots::to_bot_configs(bots, config.players)?;
     // 面板 D 的逐格覆寫。驗證在這裡就做完，不合法的覆寫不該等到跑起來
@@ -227,7 +271,21 @@ pub fn execute(
     let mut hero_rules = rules.clone();
     hero_rules.overrides = hero_overrides.clone();
 
-    let manifest = build_manifest(config, &rules, &hero_rules, &bot_configs, created_at);
+    // 內容在這裡載入，而不是在桌面殼啟動時預熱。載入失敗就當場結束，
+    // 不得拿一份殘缺的排序跑完一整晚才發現統計是壞的
+    let rankings = crate::rankings::load().map_err(|reason| {
+        crate::log::error(&format!("run 無法啟動：{reason}"));
+        format!("equity 排序內容不可用：{reason}")
+    })?;
+    if !rankings.is_content_grade() {
+        crate::log::warn(&format!(
+            "本 run 使用非內容級排序（{} 取樣，來源 {}）。結果不得作為統計依據",
+            rankings.samples(),
+            rankings.source().key()
+        ));
+    }
+
+    let manifest = build_manifest(config, &rules, &hero_rules, &bot_configs, rankings, created_at);
     let run_id = {
         let mut guard = store.lock().map_err(|_| "資料庫鎖已毀損")?;
         guard
@@ -243,7 +301,7 @@ pub fn execute(
 
     let mut agent = BotAgent::new(
         rules.clone(),
-        crate::rankings::all().clone(),
+        rankings.table().clone(),
         bot_configs.clone(),
         config.master_seed,
     );
@@ -287,6 +345,7 @@ pub fn execute(
                 paused: false,
                 finished: false,
                 cancelled: false,
+                phase: RunPhase::Running,
             });
         }
     });
@@ -297,7 +356,8 @@ pub fn execute(
         }
     }
 
-    let mut final_manifest = build_manifest(config, &rules, &hero_rules, &bot_configs, created_at);
+    let mut final_manifest =
+        build_manifest(config, &rules, &hero_rules, &bot_configs, rankings, created_at);
     final_manifest.instances = summary
         .instances
         .iter()
@@ -335,6 +395,11 @@ pub fn execute(
         paused: false,
         finished: true,
         cancelled: aborted,
+        phase: if aborted {
+            RunPhase::Cancelled
+        } else {
+            RunPhase::Finished
+        },
     });
 
     Ok(run_id)
@@ -355,6 +420,9 @@ fn build_manifest(
     // 使用者座位實際生效的規則（基準 ＋ 面板 D 的逐格覆寫）
     hero_rules: &BaselineRules,
     bots: &[poker_engine::bot::BotConfig],
+    // 實際載入的 equity 排序。記來源與等級而不只是取樣數：用 debug 替代品
+    // 跑出來的 run，事後必須看得出來它不是正式內容
+    rankings: &crate::rankings::Rankings,
     created_at: i64,
 ) -> RunManifest {
     RunManifest {
@@ -398,7 +466,9 @@ fn build_manifest(
                 "preflop": crate::snapshot::baseline(hero_rules),
                 "postflopFallback": poker_engine::bot::POSTFLOP_FALLBACK_VERSION,
                 "postflopNote": "翻後無內容表，一律 check／fold；顧問規則進來前不得當成校準結果",
-                "equityRankingSamples": crate::rankings::RANKING_SAMPLES,
+                "equityRankingSamples": rankings.samples(),
+                "equityRankingSource": rankings.source().key(),
+                "equityRankingContentGrade": rankings.is_content_grade(),
             }),
         ),
         // 存的是**實際送進引擎**的設定。使用者沒開過 Bot 面板時

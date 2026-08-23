@@ -29,13 +29,7 @@ use poker_storage::Store;
 const ADDR: &str = "127.0.0.1:7801";
 const HERO_SEAT: usize = 0;
 
-/// 示範資料的 equity 取樣數。
-///
-/// 遠低於內容級門檻，因為這只是開發鷹架的示範資料，
-/// 不會拿來當統計依據；用 20,000 會讓 dev server 每次啟動多等兩秒。
-const DEMO_RANKING_SAMPLES: u64 = 2_000;
-
-fn seed_run() -> (IpcHandler, i64) {
+fn seed_run(rankings: &poker_ipc::rankings::Rankings) -> (IpcHandler, i64) {
     let config = SessionConfig {
         table: TableConfig::simple(1, 2),
         players: 9,
@@ -55,7 +49,9 @@ fn seed_run() -> (IpcHandler, i64) {
     // 而不是九個人從頭 check 到底
     let mut agent = BotAgent::new(
         BaselineRules::engineering_placeholder(),
-        BotAgent::rankings(DEMO_RANKING_SAMPLES),
+        // 與面板 D 用同一份排序。示範資料現算一份的話，dev server 每次
+        // 啟動都要多等好幾秒，而那份還跟面板顯示的不是同一個東西
+        rankings.table().clone(),
         vec![BotConfig::defaults("示範"); config.players],
         config.master_seed,
     );
@@ -135,12 +131,13 @@ fn build_manifest(config: &SessionConfig) -> RunManifest {
 }
 
 fn main() {
-    let (handler, run_id) = seed_run();
-    // 面板 D 的第一次請求要等 equity 排序算完（約五秒）。在背景先算，
-    // 使用者切到策略面板時多半已經好了；沒好也只是照樣等，不會算兩次
-    std::thread::spawn(|| {
-        let _ = poker_ipc::rankings::all();
-    });
+    // 排序由離線資產載入（毫秒等級），因此不需要任何背景預熱。
+    // 舊版在這裡丟一條執行緒去現算，而那正是桌面端假死的同一段程式碼
+    let rankings = poker_ipc::rankings::load().expect("載入 equity 排序資產");
+    let status = poker_ipc::rankings::status();
+    println!("equity 排序：{}（{}）", status.source, status.note);
+
+    let (handler, run_id) = seed_run(rankings);
     let listener = TcpListener::bind(ADDR).expect("綁定連接埠");
     println!("dev server 已啟動：http://{ADDR}（run_id={run_id}）");
 

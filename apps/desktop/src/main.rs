@@ -7,6 +7,19 @@
 //! command 名稱與參數形狀刻意與開發用 HTTP 外殼（`apps/devserver`）一致，
 //! 因此前端從 HTTP 切到 Tauri 時只需替換 `apps/ui/src/api.ts` 的傳輸層。
 //!
+//! # 為什麼每個 command 都標了 `async`
+//!
+//! Tauri v2 的 `#[tauri::command]` 預設是 `ExecutionContext::Blocking`：
+//! 同步 command 的函式本體**直接跑在主執行緒上**。只要有一個 command 花
+//! 上幾百毫秒，視窗就停止回應；花上幾十秒，Windows 直接判成 AppHangB1，
+//! 而使用者看到的是「按下去就死了」。
+//!
+//! 沒有 `async` 關鍵字的函式加上 `#[tauri::command(async)]` 之後，本體會在
+//! async runtime 的工作執行緒上執行——參數形狀與 `State<'_, _>` 都不用改。
+//! 因此這裡的規則是：**凡是會碰引擎或資料庫的 command 一律標 `async`**。
+//! 只有 `pause_run`／`cancel_run` 例外，它們只做一次 atomic store，
+//! 而且必須立刻生效。
+//!
 //! # 為什麼不在 workspace 裡
 //!
 //! Tauri 在 Linux 需要 webkit2gtk，開發機沒有。若把本 crate 併入根
@@ -43,7 +56,7 @@ type CommandResult<T> = Result<T, String>;
 // ── 執行控制（面板 E）────────────────────────────────────────────────
 
 /// 啟動一個批次 run。立即回傳，實際執行在背景執行緒。
-#[tauri::command]
+#[tauri::command(async)]
 fn start_run(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
@@ -75,6 +88,10 @@ fn start_run(
 
     let control = Arc::new(RunControl::default());
     *state.control.lock().map_err(|_| "狀態鎖已毀損")? = Some(Arc::clone(&control));
+    poker_ipc::log::info(&format!(
+        "啟動 run：{} 手、{} 人桌、seed {}",
+        config.hand_limit, config.players, request.master_seed
+    ));
 
     let store = Arc::clone(&state.store);
     let app_for_thread = app.clone();
@@ -88,7 +105,12 @@ fn start_run(
             &control,
             created_at,
             |progress| {
-                let _ = app_for_thread.emit("run-progress", &progress);
+                if let Err(error) = app_for_thread.emit("run-progress", &progress) {
+                    // 事件送不出去代表前端完全收不到進度，畫面會停在
+                    // 「啟動中」不動。這是 capability 沒給時的典型症狀，
+                    // 必須留下紀錄而不是靜靜丟掉
+                    poker_ipc::log::error(&format!("進度事件送出失敗：{error}"));
+                }
             },
         );
         match result {
@@ -102,6 +124,9 @@ fn start_run(
                 let _ = app_for_thread.emit("run-ready", run_id);
             }
             Err(message) => {
+                // 事件送出去給前端顯示，同時落一份日誌。前端的橫幅關掉就
+                // 沒了，而使用者回報時通常只記得「跑不起來」
+                poker_ipc::log::error(&format!("run 失敗：{message}"));
                 let _ = app_for_thread.emit("run-failed", message);
             }
         }
@@ -131,7 +156,7 @@ fn cancel_run(state: State<'_, AppState>) -> CommandResult<()> {
 }
 
 /// 面板 A 的效力預覽。不需要 run，純粹依設定計算。
-#[tauri::command]
+#[tauri::command(async)]
 fn preview_power(hand_limit: u64, players: usize) -> Vec<PowerPreviewView> {
     poker_ipc::views::power_previews(hand_limit, players)
 }
@@ -139,13 +164,13 @@ fn preview_power(hand_limit: u64, players: usize) -> Vec<PowerPreviewView> {
 // ── Bot 設定（面板 B／C）─────────────────────────────────────────────
 
 /// 21 個 Bot 參數的規格。前端據此渲染欄位，不自行抄一份範圍
-#[tauri::command]
+#[tauri::command(async)]
 fn list_bot_params() -> Vec<poker_ipc::ParamSpecView> {
     poker_ipc::bots::all_specs()
 }
 
 /// 工程用示範組合。**不是校準過的人格**，顧問內容進來前的替代品
-#[tauri::command]
+#[tauri::command(async)]
 fn list_bot_presets() -> Vec<poker_ipc::BotSeatConfig> {
     poker_ipc::bots::demo_presets()
 }
@@ -153,19 +178,19 @@ fn list_bot_presets() -> Vec<poker_ipc::BotSeatConfig> {
 // ── 策略（面板 D）───────────────────────────────────────────────────
 
 /// 基準內容的來源與現況。UI 據此揭露「未經顧問簽核」與翻後 fallback
-#[tauri::command]
+#[tauri::command(async)]
 fn strategy_meta() -> StrategyMetaView {
     poker_ipc::strategy::meta()
 }
 
 /// 某（桌型 × 位置）下到得了的情境與籌碼分檔
-#[tauri::command]
+#[tauri::command(async)]
 fn strategy_nodes(seated: u8, hero: String) -> StrategyNodesView {
     poker_ipc::strategy::nodes(seated, &hero)
 }
 
 /// 一個節點的 13×13 範圍矩陣。頻率由引擎算，UI 只負責畫
-#[tauri::command]
+#[tauri::command(async)]
 fn strategy_matrix(
     seated: u8,
     hero: String,
@@ -178,7 +203,7 @@ fn strategy_matrix(
 
 // ── 資料查詢（面板 F／G）─────────────────────────────────────────────
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_run(state: State<'_, AppState>) -> CommandResult<RunView> {
     let run_id = state
         .current_run
@@ -189,7 +214,7 @@ fn get_run(state: State<'_, AppState>) -> CommandResult<RunView> {
     poker_ipc::views::run_view(&store, run_id).map_err(|e| format!("取得 run 失敗：{e:?}"))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_hands(
     state: State<'_, AppState>,
     offset: u64,
@@ -205,7 +230,7 @@ fn list_hands(
         .map_err(|e| format!("列表失敗：{e:?}"))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_hand(state: State<'_, AppState>, index: u64, reveal_all: bool) -> CommandResult<HandView> {
     // 核心規格 2.4：重播是否顯示未攤牌底牌採明確設定，預設不顯示。
     // 遮蔽在 IPC 邊界完成，未亮出的底牌不會進入回傳值
@@ -234,15 +259,47 @@ fn main() {
             // 「事後瀏覽既有報表與 log」形同虛設。
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
+
+            // 日誌要在其他事情之前開起來。Windows 產品建置帶
+            // `windows_subsystem = "windows"`，沒有主控台——沒有這個檔案，
+            // 「啟動時就出事」是完全查不到的一類問題
+            if let Err(error) = poker_ipc::log::init_file(&data_dir.join("logs/desktop.log")) {
+                eprintln!("無法開啟日誌檔：{error}");
+            }
+            poker_ipc::log::info(&format!(
+                "桌面殼啟動（{} 建置），資料目錄 {}",
+                if cfg!(debug_assertions) { "debug" } else { "release" },
+                data_dir.display()
+            ));
+
             let store = Store::open(data_dir.join("runs.sqlite"))?;
             // 接回上次的 run，否則重開視窗會看不到先前跑完的結果
             let latest = store.latest_run_id()?;
-            // equity 排序要算約五秒，面板 D 與第一個 run 都會用到。在背景
-            // 先算好，否則使用者點進策略面板會對著空畫面等；`OnceLock`
-            // 保證只算一次，先到的執行緒付錢，後到的直接拿
-            std::thread::spawn(|| {
-                let _ = poker_ipc::rankings::all();
-            });
+
+            // **這裡刻意不做任何預熱。**
+            //
+            // 舊版在此丟一條執行緒現算內容級 equity 排序（debug 建置 80 秒、
+            // release 5 秒）。那條執行緒本身不擋主執行緒，但它把一顆核心吃滿，
+            // 而同一份 `OnceLock` 又被跑在主執行緒上的 `strategy_matrix`
+            // 等著——視窗因此在啟動後整段沒有回應。
+            //
+            // 排序現在由離線資產載入（見 `poker_ipc::rankings`），第一個真正
+            // 需要它的 command 順手載入即可，成本是毫秒等級。
+            //
+            // 這裡只做 `probe()`——純解析，不初始化共用表也不觸發退路。
+            // 用 `status()` 的話，資產壞掉時會在**主執行緒**上現算低樣本
+            // 替代品，等於把剛拆掉的預熱換個名字裝回來
+            match poker_ipc::rankings::probe() {
+                Ok((format, samples)) => poker_ipc::log::info(&format!(
+                    "equity 排序資產就緒：v{format}，{samples} 取樣"
+                )),
+                // 這裡不讓啟動失敗：面板 D 與執行層各自會回報明確錯誤，
+                // 而使用者至少還能瀏覽既有的 run 與 log
+                Err(error) => poker_ipc::log::error(&format!(
+                    "{error}。策略面板與執行都會失敗，請重新產製資產"
+                )),
+            }
+
             app.manage(AppState {
                 store: Arc::new(Mutex::new(store)),
                 current_run: Mutex::new(latest),

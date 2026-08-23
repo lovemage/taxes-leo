@@ -1,0 +1,43 @@
+# 換行一律 LF。
+#
+# 這不是風格偏好。Tauri 的 dev watcher 監看 Cargo.toml 與 tauri.conf.json；
+# Windows 端 checkout 出 CRLF（或編輯器存檔時換成 CRLF）會讓這些檔案在
+# 內容其實沒變的情況下被判定為已修改，watcher 因此重啟整個 dev build——
+# 症狀是「什麼都沒改，程式自己一直重編」。固定成 LF 就沒有這個觸發點。
+
+* text=auto eol=lf
+
+# ── 建置與設定：CRLF 會觸發熱重載 ──────────────────────────────────
+*.toml     text eol=lf
+Cargo.lock text eol=lf
+*.json     text eol=lf
+*.jsonc    text eol=lf
+*.yaml     text eol=lf
+*.yml      text eol=lf
+
+# ── 原始碼 ─────────────────────────────────────────────────────────
+*.rs   text eol=lf
+*.ts   text eol=lf
+*.tsx  text eol=lf
+*.js   text eol=lf
+*.css  text eol=lf
+*.html text eol=lf
+*.md   text eol=lf
+
+# ── 內容資產 ───────────────────────────────────────────────────────
+#
+# equity 排序資產的校驗碼算在解析後的數值上，因此 CRLF 不會讓它載不進來；
+# 固定成 LF 是為了讓 diff 讀得出真正動到的是哪一類
+apps/engine/assets/*.txt text eol=lf
+
+# ── 二進位：不得做任何換行轉換 ─────────────────────────────────────
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.icns binary
+*.pdf  binary
+*.woff binary
+*.woff2 binary
+*.sqlite binary

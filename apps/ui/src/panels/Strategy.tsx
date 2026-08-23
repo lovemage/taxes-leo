@@ -51,8 +51,8 @@ export function Strategy({
     strategyMeta().then(setMeta).catch(() => setMeta(null));
   }, []);
 
-  // 回應可能亂序抵達（第一次請求要等 equity 排序算完，後續是即時的）。
-  // 只採用最後一次發出的請求，否則放開滑桿後畫面會跳回舊的矩陣
+  // 回應可能亂序抵達（覆寫改動會連發好幾次請求）。只採用最後一次發出的
+  // 請求，否則放開滑桿後畫面會跳回舊的矩陣
   const issued = useRef(0);
 
   useEffect(() => {
@@ -145,13 +145,21 @@ export function Strategy({
           可以拿來驗證管線，不得當成校準過的策略解讀。
         </Banner>
       )}
+      {/* 低樣本排序畫出來的矩陣與正式的長得一模一樣，使用者沒有任何辦法
+          自己分辨。因此非內容級一律明講，而不是只在某個角落寫個取樣數 */}
+      {meta && !meta.rankingContentGrade && (
+        <Banner tone="negative">
+          equity 排序<strong>不是正式內容</strong>：{meta.rankingNote}
+          。這個面板畫的範圍與此時跑出來的統計都只能當開發參考。
+        </Banner>
+      )}
 
       {!matrix && !failure && (
         <section style={{ ...cardStyle, maxWidth: 420 }}>
           <SectionTitle>載入中</SectionTitle>
           <div className="dim" style={{ fontSize: 11, lineHeight: 1.6 }}>
-            首次開啟要先建立 equity 排序（20,000 次取樣 × 4 種對手數），約需數秒。
-            排序全程只算一次，之後切換節點是即時的。
+            正在向引擎取這個節點的 169 格頻率。equity 排序是離線產製的資產，
+            載入不需要等待，切換節點是即時的。
           </div>
         </section>
       )}
@@ -465,6 +473,11 @@ function ContentCard({ meta }: { meta: StrategyMetaView }) {
       <Row label="4-bet 尺度" value={`${(meta.fourBetSizeCentiBb / 100).toFixed(2)} BB`} />
       <Row label="推入門檻" value={`${meta.pushFoldBelow} BB 以下`} />
       <Row label="equity 取樣" value={meta.rankingSamples.toLocaleString()} />
+      <Row label="排序來源" value={meta.rankingSource} />
+      <Row
+        label="排序等級"
+        value={meta.rankingContentGrade ? '內容級' : '非正式內容'}
+      />
       <div
         style={{
           marginTop: 10,
@@ -475,6 +488,7 @@ function ContentCard({ meta }: { meta: StrategyMetaView }) {
           color: 'var(--text-secondary)',
         }}
       >
+        <div style={{ marginBottom: 4 }}>{meta.rankingNote}</div>
         <div style={{ marginBottom: 4 }}>
           翻後一律 fallback（
           <span style={{ fontFamily: 'var(--font-mono)' }}>{meta.postflopFallback}</span>）。

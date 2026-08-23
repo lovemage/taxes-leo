@@ -30,6 +30,9 @@ export function RunControl({
   const done = progress?.handsDone ?? 0;
   const total = progress?.handsTotal ?? request.handLimit;
   const ratio = total > 0 ? Math.min(1, done / total) : 0;
+  // 「準備內容」與「剛按下開始、事件還沒到」都沒有可量化的百分比。
+  // 兩者都畫成不定量進度，否則畫面與當掉長得一模一樣
+  const preparing = running && (progress === null || progress.phase === 'preparingStrategy');
 
   return (
     <div style={{ padding: 20, maxWidth: 720 }}>
@@ -115,7 +118,7 @@ export function RunControl({
         >
           <span style={{ fontSize: 12, fontWeight: 600 }}>進度</span>
           <span className="num" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-            {done.toLocaleString()} / {total.toLocaleString()} 手
+            {preparing ? '準備中' : `${done.toLocaleString()} / ${total.toLocaleString()} 手`}
           </span>
         </div>
 
@@ -127,14 +130,18 @@ export function RunControl({
             overflow: 'hidden',
           }}
         >
-          <div
-            style={{
-              width: `${ratio * 100}%`,
-              height: '100%',
-              background: progress?.paused ? 'var(--warning)' : 'var(--accent)',
-              transition: 'width 120ms linear',
-            }}
-          />
+          {preparing ? (
+            <div className="progress-indeterminate" />
+          ) : (
+            <div
+              style={{
+                width: `${ratio * 100}%`,
+                height: '100%',
+                background: progress?.paused ? 'var(--warning)' : 'var(--accent)',
+                transition: 'width 120ms linear',
+              }}
+            />
+          )}
         </div>
 
         <div
@@ -145,7 +152,7 @@ export function RunControl({
             marginTop: 14,
           }}
         >
-          <Metric label="完成度" value={`${(ratio * 100).toFixed(1)}%`} />
+          <Metric label="完成度" value={preparing ? '—' : `${(ratio * 100).toFixed(1)}%`} />
           <Metric label="桌次" value={String(progress?.instances ?? 0)} />
           {/* 執行中的 bb/100 只是即時參考值；正式判定看面板 F 的區間 */}
           <Metric
@@ -182,6 +189,7 @@ export function RunControl({
       {running && (
         <p className="dim" style={{ fontSize: 11, marginTop: 12 }}>
           取消會保留已跑完的手數，那些資料仍可在逐手 Log 檢視。
+          執行期間其他面板照常可用。
         </p>
       )}
     </div>
@@ -209,10 +217,21 @@ function botSummary(request: RunRequest): string {
   return `${tuned.length} 座已調整（${names.join('、')}）`;
 }
 
+/**
+ * 進度區的一句話狀態。
+ *
+ * `preparingStrategy` 必須有自己的說法。少了它，載入內容那段時間畫面上
+ * 只有一條不動的 0%，而使用者唯一能得到的結論是「當掉了」。
+ */
 function statusText(progress: RunProgress | null, running: boolean): string {
-  if (progress === null) return running ? '啟動中…' : '尚未執行。設定完成後按「開始執行」。';
+  if (progress === null) {
+    return running ? '啟動中…' : '尚未執行。設定完成後按「開始執行」。';
+  }
   if (progress.cancelled) return '已取消。已完成的手數仍保留。';
   if (progress.finished) return '已完成。可到逐手 Log 檢視結果。';
+  if (progress.phase === 'preparingStrategy') {
+    return '準備策略內容（載入 equity 排序、建立 run 紀錄）…尚未發牌。';
+  }
   if (progress.paused) return '已暫停。按「繼續」接續執行，進度不會重置。';
   return '執行中…';
 }

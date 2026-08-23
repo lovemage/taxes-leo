@@ -18,6 +18,8 @@ export type { MatrixCellView } from './generated/MatrixCellView';
 export type { ParamSpecView } from './generated/ParamSpecView';
 export type { PowerPreviewView } from './generated/PowerPreviewView';
 export type { RangeMatrixView } from './generated/RangeMatrixView';
+export type { RunPhase } from './generated/RunPhase';
+export type { RunProgress } from './generated/RunProgress';
 export type { RunView } from './generated/RunView';
 export type { ScenarioOptionView } from './generated/ScenarioOptionView';
 export type { SeatView } from './generated/SeatView';

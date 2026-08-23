@@ -172,3 +172,33 @@ input[type='range']::-moz-range-track {
 ::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/* ── 不定量進度 ────────────────────────────────────────────────────────
+   「準備策略內容」階段沒有可以量化的百分比，但畫面必須看得出程式還活著。
+   固定在 0% 的靜止進度條與當掉長得完全一樣，而那正是要避免的誤讀。
+
+   偏好減少動態時改為靜止的半寬色塊：仍然與 0% 有明顯區別，但不動。 */
+
+.progress-indeterminate {
+  width: 40%;
+  height: 100%;
+  background: var(--accent);
+  opacity: 0.7;
+  animation: progress-sweep 1.1s ease-in-out infinite;
+}
+
+@keyframes progress-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-indeterminate {
+    animation: none;
+    width: 50%;
+  }
+}

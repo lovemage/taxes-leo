@@ -32,4 +32,20 @@ preflopCellCount: number,
 /**
  * equity 排序的取樣數。面板與執行層共用同一份，兩邊看到的必須一致
  */
-rankingSamples: number, };
+rankingSamples: number, 
+/**
+ * 排序來源：`asset/v1`（離線資產）／`debugFallback`／`unavailable`
+ */
+rankingSource: string, 
+/**
+ * 排序的取樣數是否足以產製正式內容。
+ *
+ * false 代表面板上畫的範圍**不是正式內容**（debug 低樣本替代品，
+ * 或內容根本沒載進來）。UI 必須明講——低樣本排序看起來與正式的
+ * 一模一樣，使用者沒有任何辦法自己分辨
+ */
+rankingContentGrade: boolean, 
+/**
+ * 給使用者看的一句話說明排序來源
+ */
+rankingNote: string, };

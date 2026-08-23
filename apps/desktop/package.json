@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "tauri dev",
+    "dev:stable": "tauri dev --release --no-watch",
     "build": "tauri build"
   },
   "devDependencies": {

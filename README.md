@@ -41,6 +41,39 @@ cargo clippy --all-targets
 cargo test -p poker-ipc export_bindings
 ```
 
+換行一律 LF，由 [`.gitattributes`](.gitattributes) 固定。這不只是風格：Tauri 的 dev
+watcher 監看 `Cargo.toml` 與 `tauri.conf.json`，Windows 端 checkout 出 CRLF 會讓內容
+其實沒變的檔案被判定為已修改，整個 dev build 因此不斷自我重啟。
+
+## equity 排序資產
+
+翻前策略的每一格都建立在「169 類的 equity 排序」上。內容級排序是
+20,000 取樣 × 169 類 × 1–4 名對手的 Monte Carlo：**release 建置約 5 秒，
+debug 建置約 80 秒**。
+
+因此排序**離線產製一次**，以版本化資產
+（[`apps/engine/assets/equity-rankings-v1.txt`](apps/engine/assets/equity-rankings-v1.txt)，
+6.6 KB）編進二進位檔，執行期只做解析。程式裡沒有任何一條路徑會現算它。
+
+```bash
+# 改動 RANKING_SEED、equity 計算或排序規則之後必須重跑
+cargo run --release -p poker-engine --example generate_rankings
+
+# 驗證資產確實是用宣稱的 seed 與取樣數算出來的（預設不跑，約 5 秒）
+cargo test --release -p poker-engine 內建資產與重算結果一致 -- --ignored
+```
+
+資產只存每一類的 equity；排名與百分位由 `EquityRanking::from_measurements` 推導，
+與引擎現算走同一段程式碼，因此面板顯示的範圍不可能與 Bot 實際打的漂移。
+檔案帶校驗碼，手改或損壞在載入時就會被擋下。
+
+**資產與程式是同一個版本，必須一起提交。**
+
+> debug 建置在資產不可用時會退回 500 取樣的替代排序，讓開發不必停下來。
+> 那份**不是正式內容**：面板 D 會顯示紅色橫幅，`RunManifest` 的
+> `equityRankingContentGrade` 記為 false。release 建置沒有這條退路——
+> 出貨的程式寧可明確失敗，也不能安靜地拿一份不夠格的排序去跑一整晚的統計。
+
 ## 執行 M0 垂直切片
 
 需要兩個行程：
@@ -83,18 +116,43 @@ pnpm --filter @taxes-leo/ui dev
 git pull
 pnpm install
 
-# 開發模式：自動啟動 Vite 並開出桌面視窗
 cd apps\desktop
+
+# 開發模式：自動啟動 Vite 並開出桌面視窗
 pnpm dev
+
+# 穩定啟動（release 建置、不監看檔案）
+pnpm dev:stable
 
 # 打包成 installer（產出 NSIS 與 MSI）
 pnpm build
 ```
 
+**什麼時候用 `dev:stable`**（= `tauri dev --release --no-watch`）：
+
+- `pnpm dev` 是 debug 建置，引擎程式碼比 release 慢**數十倍**。批次跑起來
+  的速度、面板反應時間都不能拿 debug 的數字當依據。
+- `--no-watch` 關掉檔案監看。watcher 會因為 `Cargo.toml` 之類的檔案被
+  「碰到」而重啟整個建置，排查啟動問題時那是純粹的干擾。
+- 代價是首次建置比較久（release 最佳化），但之後每次啟動都快得多。
+
+> **UI 卡住時先看日誌。** 桌面殼把啟動、run 的開始／失敗、事件送出失敗
+> 都寫進 `%APPDATA%\com.zhiliu.ninemax\logs\desktop.log`。產品建置帶
+> `windows_subsystem = "windows"`，沒有主控台，`eprintln!` 寫到哪裡都看不到，
+> 這個檔案是唯一的線索。
+
 > `pnpm dev` 會透過 Tauri CLI 讀取 `tauri.conf.json`，並由
 > `beforeDevCommand` 自動啟動 Vite。直接執行 `cargo run` 只會啟動 Rust
 > 執行檔，不會執行 Tauri CLI 的前置命令。
 > 首次建置要編譯 Tauri 與 SQLite 的 C 原始碼，約需數分鐘。
+
+> **Tauri command 一律標 `async`。** `#[tauri::command]` 預設是
+> `ExecutionContext::Blocking`：同步 command 的函式本體**直接跑在主執行緒上**。
+> 只要有一個 command 花上幾秒，視窗就停止回應；花上幾十秒，Windows 直接判成
+> `AppHangB1`。凡是會碰引擎或資料庫的 command 都要寫成
+> `#[tauri::command(async)]`（函式本身仍是同步的，`State<'_, _>` 照樣可用），
+> 只有 `pause_run`／`cancel_run` 例外——它們只做一次 atomic store，
+> 而且必須立刻生效。
 
 > **權限（capability）改動要實機驗。** Tauri v2 的 ACL 只在執行期生效：
 > 前端呼叫 `event.listen` 若沒有對應權限，TypeScript、Rust release 建置
@@ -157,7 +215,7 @@ cargo run --release --example attribute_feedback
 
 ## 目前進度
 
-`cargo test --workspace` 全綠，共 350 個測試。
+`cargo test --workspace` 全綠，共 372 個測試。
 
 | 里程碑 | 狀態 |
 |---|---|

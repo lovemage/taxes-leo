@@ -20,6 +20,7 @@ pub mod cell_override;
 pub mod postflop;
 pub mod range;
 pub mod ranking;
+pub mod ranking_asset;
 
 pub use decision::{DecisionView, OpponentPublic, PublicAction, StackBucket};
 pub use distribution::{ActionDistribution, DistributionError, Myriad, FULL};
@@ -32,7 +33,8 @@ pub use baseline::{BaselineRules, ScenarioWidths};
 pub use calibration::{Attribution, MatrixCell, ParameterRef, RangeMatrix, Verdict};
 pub use cell_override::{CellOverrides, OverrideCell};
 pub use range::{Range, RangeTracker, COMBO_COUNT};
-pub use ranking::{ClassEquity, EquityRanking};
+pub use ranking::{ClassEquity, EquityRanking, RankingError};
+pub use ranking_asset::{RankingAsset, ASSET_FORMAT};
 
 /// 自身 range：169 類各自的到達權重（萬分比）。
 ///
