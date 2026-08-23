@@ -21,16 +21,12 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use std::collections::BTreeMap;
-use std::sync::OnceLock;
-
 use poker_engine::bot::BotAgent;
 use poker_engine::chips::Chips;
 use poker_engine::pot::RakeConfig;
 use poker_engine::rng::RNG_VERSION;
 use poker_engine::session::{run_session, SessionConfig};
 use poker_engine::strategy::baseline::BaselineRules;
-use poker_engine::strategy::ranking::EquityRanking;
 use poker_engine::table::{AnteConfig, AnteMode, MuckPolicy, StraddleConfig, TableConfig};
 use poker_storage::codec::{HandRecord, LOG_FORMAT_VERSION};
 use poker_storage::manifest::{
@@ -71,6 +67,9 @@ pub struct RunRequest {
     /// 逐座 Bot 設定（面板 B／C）。長度不足時以預設補齊
     #[serde(default)]
     pub bots: Vec<crate::bots::BotSeatConfig>,
+    /// 面板 D 的自身策略逐格覆寫。**只裝在使用者座位上**
+    #[serde(default)]
+    pub hero_overrides: Vec<crate::strategy::CellOverrideView>,
 }
 
 impl RunRequest {
@@ -208,6 +207,7 @@ impl RunControl {
 pub fn execute(
     config: &SessionConfig,
     bots: &[crate::bots::BotSeatConfig],
+    hero_overrides: &[crate::strategy::CellOverrideView],
     store: &Arc<Mutex<Store>>,
     control: &Arc<RunControl>,
     created_at: i64,
@@ -219,8 +219,15 @@ pub fn execute(
     let _guard = FinishGuard(control);
     let rules = BaselineRules::engineering_placeholder();
     let bot_configs = crate::bots::to_bot_configs(bots, config.players)?;
+    // 面板 D 的逐格覆寫。驗證在這裡就做完，不合法的覆寫不該等到跑起來
+    // 才被靜默忽略——使用者以為改了一格，實際上引擎照舊走參數
+    let hero_overrides = crate::strategy::to_cell_overrides(hero_overrides)?;
+    // 快照必須是**使用者實際用的那份策略**，因此帶著覆寫；Bot 用的是
+    // 沒有覆寫的基準規則，兩者分開存才讀得回當初到底跑了什麼
+    let mut hero_rules = rules.clone();
+    hero_rules.overrides = hero_overrides.clone();
 
-    let manifest = build_manifest(config, &rules, &bot_configs, created_at);
+    let manifest = build_manifest(config, &rules, &hero_rules, &bot_configs, created_at);
     let run_id = {
         let mut guard = store.lock().map_err(|_| "資料庫鎖已毀損")?;
         guard
@@ -236,10 +243,13 @@ pub fn execute(
 
     let mut agent = BotAgent::new(
         rules.clone(),
-        rankings(),
+        crate::rankings::all().clone(),
         bot_configs.clone(),
         config.master_seed,
     );
+    // 覆寫在 rangeWidth 縮放之後才裝上：覆寫是絕對頻率，被人格參數
+    // 再乘一次就不是使用者寫下的那個數字了
+    agent.set_seat_overrides(hero, hero_overrides);
 
     let summary = run_session(config, &mut agent, |played| {
         if aborted || !control.checkpoint() {
@@ -287,7 +297,7 @@ pub fn execute(
         }
     }
 
-    let mut final_manifest = build_manifest(config, &rules, &bot_configs, created_at);
+    let mut final_manifest = build_manifest(config, &rules, &hero_rules, &bot_configs, created_at);
     final_manifest.instances = summary
         .instances
         .iter()
@@ -342,6 +352,8 @@ impl Drop for FinishGuard<'_> {
 fn build_manifest(
     config: &SessionConfig,
     rules: &BaselineRules,
+    // 使用者座位實際生效的規則（基準 ＋ 面板 D 的逐格覆寫）
+    hero_rules: &BaselineRules,
     bots: &[poker_engine::bot::BotConfig],
     created_at: i64,
 ) -> RunManifest {
@@ -380,13 +392,13 @@ fn build_manifest(
         // 核心規格 3.3：內容本身必須保存，只留 hash 不合格。
         // 因此存的是整份規則與逐座全部 21 個生效值，不是名稱或差異
         hero_strategy: ContentSnapshot::new(
-            rules.name.clone(),
-            rules.version.clone(),
+            hero_rules.name.clone(),
+            hero_rules.version.clone(),
             serde_json::json!({
-                "preflop": crate::snapshot::baseline(rules),
+                "preflop": crate::snapshot::baseline(hero_rules),
                 "postflopFallback": poker_engine::bot::POSTFLOP_FALLBACK_VERSION,
                 "postflopNote": "翻後無內容表，一律 check／fold；顧問規則進來前不得當成校準結果",
-                "equityRankingSamples": RANKING_SAMPLES,
+                "equityRankingSamples": crate::rankings::RANKING_SAMPLES,
             }),
         ),
         // 存的是**實際送進引擎**的設定。使用者沒開過 Bot 面板時
@@ -410,21 +422,4 @@ fn build_manifest(
     }
 }
 
-/// 示範用的行動來源。M2 內容就緒後由使用者策略與 Bot 決策取代。
-/// 進程層級的 equity 排序快取。
-///
-/// 20,000 次取樣要跑近兩秒。它只取決於取樣數，因此每個 run 重算一次
-/// 純粹是讓使用者多等——第一個 run 付這兩秒，之後免費。
-static RANKINGS: OnceLock<BTreeMap<usize, EquityRanking>> = OnceLock::new();
 
-/// 內容級取樣數（`EquityRanking::is_content_grade` 的門檻）。
-///
-/// 取樣不足時可玩性調整會被雜訊蓋過，產生的範圍與工作台顯示的對不上。
-const RANKING_SAMPLES: u64 = 20_000;
-
-
-fn rankings() -> BTreeMap<usize, EquityRanking> {
-    RANKINGS
-        .get_or_init(|| BotAgent::rankings(RANKING_SAMPLES))
-        .clone()
-}

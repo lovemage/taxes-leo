@@ -20,6 +20,7 @@ use crate::hand::{ActionProvider, Street};
 use crate::position::PositionLabel;
 use crate::rng::{Rng, RngDomain};
 use crate::strategy::baseline::{self, BaselineRules};
+use crate::strategy::cell_override::CellOverrides;
 use crate::strategy::distribution::{ActionDistribution, Myriad, FULL};
 use crate::strategy::preflop::{PreflopNode, PreflopScenario};
 use crate::strategy::ranking::EquityRanking;
@@ -101,6 +102,17 @@ impl BotAgent {
         (1..=MAX_EXPECTED_OPPONENTS)
             .map(|opponents| (opponents, EquityRanking::compute(opponents, samples)))
             .collect()
+    }
+
+    /// 為單一座位裝上逐格覆寫（面板 D 的自身策略）。
+    ///
+    /// **只裝在使用者座位上。** 裝到全桌等於偷偷改掉對手，跑出來的統計
+    /// 就不是在測自己的策略了。座位超出範圍時不做事：座位數由
+    /// `SessionConfig::validate` 把關，這裡不當第二個驗證點。
+    pub fn set_seat_overrides(&mut self, seat: usize, overrides: CellOverrides) {
+        if let Some(rules) = self.rules.get_mut(seat) {
+            rules.overrides = overrides;
+        }
     }
 
     fn config_for(&self, seat: usize) -> &BotConfig {

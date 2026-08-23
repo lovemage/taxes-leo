@@ -28,6 +28,7 @@ fn request() -> RunRequest {
         master_seed: "20260821".to_owned(),
         hero_seat: 0,
         bots: Vec::new(),
+        hero_overrides: Vec::new(),
     }
 }
 
@@ -114,7 +115,7 @@ fn run_with(control: Arc<RunControl>, hand_limit: u64) -> (Vec<RunProgress>, u64
 
     let updates = Arc::new(Mutex::new(Vec::new()));
     let sink = Arc::clone(&updates);
-    execute(&config, &[], &store, &control, 1_771_200_000, move |progress| {
+    execute(&config, &[], &[], &store, &control, 1_771_200_000, move |progress| {
         sink.lock().expect("鎖").push(progress);
     })
     .expect("執行");
@@ -247,7 +248,7 @@ fn 執行中維持佔用() {
 
     let control_for_probe = Arc::clone(&control);
     let sink = Arc::clone(&observed);
-    execute(&config, &[], &store, &control, 1_771_200_000, move |progress| {
+    execute(&config, &[], &[], &store, &control, 1_771_200_000, move |progress| {
         // 在進度回呼裡檢查，此時執行緒確實還在 execute 內
         if !progress.finished {
             sink.lock().expect("鎖").push(control_for_probe.is_active());
@@ -275,7 +276,7 @@ fn 未指定_bot_時_manifest_仍記下實際使用的九組設定() {
 
     let store = Arc::new(Mutex::new(Store::open_in_memory().expect("資料庫")));
     let control = Arc::new(RunControl::default());
-    let run_id = execute(&config, &request.bots, &store, &control, 1_771_200_000, |_| {})
+    let run_id = execute(&config, &request.bots, &[], &store, &control, 1_771_200_000, |_| {})
         .expect("執行");
 
     let manifest = store
@@ -309,7 +310,7 @@ fn manifest_保存全部參數生效值與完整基準內容() {
 
     let store = Arc::new(Mutex::new(Store::open_in_memory().expect("資料庫")));
     let control = Arc::new(RunControl::default());
-    let run_id = execute(&config, &request.bots, &store, &control, 1_771_200_000, |_| {})
+    let run_id = execute(&config, &request.bots, &[], &store, &control, 1_771_200_000, |_| {})
         .expect("執行");
     let manifest = store
         .lock()
@@ -363,7 +364,7 @@ fn 未指定的座位以座位序命名() {
 
     let store = Arc::new(Mutex::new(Store::open_in_memory().expect("資料庫")));
     let control = Arc::new(RunControl::default());
-    let run_id = execute(&config, &request.bots, &store, &control, 1_771_200_000, |_| {})
+    let run_id = execute(&config, &request.bots, &[], &store, &control, 1_771_200_000, |_| {})
         .expect("執行");
     let manifest = store
         .lock()
@@ -373,4 +374,106 @@ fn 未指定的座位以座位序命名() {
 
     assert_eq!(manifest.bot_personas[0].name, "自訂");
     assert_eq!(manifest.bot_personas[8].name, "座位 8");
+}
+
+// ── 面板 D：自身策略的逐格覆寫 ─────────────────────────────────────────
+
+fn override_of(class: &str, aggressive: u32, call: u32) -> poker_ipc::CellOverrideView {
+    poker_ipc::CellOverrideView {
+        seated: 9,
+        hero: "BTN".to_owned(),
+        bucket: "160-240".to_owned(),
+        scenario: "unopened".to_owned(),
+        class: class.to_owned(),
+        aggressive,
+        call,
+    }
+}
+
+/// 覆寫必須進 `hero_strategy` 快照，且**不得**混進 Bot 的內容。
+///
+/// 核心規格 3.3 要求保存內容本身。使用者的覆寫若只留在他的設定畫面裡，
+/// 這個 run 事後就再也還原不出「當初到底跑了什麼策略」。
+#[test]
+fn 自身策略的覆寫寫進_manifest_且不影響_bot_快照() {
+    let mut request = request();
+    request.hand_limit = 200;
+    request.hero_overrides = vec![override_of("72o", 10_000, 0)];
+    let config = request.to_session_config().expect("轉換");
+
+    let store = Arc::new(Mutex::new(Store::open_in_memory().expect("資料庫")));
+    let control = Arc::new(RunControl::default());
+    let run_id = execute(
+        &config,
+        &request.bots,
+        &request.hero_overrides,
+        &store,
+        &control,
+        1_771_200_000,
+        |_| {},
+    )
+    .expect("執行");
+    let manifest = store
+        .lock()
+        .expect("鎖")
+        .load_manifest(run_id)
+        .expect("讀 manifest");
+
+    let cells = manifest.hero_strategy.content["preflop"]["cellOverrides"]
+        .as_array()
+        .expect("覆寫應為陣列");
+    assert_eq!(cells.len(), 1, "使用者的覆寫必須進快照");
+    assert_eq!(cells[0]["node"], "9max/BTN/160-240/unopened");
+    assert_eq!(cells[0]["class"], "72o");
+    assert_eq!(cells[0]["aggressive"], 10_000);
+
+    // Bot 用的是沒有覆寫的基準規則
+    for persona in &manifest.bot_personas {
+        assert!(
+            persona.content["params"].is_object(),
+            "Bot 快照的形狀不該被自身策略改動"
+        );
+    }
+    assert!(manifest.hero_strategy.verify(), "內容與 hash 必須相符");
+}
+
+/// 不合法的覆寫必須**當場失敗**，不得靜默忽略。
+///
+/// 靜默忽略的後果是使用者以為自己改了一格，引擎照舊走參數，
+/// 跑出來的統計對不上他在面板上看到的矩陣。
+#[test]
+fn 不合法的覆寫讓執行直接失敗() {
+    let mut request = request();
+    request.hand_limit = 200;
+    // 主動 70% ＋ 跟注 50% ＝ 120%
+    request.hero_overrides = vec![override_of("AA", 7_000, 5_000)];
+    let config = request.to_session_config().expect("轉換");
+
+    let store = Arc::new(Mutex::new(Store::open_in_memory().expect("資料庫")));
+    let control = Arc::new(RunControl::default());
+    let result = execute(
+        &config,
+        &request.bots,
+        &request.hero_overrides,
+        &store,
+        &control,
+        1_771_200_000,
+        |_| {},
+    );
+    assert!(result.is_err(), "合計超過 100% 的覆寫不得被接受");
+
+    // 節點不存在時同樣要失敗（UTG 不可能面對開牌）
+    let mut bad_node = override_of("AA", 10_000, 0);
+    bad_node.hero = "UTG".to_owned();
+    bad_node.scenario = "vs-open-LJ".to_owned();
+    assert!(execute(
+        &config,
+        &request.bots,
+        &[bad_node],
+        &store,
+        &control,
+        1_771_200_000,
+        |_| {},
+    )
+    .is_err());
 }

@@ -465,7 +465,12 @@ pub fn distribution_for(
     ActionDistribution::from_weights(weights)
 }
 
-fn raise_size(scenario: PreflopScenario, rules: &BaselineRules) -> u32 {
+/// 該情境的加注尺度，以 BB 的百分之一表示。
+///
+/// 公開是為了面板 D：UI 不得自行推導加注金額（UI 規格 E.1），
+/// 「這個節點的主動行動是加注到多少」必須由引擎回答。
+#[must_use]
+pub fn raise_size(scenario: PreflopScenario, rules: &BaselineRules) -> u32 {
     match scenario {
         PreflopScenario::Unopened | PreflopScenario::VsLimp { .. } => rules.open_size_centi_bb,
         PreflopScenario::VsOpen { .. } => rules.three_bet_size_centi_bb,

@@ -650,3 +650,67 @@ fn 已實作的參數確實會改變決策() {
         );
     }
 }
+
+// ── 逐格覆寫（面板 D 的自身策略）─────────────────────────────────────────
+
+/// 覆寫必須**只**裝在指定座位上。
+///
+/// 面板 D 編的是「自身策略」。若覆寫滲到其他座位，使用者以為自己在測
+/// 一組策略，實際上是把全桌九個人一起改掉了——那個 run 的統計不回答
+/// 任何他想問的問題，而且沒有任何徵兆。
+#[test]
+fn 逐格覆寫只影響指定座位() {
+    use poker_engine::strategy::cell_override::{CellOverrides, OverrideCell};
+    use poker_engine::strategy::hand_class::HandClass;
+    use poker_engine::strategy::preflop::{PreflopNode, PreflopScenario};
+
+    let hero = 3;
+    let other = 4;
+    // `view_with` 給的是 9 人桌 BTN、Deep bucket、無人進池，手牌 AKs
+    let node = PreflopNode {
+        seated: 9,
+        hero: PositionLabel::Btn,
+        bucket: StackBucket::Deep,
+        scenario: PreflopScenario::Unopened,
+    };
+    let ak_suited = HandClass::all()
+        .into_iter()
+        .find(|c| c.label() == "AKs")
+        .expect("牌類存在");
+
+    let mut overrides = CellOverrides::new();
+    // 主動 0、跟注 0 ⇒ 棄牌 100%（棄牌是餘數）
+    overrides.set(node, ak_suited, OverrideCell::new(0, 0).expect("合法"));
+
+    let mut agent = BotAgent::new(
+        BaselineRules::engineering_placeholder(),
+        BotAgent::rankings(FAST_SAMPLES),
+        vec![BotConfig::defaults("測試"); 9],
+        20_260_823,
+    );
+    agent.set_seat_overrides(hero, overrides);
+
+    // 覆寫過的座位：AKs 在這個節點一律棄牌
+    for _ in 0..30 {
+        assert_eq!(
+            agent.choose(&view_with(Vec::new(), hero)),
+            Action::Fold,
+            "覆寫說 100% 棄牌，決策就不得出現別的行動"
+        );
+    }
+
+    // 沒覆寫的座位：AKs 穩穩落在 BTN 的開牌範圍內
+    let mut aggressive = 0;
+    for _ in 0..30 {
+        if matches!(
+            agent.choose(&view_with(Vec::new(), other)),
+            Action::RaiseTo(_) | Action::AllIn
+        ) {
+            aggressive += 1;
+        }
+    }
+    assert_eq!(
+        aggressive, 30,
+        "其他座位不得被英雄的覆寫連帶改掉，AKs 必須照樣開牌"
+    );
+}

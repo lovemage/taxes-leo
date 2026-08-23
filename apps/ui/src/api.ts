@@ -12,12 +12,16 @@
 
 import type {
   BotSeatConfig,
+  CellOverrideView,
   HandSummaryView,
   HandView,
   HoleCardVisibility,
   ParamSpecView,
   PowerPreviewView,
+  RangeMatrixView,
   RunView,
+  StrategyMetaView,
+  StrategyNodesView,
 } from '../../../packages/poker-types/src/index';
 
 /** 面板 A 的設定。欄位語意的權威來源是核心規格 2.1。 */
@@ -41,6 +45,8 @@ export interface RunRequest {
   heroSeat: number;
   /** 逐座 Bot 設定（面板 B／C）。索引即座位序 */
   bots: BotSeatConfig[];
+  /** 面板 D 的自身策略逐格覆寫。只裝在使用者座位上 */
+  heroOverrides: CellOverrideView[];
 }
 
 /** 背景執行推送的進度。 */
@@ -150,14 +156,78 @@ export function previewPower(handLimit: number, players: number): Promise<PowerP
  */
 export function listBotParams(): Promise<ParamSpecView[]> {
   const bridge = tauri();
-  if (!bridge) return Promise.resolve([]);
-  return bridge.core.invoke<ParamSpecView[]>('list_bot_params');
+  if (bridge) return bridge.core.invoke<ParamSpecView[]>('list_bot_params');
+  return http<ParamSpecView[]>('/api/bots/params');
 }
 
 export function listBotPresets(): Promise<BotSeatConfig[]> {
   const bridge = tauri();
-  if (!bridge) return Promise.resolve([]);
-  return bridge.core.invoke<BotSeatConfig[]>('list_bot_presets');
+  if (bridge) return bridge.core.invoke<BotSeatConfig[]>('list_bot_presets');
+  return http<BotSeatConfig[]>('/api/bots/presets');
+}
+
+// ── 策略（面板 D）───────────────────────────────────────────────────
+
+/**
+ * 基準內容的來源與現況。
+ *
+ * 版本、是否經顧問簽核、翻後 fallback 版本全部從引擎取得。前端不自行
+ * 判斷「這份內容可不可信」——那是內容的屬性，不是 UI 的意見。
+ */
+export function strategyMeta(): Promise<StrategyMetaView> {
+  const bridge = tauri();
+  if (bridge) return bridge.core.invoke<StrategyMetaView>('strategy_meta');
+  return http<StrategyMetaView>('/api/strategy/meta');
+}
+
+/** 某（桌型 × 位置）下到得了的情境與籌碼分檔。清單由引擎列舉 */
+export function strategyNodes(seated: number, hero: string): Promise<StrategyNodesView> {
+  const bridge = tauri();
+  if (bridge) return bridge.core.invoke<StrategyNodesView>('strategy_nodes', { seated, hero });
+  return http<StrategyNodesView>(
+    `/api/strategy/nodes?seated=${seated}&hero=${encodeURIComponent(hero)}`,
+  );
+}
+
+/**
+ * 一個節點的 13×13 範圍矩陣。
+ *
+ * 頻率、範圍寬度與加注尺度一律由引擎算。UI 只負責畫格子——重算一次
+ * 就多一處會與引擎漂移的地方，而漂移的症狀是「面板顯示的範圍與 Bot
+ * 實際打的不同」，完全沒有徵兆。
+ */
+export function strategyMatrix(
+  seated: number,
+  hero: string,
+  bucket: string,
+  scenario: string,
+  overrides: CellOverrideView[],
+): Promise<RangeMatrixView> {
+  const bridge = tauri();
+  if (bridge) {
+    return bridge.core.invoke<RangeMatrixView>('strategy_matrix', {
+      seated,
+      hero,
+      bucket,
+      scenario,
+      overrides,
+    });
+  }
+  // dev server 只吃查詢字串，因此本節點的覆寫壓成 `類別:主動:跟注`。
+  // 這個編碼只存在於開發鷹架，Tauri 端送的是結構化陣列
+  const own = overrides.filter(
+    (item) =>
+      item.seated === seated &&
+      item.hero === hero &&
+      item.bucket === bucket &&
+      item.scenario === scenario,
+  );
+  const ov = own.map((item) => `${item.class}:${item.aggressive}:${item.call}`).join(',');
+  const query =
+    `seated=${seated}&hero=${encodeURIComponent(hero)}` +
+    `&bucket=${encodeURIComponent(bucket)}&scenario=${encodeURIComponent(scenario)}` +
+    (ov ? `&ov=${encodeURIComponent(ov)}` : '');
+  return http<RangeMatrixView>(`/api/strategy/matrix?${query}`);
 }
 
 // ── 資料查詢（面板 F／G）─────────────────────────────────────────────

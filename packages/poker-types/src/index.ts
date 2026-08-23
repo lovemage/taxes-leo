@@ -8,12 +8,19 @@
 
 export type { ActionView } from './generated/ActionView';
 export type { BotSeatConfig } from './generated/BotSeatConfig';
+export type { BucketOptionView } from './generated/BucketOptionView';
+export type { CellOverrideView } from './generated/CellOverrideView';
 export type { FrameView } from './generated/FrameView';
 export type { HandSummaryView } from './generated/HandSummaryView';
 export type { HandView } from './generated/HandView';
 export type { HoleCardVisibility } from './generated/HoleCardVisibility';
+export type { MatrixCellView } from './generated/MatrixCellView';
 export type { ParamSpecView } from './generated/ParamSpecView';
 export type { PowerPreviewView } from './generated/PowerPreviewView';
+export type { RangeMatrixView } from './generated/RangeMatrixView';
 export type { RunView } from './generated/RunView';
+export type { ScenarioOptionView } from './generated/ScenarioOptionView';
 export type { SeatView } from './generated/SeatView';
+export type { StrategyMetaView } from './generated/StrategyMetaView';
+export type { StrategyNodesView } from './generated/StrategyNodesView';
 export type { StreetView } from './generated/StreetView';

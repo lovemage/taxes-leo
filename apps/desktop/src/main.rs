@@ -18,7 +18,10 @@
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
-use poker_ipc::{HandSummaryView, HandView, HoleCardVisibility, PowerPreviewView, RunView};
+use poker_ipc::{
+    CellOverrideView, HandSummaryView, HandView, HoleCardVisibility, PowerPreviewView,
+    RangeMatrixView, RunView, StrategyMetaView, StrategyNodesView,
+};
 use poker_storage::Store;
 use poker_ipc::run::{self, RunControl, RunRequest};
 use tauri::{Emitter, Manager, State};
@@ -52,6 +55,10 @@ fn start_run(
     // 不合法的參數不該等到背景執行緒跑起來才失敗
     let bots = request.bots.clone();
     poker_ipc::bots::to_bot_configs(&bots, config.players)?;
+    // 面板 D 的逐格覆寫同樣先驗證。不合法的覆寫若拖到背景執行緒才失敗，
+    // 使用者會以為 run 已經帶著他改的策略跑起來了
+    let hero_overrides = request.hero_overrides.clone();
+    poker_ipc::strategy::to_cell_overrides(&hero_overrides)?;
 
     // 已有 run 在跑時拒絕啟動，避免兩個 run 同時寫入。
     //
@@ -73,9 +80,17 @@ fn start_run(
     let app_for_thread = app.clone();
 
     std::thread::spawn(move || {
-        let result = run::execute(&config, &bots, &store, &control, created_at, |progress| {
-            let _ = app_for_thread.emit("run-progress", &progress);
-        });
+        let result = run::execute(
+            &config,
+            &bots,
+            &hero_overrides,
+            &store,
+            &control,
+            created_at,
+            |progress| {
+                let _ = app_for_thread.emit("run-progress", &progress);
+            },
+        );
         match result {
             Ok(run_id) => {
                 // run_id 寫回應用程式狀態，後續查詢才知道要看哪個 run
@@ -133,6 +148,32 @@ fn list_bot_params() -> Vec<poker_ipc::ParamSpecView> {
 #[tauri::command]
 fn list_bot_presets() -> Vec<poker_ipc::BotSeatConfig> {
     poker_ipc::bots::demo_presets()
+}
+
+// ── 策略（面板 D）───────────────────────────────────────────────────
+
+/// 基準內容的來源與現況。UI 據此揭露「未經顧問簽核」與翻後 fallback
+#[tauri::command]
+fn strategy_meta() -> StrategyMetaView {
+    poker_ipc::strategy::meta()
+}
+
+/// 某（桌型 × 位置）下到得了的情境與籌碼分檔
+#[tauri::command]
+fn strategy_nodes(seated: u8, hero: String) -> StrategyNodesView {
+    poker_ipc::strategy::nodes(seated, &hero)
+}
+
+/// 一個節點的 13×13 範圍矩陣。頻率由引擎算，UI 只負責畫
+#[tauri::command]
+fn strategy_matrix(
+    seated: u8,
+    hero: String,
+    bucket: String,
+    scenario: String,
+    overrides: Vec<CellOverrideView>,
+) -> CommandResult<RangeMatrixView> {
+    poker_ipc::strategy::matrix(seated, &hero, &bucket, &scenario, &overrides)
 }
 
 // ── 資料查詢（面板 F／G）─────────────────────────────────────────────
@@ -196,6 +237,12 @@ fn main() {
             let store = Store::open(data_dir.join("runs.sqlite"))?;
             // 接回上次的 run，否則重開視窗會看不到先前跑完的結果
             let latest = store.latest_run_id()?;
+            // equity 排序要算約五秒，面板 D 與第一個 run 都會用到。在背景
+            // 先算好，否則使用者點進策略面板會對著空畫面等；`OnceLock`
+            // 保證只算一次，先到的執行緒付錢，後到的直接拿
+            std::thread::spawn(|| {
+                let _ = poker_ipc::rankings::all();
+            });
             app.manage(AppState {
                 store: Arc::new(Mutex::new(store)),
                 current_run: Mutex::new(latest),
@@ -210,6 +257,9 @@ fn main() {
             preview_power,
             list_bot_params,
             list_bot_presets,
+            strategy_meta,
+            strategy_nodes,
+            strategy_matrix,
             get_run,
             list_hands,
             get_hand

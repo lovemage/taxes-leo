@@ -19,7 +19,7 @@ use poker_engine::strategy::baseline::BaselineRules;
 use poker_engine::rng::RNG_VERSION;
 use poker_engine::session::{run_session, SessionConfig};
 use poker_engine::table::TableConfig;
-use poker_ipc::{HoleCardVisibility, IpcHandler};
+use poker_ipc::{CellOverrideView, HoleCardVisibility, IpcHandler};
 use poker_storage::codec::{HandRecord, LOG_FORMAT_VERSION};
 use poker_storage::manifest::{
     ContentSnapshot, ExecutionMode, InstanceRecord, RuleVariants, RunManifest, SCHEMA_VERSION,
@@ -136,6 +136,11 @@ fn build_manifest(config: &SessionConfig) -> RunManifest {
 
 fn main() {
     let (handler, run_id) = seed_run();
+    // 面板 D 的第一次請求要等 equity 排序算完（約五秒）。在背景先算，
+    // 使用者切到策略面板時多半已經好了；沒好也只是照樣等，不會算兩次
+    std::thread::spawn(|| {
+        let _ = poker_ipc::rankings::all();
+    });
     let listener = TcpListener::bind(ADDR).expect("綁定連接埠");
     println!("dev server 已啟動：http://{ADDR}（run_id={run_id}）");
 
@@ -188,6 +193,41 @@ fn serve(mut stream: TcpStream, handler: &IpcHandler, run_id: i64) -> std::io::R
                 .ok()
                 .and_then(|view| serde_json::to_string(&view).ok())
         }
+
+        // ── 面板 B／C：Bot 參數 ────────────────────────────────────
+        //
+        // 同樣不碰 store。少了這兩條，瀏覽器開發模式的面板 C 是空的，
+        // 等於在開發機上完全看不到自己改的版面
+        "/api/bots/params" => serde_json::to_string(&poker_ipc::bots::all_specs()).ok(),
+        "/api/bots/presets" => serde_json::to_string(&poker_ipc::bots::demo_presets()).ok(),
+
+        // ── 面板 D：策略 ───────────────────────────────────────────
+        //
+        // 這幾條不碰 store，純粹由引擎算。放進 dev server 是為了讓面板 D
+        // 在瀏覽器開發模式下也是真的——否則 Linux 開發機（沒有 webkit2gtk，
+        // 開不了 Tauri 殼）就完全看不到自己在改什麼
+        "/api/strategy/meta" => serde_json::to_string(&poker_ipc::strategy::meta()).ok(),
+        "/api/strategy/nodes" => {
+            let seated = u8::try_from(param(query, "seated").unwrap_or(9)).unwrap_or(9);
+            let hero = text_param(query, "hero").unwrap_or_default();
+            serde_json::to_string(&poker_ipc::strategy::nodes(seated, &hero)).ok()
+        }
+        "/api/strategy/matrix" => {
+            let seated = u8::try_from(param(query, "seated").unwrap_or(9)).unwrap_or(9);
+            let hero = text_param(query, "hero").unwrap_or_else(|| "BTN".to_owned());
+            let bucket = text_param(query, "bucket").unwrap_or_else(|| "160-240".to_owned());
+            let scenario = text_param(query, "scenario").unwrap_or_else(|| "unopened".to_owned());
+            let overrides = parse_overrides(
+                seated,
+                &hero,
+                &bucket,
+                &scenario,
+                &text_param(query, "ov").unwrap_or_default(),
+            );
+            poker_ipc::strategy::matrix(seated, &hero, &bucket, &scenario, &overrides)
+                .ok()
+                .and_then(|view| serde_json::to_string(&view).ok())
+        }
         _ => None,
     };
 
@@ -207,6 +247,79 @@ fn serve(mut stream: TcpStream, handler: &IpcHandler, run_id: i64) -> std::io::R
 
     stream.write_all(response.as_bytes())?;
     stream.flush()
+}
+
+/// 解析查詢字串裡的覆寫清單。
+///
+/// 格式為 `類別:主動:跟注` 以逗號分隔（`72o:10000:0,A5s:5000:2500`），
+/// 頻率一律是萬分比。節點取自同一個查詢的其他欄位，因此這裡只帶格內容。
+///
+/// **這個編碼只存在於開發鷹架。** Tauri 端傳的是結構化陣列，兩邊共用
+/// 同一個 `poker_ipc::strategy::matrix`，因此編碼差異止於傳輸層。
+fn parse_overrides(
+    seated: u8,
+    hero: &str,
+    bucket: &str,
+    scenario: &str,
+    raw: &str,
+) -> Vec<CellOverrideView> {
+    raw.split(',')
+        .filter(|entry| !entry.is_empty())
+        .filter_map(|entry| {
+            let mut parts = entry.split(':');
+            let class = parts.next()?.to_owned();
+            let aggressive: u32 = parts.next()?.parse().ok()?;
+            let call: u32 = parts.next()?.parse().ok()?;
+            Some(CellOverrideView {
+                seated,
+                hero: hero.to_owned(),
+                bucket: bucket.to_owned(),
+                scenario: scenario.to_owned(),
+                class,
+                aggressive,
+                call,
+            })
+        })
+        .collect()
+}
+
+/// 查詢字串裡的文字欄位。位置與情境鍵含 `+`，因此要還原百分號編碼。
+fn text_param(query: &str, key: &str) -> Option<String> {
+    let raw = query
+        .split('&')
+        .filter_map(|pair| pair.split_once('='))
+        .find(|(k, _)| *k == key)
+        .map(|(_, value)| value)?;
+    Some(percent_decode(raw))
+}
+
+/// 最小百分號解碼。只處理 `%XX` 與 `+`，夠這幾條端點用。
+fn percent_decode(raw: &str) -> String {
+    let bytes = raw.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'%' if index + 2 < bytes.len() => {
+                let hex = std::str::from_utf8(&bytes[index + 1..index + 3]).unwrap_or("");
+                match u8::from_str_radix(hex, 16) {
+                    Ok(byte) => {
+                        out.push(byte);
+                        index += 3;
+                    }
+                    Err(_) => {
+                        out.push(bytes[index]);
+                        index += 1;
+                    }
+                }
+            }
+            byte => {
+                out.push(byte);
+                index += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 fn param(query: &str, key: &str) -> Option<u64> {

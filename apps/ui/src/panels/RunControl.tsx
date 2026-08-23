@@ -83,6 +83,14 @@ export function RunControl({
           />
           <Summary label="手數" value={`${(request.handLimit / 1000).toFixed(0)}K`} />
           <Summary label="Bot" value={botSummary(request)} />
+          <Summary
+            label="自身策略"
+            value={
+              request.heroOverrides.length === 0
+                ? '基準（未覆寫）'
+                : `基準 ＋ ${request.heroOverrides.length} 格覆寫`
+            }
+          />
           <Summary label="Seed" value={request.masterSeed} />
         </div>
       </section>

@@ -54,9 +54,9 @@ pnpm install
 pnpm --filter @taxes-leo/ui dev
 ```
 
-開啟 http://localhost:5180。瀏覽器模式只能檢視 devserver 的示範資料
-（左側圖示欄的「重播」），執行模擬要用桌面殼——`start_run` 之類的執行
-指令只存在於 Tauri 端。
+開啟 http://localhost:5180。瀏覽器模式可以檢視 devserver 的示範資料
+（「重播」）並完整使用「Bot」與「策略」兩個面板——這幾條端點純粹由引擎算，
+不碰資料庫。執行模擬要用桌面殼，`start_run` 之類的執行指令只存在於 Tauri 端。
 
 > `devserver` 只是開發鷹架，不是產品的一部分。M3 會換成 Tauri command，
 > 呼叫的是同一組 `IpcHandler` 方法，前端只需替換 `apps/ui/src/api.ts`
@@ -157,14 +157,14 @@ cargo run --release --example attribute_feedback
 
 ## 目前進度
 
-`cargo test --workspace` 全綠，共 328 個測試。
+`cargo test --workspace` 全綠，共 350 個測試。
 
 | 里程碑 | 狀態 |
 |---|---|
 | M0 垂直切片 | 全鏈路可跑通；兩道硬閘門未過（見下） |
 | M1 規則層 | 完成 |
 | M2 策略與 Bot 層 | 翻前參數化 baseline 已接進執行層，翻後無內容一律 fallback |
-| M3 桌面應用 UI | App shell 與面板 A／B／C／E／G 可用；D／F 未做 |
+| M3 桌面應用 UI | App shell 與面板 A／B／C／E／G 可用；D 只做翻前，F 未做 |
 | M4 收尾與發佈 | 未開始 |
 
 **已完成**
@@ -186,6 +186,18 @@ cargo run --release --example attribute_feedback
 
 **其他未完成的 M0 凍結項**：多人 Equity spike、變異數削減 spike、258V 基準測試環境。
 面板 A／C／E／G 的欄位級規格已補進 [`UI面板詳細規格.md`](UI面板詳細規格.md)。
+
+**面板 D（自身策略）目前的範圍**
+
+- 情境導航（桌型 × 位置 × 情境 × 有效籌碼 bucket）與 13×13 範圍矩陣可用，
+  頻率、範圍寬度與加注尺度全部由引擎算，UI 只負責畫。
+- 編輯路徑是**逐格覆寫**（`CellOverrides`）：改過的格會蓋掉參數產生的結果，
+  只裝在使用者座位上，並隨 run 寫進 `RunManifest` 的內容快照。
+- **翻後規則清單（UI 規格 D.5）沒做**，因為翻後沒有內容可編輯——顧問的規則表
+  還沒進來，一律走 `checkFold/v0` fallback。畫一個空的規則編輯器只會讓人以為
+  那裡有策略。
+- **策略庫（D.9）沒做**：儲存、命名、切換、匯出都還沒有，覆寫目前只活在
+  當前設定裡（會隨 run 快照存下來，但不會單獨存成一份可重用的策略檔）。
 
 **M2 待做**：翻後策略表（顧問內容）、7 組官方人格、多人 Equity、Analytics 與報表。
 

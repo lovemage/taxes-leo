@@ -34,6 +34,15 @@
   --action-raise: #ef4444;
   --action-allin: #991b1b;
 
+  /* 範圍矩陣（面板 D）。刻意與顧問校準工作台同一組顏色——同一份範圍
+     在兩個地方換色，顧問與使用者對照時會以為看到的是不同的內容。
+     前綴用 matrix 而不是 range，避免與上面滑桿的 --range-accent 混淆 */
+  --matrix-aggressive: #166534;
+  /* 混合格以 alpha 表達比例，因此存的是 RGB 分量而不是色碼 */
+  --matrix-mix-rgb: 34, 197, 94;
+  --matrix-call: #1e3a5f;
+  --matrix-empty: #16181c;
+
   /* V.9 四色牌組。花色符號必須始終繪出，顏色只是輔助 */
   --suit-spade: #d1d5db;
   --suit-heart: #ef4444;

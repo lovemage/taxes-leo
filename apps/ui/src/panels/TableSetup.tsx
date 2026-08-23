@@ -24,6 +24,7 @@ export const DEFAULT_REQUEST: RunRequest = {
   masterSeed: String(Math.floor(Math.random() * 1_000_000_000)),
   heroSeat: 0,
   bots: [],
+  heroOverrides: [],
 };
 
 /** 手數以 1K 為單位，範圍 1K–100K（核心規格 2.1）。 */

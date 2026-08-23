@@ -19,23 +19,43 @@ import {
   type RunProgress,
   type RunRequest,
 } from './api';
+import type { CellOverrideView } from '../../../packages/poker-types/src/index';
 import { IconRail, type RailItem } from './components/IconRail';
-import { BotSetup } from './panels/BotSetup';
+import { BotParams } from './panels/BotParams';
+import { BotSeats } from './panels/BotSeats';
 import { Replay } from './panels/Replay';
 import { RunControl } from './panels/RunControl';
+import { Strategy } from './panels/Strategy';
+import {
+  DEFAULT_SELECTION,
+  StrategyNav,
+  type StrategySelection,
+} from './panels/StrategyNav';
 import { DEFAULT_REQUEST, TableSetup, validateRequest } from './panels/TableSetup';
 
 const RAIL: readonly RailItem[] = [
   { key: 'run', glyph: '▶', label: '執行', enabled: true },
   { key: 'replay', glyph: '⏱', label: '重播', enabled: true },
   { key: 'bots', glyph: '◍', label: 'Bot', enabled: true },
-  { key: 'strategy', glyph: '▦', label: '策略', enabled: false },
+  { key: 'strategy', glyph: '▦', label: '策略', enabled: true },
   { key: 'report', glyph: '◫', label: '報表', enabled: false },
 ];
+
+/** 中欄的標題。面板換了但標題沒換，使用者會以為自己還在上一頁 */
+const PANEL_TITLE: Record<string, string> = {
+  run: '牌桌設定',
+  bots: 'Bot 設定',
+  strategy: '策略節點',
+  replay: '牌桌設定',
+};
 
 export function App() {
   const [panel, setPanel] = useState('run');
   const [request, setRequest] = useState<RunRequest>(DEFAULT_REQUEST);
+  /** 面板 B 選定的座位。左欄選、右欄改，因此狀態要在兩者之上 */
+  const [botSeat, setBotSeat] = useState(0);
+  /** 面板 D 檢視中的翻前節點 */
+  const [node, setNode] = useState<StrategySelection>(DEFAULT_SELECTION);
   const [progress, setProgress] = useState<RunProgress | null>(null);
   const [running, setRunning] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
@@ -94,6 +114,20 @@ export function App() {
     };
   }, []);
 
+  // 桌型跟著面板 A 的座位數走。使用者把桌子改成 6 人卻在 9-max 的節點上
+  // 編輯策略，改的會是這個 run 根本走不到的格子
+  useEffect(() => {
+    setNode((current) =>
+      current.seated === request.players ? current : { ...current, seated: request.players },
+    );
+  }, [request.players]);
+
+  const setOverrides = useCallback(
+    (heroOverrides: CellOverrideView[]) =>
+      setRequest((current) => ({ ...current, heroOverrides })),
+    [],
+  );
+
   const handleStart = useCallback(() => {
     setFailure(null);
     setProgress(null);
@@ -119,7 +153,8 @@ export function App() {
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
       <IconRail items={RAIL} active={panel} onSelect={setPanel} />
 
-      {/* 中：參數欄。目前只有面板 A，其餘面板進來後在這裡分支 */}
+      {/* 中：參數欄。只放**輸入**——面板 A 的設定、面板 B 的座位列表、
+          面板 D 的情境導航。輸出一律在右側主內容 */}
       <aside
         style={{
           width: 300,
@@ -131,18 +166,48 @@ export function App() {
         }}
       >
         <h2 style={{ fontSize: 13, margin: '0 0 16px' }}>
-          {panel === 'bots' ? 'Bot 設定' : '牌桌設定'}
+          {PANEL_TITLE[panel] ?? '牌桌設定'}
         </h2>
-        {panel === 'bots' ? (
-          <BotSetup request={request} onChange={setRequest} locked={running} />
-        ) : (
+        {panel === 'bots' && (
+          <BotSeats
+            request={request}
+            onChange={setRequest}
+            locked={running}
+            selected={botSeat}
+            onSelect={setBotSeat}
+          />
+        )}
+        {panel === 'strategy' && (
+          <StrategyNav
+            selection={node}
+            onChange={setNode}
+            overrideCount={request.heroOverrides.length}
+          />
+        )}
+        {panel !== 'bots' && panel !== 'strategy' && (
           <TableSetup request={request} onChange={setRequest} locked={running} />
         )}
       </aside>
 
       {/* 右：主內容 */}
       <main style={{ flex: 1, overflow: 'auto', background: 'var(--bg-base)' }}>
-        {panel === 'run' || panel === 'bots' ? (
+        {panel === 'bots' && (
+          <BotParams
+            request={request}
+            onChange={setRequest}
+            locked={running}
+            selected={botSeat}
+          />
+        )}
+        {panel === 'strategy' && (
+          <Strategy
+            selection={node}
+            overrides={request.heroOverrides}
+            onOverridesChange={setOverrides}
+            locked={running}
+          />
+        )}
+        {panel === 'run' && (
           <RunControl
             request={request}
             progress={progress}
@@ -154,9 +219,8 @@ export function App() {
             onPause={handlePause}
             onCancel={handleCancel}
           />
-        ) : (
-          <Replay reloadToken={reloadToken} bigBlind={request.bigBlind} />
         )}
+        {panel === 'replay' && <Replay reloadToken={reloadToken} bigBlind={request.bigBlind} />}
       </main>
     </div>
   );
