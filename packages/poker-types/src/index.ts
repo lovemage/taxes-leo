@@ -10,6 +10,7 @@ export type { ActionView } from './generated/ActionView';
 export type { BotSeatConfig } from './generated/BotSeatConfig';
 export type { BucketOptionView } from './generated/BucketOptionView';
 export type { CellOverrideView } from './generated/CellOverrideView';
+export type { ChartRowView } from './generated/ChartRowView';
 export type { FrameView } from './generated/FrameView';
 export type { HandSummaryView } from './generated/HandSummaryView';
 export type { HandView } from './generated/HandView';

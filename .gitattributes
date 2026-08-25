@@ -41,3 +41,5 @@ apps/engine/assets/*.txt text eol=lf
 *.woff binary
 *.woff2 binary
 *.sqlite binary
+# 顧問的翻前組合表原始檔（docs/）。xlsx 是 zip，換行轉換會直接毀掉它
+*.xlsx binary

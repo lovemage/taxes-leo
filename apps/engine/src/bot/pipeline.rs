@@ -217,6 +217,27 @@ pub fn run(
     is_legal: impl Fn(Action) -> bool,
     roll: Myriad,
 ) -> Result<DecisionTrace, PipelineError> {
+    run_with_reference(baseline, baseline, config, is_legal, roll)
+}
+
+/// 與 [`run`] 相同，但另外指定第 5 步夾幅度時要比對的**基準**。
+///
+/// 核心規格 4.3 第 5 步夾的是「偏離基準的幅度」。人格若在**內容層**就
+/// 已經動過手（顧問的預設組合表是純策略，權重縮放對它無效，人格改走
+/// `ChartShift` 的邊界位移），那麼進到管線的分佈本身就已經含著偏移，
+/// 拿它當基準等於量到 0，上限永遠夾不到東西。
+///
+/// 因此呼叫端要把**未套用人格的內容**當 `reference` 傳進來。
+///
+/// # Errors
+/// 見 [`run`]。
+pub fn run_with_reference(
+    reference: &ActionDistribution,
+    baseline: &ActionDistribution,
+    config: &BotConfig,
+    is_legal: impl Fn(Action) -> bool,
+    roll: Myriad,
+) -> Result<DecisionTrace, PipelineError> {
     let mut stages = Vec::with_capacity(7);
     let mut applied_offsets = Vec::new();
 
@@ -271,7 +292,7 @@ pub fn run(
     // 必須在偏移之後才遮蔽：先遮蔽會讓移到不合法行動上的權重憑空消失
     let masked = behavior.mask_and_renormalise(&is_legal)?;
     let cap = config.myriad("exploitAdjustmentCapPp");
-    let (capped, cap_applied) = apply_exploit_cap(baseline, &masked, cap, &is_legal)?;
+    let (capped, cap_applied) = apply_exploit_cap(reference, &masked, cap, &is_legal)?;
     stages.push((PipelineStage::LegalMaskAndCap, capped.clone()));
 
     // ── 步驟 6：決策噪音 ─────────────────────────────────────────
@@ -281,7 +302,7 @@ pub fn run(
         capped.clone()
     } else {
         applied_offsets.push(("decisionNoisePp", noise));
-        mix_uniform(&capped, noise)?
+        mix_uniform(&capped, noise, &is_legal)?
     };
     stages.push((PipelineStage::Noise, noised.clone()));
 
@@ -393,21 +414,40 @@ fn apply_exploit_cap(
 /// 以具名公式混入均勻分佈。
 ///
 /// 公式：`最終 = (1 - noise) × 策略 + noise × 均勻`。
-/// 均勻分佈只涵蓋當下合法的行動（本函式在 mask 之後呼叫）。
+/// 均勻分佈涵蓋當下合法的行動（本函式在 mask 之後呼叫）。
+///
+/// # 為什麼候選集不能只取分佈自己的支撐
+///
+/// 噪音的語意是「有時候打出基準之外的行動」。只在既有項目上重新配權重
+/// 的話，**純策略的格子完全動不了**——單一項目乘上任何倍率再正規化仍是
+/// 100%。顧問的預設組合表逐格只有一個動作，噪音在它上面就會整個失效，
+/// 使用者拉的是一支沒有作用的滑桿。
+///
+/// 因此候選集是「分佈已有的行動 ∪ 當下合法的基本行動」。加注**尺度**
+/// 不憑空生成：噪音不該發明一個內容沒考慮過的下注額，那是另一個參數
+/// （可用尺度）的職責。
 fn mix_uniform(
     distribution: &ActionDistribution,
     noise: Myriad,
+    is_legal: impl Fn(Action) -> bool,
 ) -> Result<ActionDistribution, DistributionError> {
-    let count = u64::try_from(distribution.entries().len()).unwrap_or(1).max(1);
+    let mut candidates: Vec<Action> = distribution.entries().iter().map(|&(a, _)| a).collect();
+    for action in [Action::Fold, Action::Check, Action::Call, Action::AllIn] {
+        if is_legal(action) && !candidates.contains(&action) {
+            candidates.push(action);
+        }
+    }
+
+    let count = u64::try_from(candidates.len()).unwrap_or(1).max(1);
     let uniform = u64::from(FULL) / count;
     let keep = u64::from(FULL - noise);
 
-    let weights: Vec<(Action, u64)> = distribution
-        .entries()
-        .iter()
-        .map(|&(action, weight)| {
-            let blended = u64::from(weight) * keep / u64::from(FULL)
-                + uniform * u64::from(noise) / u64::from(FULL);
+    let weights: Vec<(Action, u64)> = candidates
+        .into_iter()
+        .map(|action| {
+            let weight = u64::from(distribution.weight_of(action));
+            let blended =
+                weight * keep / u64::from(FULL) + uniform * u64::from(noise) / u64::from(FULL);
             (action, blended)
         })
         .collect();

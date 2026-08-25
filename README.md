@@ -74,6 +74,43 @@ cargo test --release -p poker-engine 內建資產與重算結果一致 -- --igno
 > `equityRankingContentGrade` 記為 false。release 建置沒有這條退路——
 > 出貨的程式寧可明確失敗，也不能安靜地拿一份不夠格的排序去跑一整晚的統計。
 
+## 翻前預設組合表
+
+翻前的內容來源是顧問給的 9MAX 逐格手牌表
+（[`docs/9MAX手牌組合_6.xlsx`](docs/9MAX手牌組合_6.xlsx)）：四檔有效籌碼 ×
+九個位置 × 五種情境 × 五種動作，共 900 列。它是**內容**，不是參數——
+每一格直接寫著該打哪些手牌。
+
+引擎沒有任何相依（連 serde 都沒有），也不在執行期讀 Excel（Tauri 打包後的
+工作目錄不由我們決定，讀檔會在使用者的機器上失敗而在開發機上永遠成功）。
+因此表離線轉成純文字資產
+（[`apps/engine/assets/preflop-default-chart-v1.txt`](apps/engine/assets/preflop-default-chart-v1.txt)，
+83 KB）編進二進位檔。
+
+```bash
+# 顧問更新 Excel 之後重跑（需要 python3 與 openpyxl）
+python3 tools/preflop_chart_from_xlsx.py docs/9MAX手牌組合_6.xlsx
+```
+
+轉換會先驗證來源表本身：牌類代號合法、同一格的五個動作互不重疊、
+「其餘手牌」補完後恰為 1,326 個 combo、表列百分比與實際 combo 數相符。
+任何一項不成立就中止而不產檔。資產帶校驗碼，手改在載入時會被擋下。
+
+**6–8 人桌不另立內容**，改由刪位置得到：8 人刪 UTG+2、7 人再刪 UTG+1、
+6 人再刪 LJ。這與規則細則 8.4.1 的位置序列一致，`兩套位置序列必須一致`
+測試把兩者釘在一起。引擎的九檔籌碼分檔對應到表上的四檔深度，對應關係
+在面板 D 的導航逐檔標出來。
+
+內容的優先序是**逐格覆寫 → 預設組合表 → 參數產生器**。表沒有「面對跛入」
+那一欄，那些節點仍走 `BaselineRules` 的參數化 baseline，面板會標成
+「參數 baseline」並提示未經顧問簽核。
+
+> 表是純策略（每手牌恰好落在一個動作上），權重縮放對它無效。Bot 的
+> `rangeWidth`／`preflopAggression`／`callPersistence`／`foldDiscipline`
+> 因此改在**內容層**作用：沿 equity 排序把最邊緣的幾手牌搬到隔壁的動作
+> （`default_chart::ChartShift`）。管線的人格階段在純策略上是空操作，
+> 兩條路徑都恰好套用一次。
+
 ## 執行 M0 垂直切片
 
 需要兩個行程：

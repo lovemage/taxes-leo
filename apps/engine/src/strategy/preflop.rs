@@ -23,6 +23,15 @@ pub enum PreflopScenario {
     VsLimp { limpers: u8 },
     /// 面對某位置的開牌加注
     VsOpen { opener: PositionLabel },
+    /// 面對「開牌＋再加注」：前方有人開牌又被另一人加注，英雄尚未下注。
+    ///
+    /// **與 [`Self::VsThreeBet`] 的差別是英雄自己有沒有下過注。** 這裡的
+    /// 選項是冷 4-bet／冷跟／棄牌，底池賠率與所需範圍都與「自己開牌後被
+    /// 3-bet」不同；混成同一個節點等於用錯一整欄內容。
+    ///
+    /// `opener` 是最初的開牌者。再加注者不進節點鍵——兩個位置都放進去會
+    /// 讓節點數再乘一個維度，而顧問的表本來就沒有分到那麼細。
+    VsOpenRaise { opener: PositionLabel },
     /// 英雄開牌後被某位置 3-bet
     VsThreeBet { by: PositionLabel },
     /// 英雄 3-bet 後被 4-bet
@@ -43,6 +52,7 @@ impl PreflopScenario {
             Self::Unopened => "unopened".to_owned(),
             Self::VsLimp { limpers } => format!("vs-limp-{limpers}"),
             Self::VsOpen { opener } => format!("vs-open-{}", opener.as_str()),
+            Self::VsOpenRaise { opener } => format!("vs-open-raise-{}", opener.as_str()),
             Self::VsThreeBet { by } => format!("vs-3bet-{}", by.as_str()),
             Self::VsFourBet { by } => format!("vs-4bet-{}", by.as_str()),
             Self::VsSqueeze { by } => format!("vs-squeeze-{}", by.as_str()),
@@ -135,8 +145,15 @@ pub fn scenarios_for(seated: u8, hero: PositionLabel) -> Vec<PreflopScenario> {
     }
 
     // 面對開牌：開牌者必須在英雄之前
-    for &opener in earlier {
+    for (index, &opener) in earlier.iter().enumerate() {
         out.push(PreflopScenario::VsOpen { opener });
+        // 面對「開牌＋再加注」多一個前提：開牌者與英雄之間要有座位，
+        // 那個座位才可能再加注。開牌者緊鄰英雄時無人能再加注，該情境
+        // 到不了——這正是來源表把 UTG 與 UTG+1 的 OPEN-RAISE 整欄列為
+        // 「無此情境」的原因（使用說明【6】）。
+        if index + 1 < earlier.len() {
+            out.push(PreflopScenario::VsOpenRaise { opener });
+        }
     }
 
     // 英雄開牌後被 3-bet：3-bet 者必須在英雄之後

@@ -31,6 +31,9 @@ pub struct MatrixCell {
     /// 主動行動（加注或推入）的合計頻率
     pub aggressive: Myriad,
     pub call: Myriad,
+    /// 過牌。**不併進棄牌**：無人加注時大盲過牌看翻牌，
+    /// 與「把牌丟掉」是完全不同的一件事，畫在同一格會讓面板騙人
+    pub check: Myriad,
     pub fold: Myriad,
     /// 該類別在 equity 排序中的百分位（萬分比，0 為最強）
     pub percentile: Myriad,
@@ -69,6 +72,7 @@ impl RangeMatrix {
                 class: HandClass::all()[0],
                 aggressive: 0,
                 call: 0,
+                check: 0,
                 fold: FULL,
                 percentile: 0,
             },
@@ -82,12 +86,14 @@ impl RangeMatrix {
 
             let mut aggressive = 0;
             let mut call = 0;
+            let mut check = 0;
             let mut fold = 0;
             for &(action, weight) in distribution.entries() {
                 match action {
                     Action::RaiseTo(_) | Action::AllIn => aggressive += weight,
                     Action::Call => call += weight,
-                    Action::Fold | Action::Check => fold += weight,
+                    Action::Check => check += weight,
+                    Action::Fold => fold += weight,
                 }
             }
 
@@ -95,6 +101,7 @@ impl RangeMatrix {
                 class,
                 aggressive,
                 call,
+                check,
                 fold,
                 percentile: Myriad::try_from(ranking.percentile_myriad(class)).unwrap_or(FULL),
             };
@@ -220,9 +227,18 @@ pub fn attribute(
     // 目標格自己的覆寫要先拿掉。覆寫勝過參數，留著會讓每個候選值都算出
     // 同樣的結果，歸因於是永遠回報「做不到」。要問的是：**不靠覆寫**，
     // 參數能不能達成這個意見
+    //
+    // 預設組合表同理，而且更強：它蓋掉整個節點而不只是一格。留著的話
+    // 每個候選參數值都算出同一份矩陣，歸因永遠回報「做不到」。因此這裡
+    // 問的是純參數模型的行為。
+    //
+    // **代價要講清楚**：節點若由預設組合表提供（`DefaultChart::covers`
+    // 為真），照建議調參數不會改變 Bot 實際打的牌——那個節點的內容來自
+    // 表。對這種節點，顧問的意見只能落成逐格覆寫，或改表本身。
     let rules = &{
         let mut without = rules.clone();
         without.overrides.clear(&node, class);
+        without.use_default_chart = false;
         without
     };
 
@@ -432,7 +448,7 @@ mod tests {
         for class in HandClass::all() {
             let cell = matrix.cell(class);
             assert_eq!(
-                cell.aggressive + cell.call + cell.fold,
+                cell.aggressive + cell.call + cell.check + cell.fold,
                 FULL,
                 "{} 的頻率合計錯誤",
                 class.label()
@@ -440,9 +456,18 @@ mod tests {
         }
     }
 
+    /// 歸因是**參數模型**的工具。出貨內容走預設組合表，表蓋掉的節點
+    /// 參數推不動（見 `attribute` 的說明），因此這幾條測試問的是純參數
+    /// 模型的行為，規則集要先把表關掉。
+    fn parameter_rules() -> BaselineRules {
+        let mut rules = BaselineRules::engineering_placeholder();
+        rules.use_default_chart = false;
+        rules
+    }
+
     #[test]
     fn 已符合意見時不產生調整建議() {
-        let rules = BaselineRules::engineering_placeholder();
+        let rules = parameter_rules();
         let ranking = ranking();
         let aces = class_of(Rank::Ace, Rank::Ace, false);
         let result = attribute(btn_open(), aces, Verdict::ShouldBeAggressive, &rules, &ranking);
@@ -451,7 +476,7 @@ mod tests {
 
     #[test]
     fn 歸因給出所需參數值與連帶影響() {
-        let rules = BaselineRules::engineering_placeholder();
+        let rules = parameter_rules();
         let ranking = ranking();
         // 找一個目前完全不開的中等牌
         let matrix = RangeMatrix::build(btn_open(), &rules, &ranking);
@@ -479,7 +504,7 @@ mod tests {
 
     #[test]
     fn 調整後該格確實滿足意見() {
-        let rules = BaselineRules::engineering_placeholder();
+        let rules = parameter_rules();
         let ranking = ranking();
         let matrix = RangeMatrix::build(btn_open(), &rules, &ranking);
         let target = HandClass::all()
