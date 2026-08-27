@@ -15,6 +15,9 @@
 use poker_engine::bot::params::{ParamValue, BEHAVIOR_SPECS, PERSONA_SPECS};
 use poker_engine::bot::BotConfig;
 use poker_engine::strategy::baseline::BaselineRules;
+use poker_engine::strategy::default_chart::{
+    raise_size_centi_bb, ChartAction, ChartScenario, DefaultChart, CHART_VERSION,
+};
 use poker_engine::strategy::playability::PlayabilityCategory;
 use poker_engine::strategy::ScenarioWidths;
 use serde_json::{json, Map, Value};
@@ -83,6 +86,7 @@ pub fn baseline(rules: &BaselineRules) -> Value {
         "name": rules.name,
         "version": rules.version,
         "consultantApproved": rules.consultant_approved,
+        "defaultChart": default_chart(rules),
         "scenarioWidths": {
             "unopened": widths(rules.unopened),
             "vsLimp": widths(rules.vs_limp),
@@ -132,5 +136,146 @@ fn numeric(value: ParamValue) -> i64 {
         ParamValue::Myriad(v) | ParamValue::Count(v) => i64::from(v),
         ParamValue::Enum(v) => i64::from(v),
         ParamValue::Flag(v) => i64::from(v),
+    }
+}
+
+/// 顧問的預設組合表。
+///
+/// 核心規格 3.3：「內容本身必須保存，只留 hash 不合格。」表是這個 run
+/// 翻前實際使用的內容，因此逐格存下手牌清單，而不是只記一個版本字串。
+///
+/// 「其餘手牌」與「全部手牌」兩種列只記選擇子不展開：它們是其餘四列的
+/// 餘數，展開後每一格會多出上百個牌類，紀錄膨脹好幾倍卻沒有多帶資訊。
+/// 讀回來時照 `DefaultChart` 的同一條規則補滿即可。
+fn default_chart(rules: &BaselineRules) -> Value {
+    if !rules.use_default_chart {
+        return json!({ "enabled": false });
+    }
+    let chart = match DefaultChart::embedded() {
+        Ok(chart) => chart,
+        // 載入失敗時整份內容退回參數產生器。紀錄必須說出這件事，
+        // 否則事後看不出這個 run 跑的根本不是顧問的表
+        Err(error) => {
+            return json!({ "enabled": true, "loaded": false, "error": error.to_string() })
+        }
+    };
+
+    let cells: Map<String, Value> = chart
+        .entries()
+        .into_iter()
+        .map(|entry| {
+            let rows: Map<String, Value> = entry
+                .rows()
+                .iter()
+                .map(|row| {
+                    let hands = if row.selector_key() == "list" {
+                        row.classes()
+                            .iter()
+                            .map(|class| class.label())
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    } else {
+                        row.selector_key().to_owned()
+                    };
+                    (row.action.as_str().to_owned(), json!(hands))
+                })
+                .collect();
+            (
+                format!(
+                    "{}/{}/{}",
+                    entry.depth.as_str(),
+                    entry.position.as_str(),
+                    entry.scenario.as_str()
+                ),
+                Value::Object(rows),
+            )
+        })
+        .collect();
+
+    let sizes: Map<String, Value> = ChartScenario::all()
+        .into_iter()
+        .map(|scenario| {
+            (
+                scenario.as_str().to_owned(),
+                json!({
+                    "small": raise_size_centi_bb(scenario, ChartAction::RaiseSmall),
+                    "large": raise_size_centi_bb(scenario, ChartAction::RaiseLarge),
+                }),
+            )
+        })
+        .collect();
+
+    json!({
+        "enabled": true,
+        "loaded": true,
+        "source": chart.source,
+        "version": CHART_VERSION,
+        "format": chart.format,
+        "cells": cells,
+        "raiseSizesCentiBb": sizes,
+        // 人格對表的邊界位移。使用者座位恆為中性，Bot 逐座的值另存於
+        // bot_personas 的人格參數裡
+        "shift": {
+            "rangeWidth": rules.chart_shift.range_width,
+            "aggression": rules.chart_shift.aggression,
+            "callPersistence": rules.chart_shift.call_persistence,
+            "foldDiscipline": rules.chart_shift.fold_discipline,
+        },
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 核心規格 3.3：內容本身必須保存。表是翻前實際使用的內容，
+    /// 因此快照裡要有逐格的手牌清單，不是只有一個版本字串。
+    #[test]
+    fn 快照存下預設組合表的逐格內容() {
+        let rules = BaselineRules::engineering_placeholder();
+        let snapshot = baseline(&rules);
+        let chart = &snapshot["defaultChart"];
+
+        assert_eq!(chart["enabled"], json!(true));
+        assert_eq!(chart["loaded"], json!(true));
+        assert_eq!(chart["version"], json!(CHART_VERSION));
+        assert_eq!(
+            chart["cells"].as_object().expect("逐格內容").len(),
+            180,
+            "四檔深度 × 九個位置 × 五種情境"
+        );
+
+        let cell = &chart["cells"]["0-15/UTG/unopened"];
+        assert_eq!(cell["fold"], json!("*"), "「其餘手牌」記選擇子不展開");
+        assert_eq!(cell["call"], json!("-"));
+        assert!(
+            cell["allin"]
+                .as_str()
+                .expect("推入清單")
+                .starts_with("AA,KK,QQ"),
+            "推入範圍要逐手存下來"
+        );
+
+        // 尺度也是內容的一部分：表的倍數乘的是前方最大下注額
+        assert_eq!(chart["raiseSizesCentiBb"]["open"]["small"], json!(625));
+    }
+
+    /// 關掉表時快照要說出來，否則事後看不出這個 run 跑的不是顧問的內容。
+    #[test]
+    fn 關掉表時快照如實標示() {
+        let mut rules = BaselineRules::engineering_placeholder();
+        rules.use_default_chart = false;
+        assert_eq!(baseline(&rules)["defaultChart"]["enabled"], json!(false));
+    }
+
+    /// 快照是每個 run 都要寫一份的，體積要留意。
+    #[test]
+    fn 快照體積留在可接受範圍內() {
+        let rules = BaselineRules::engineering_placeholder();
+        let size = baseline(&rules).to_string().len();
+        assert!(
+            size < 80_000,
+            "翻前快照 {size} 位元組偏大——每個 run 都會存一份"
+        );
     }
 }

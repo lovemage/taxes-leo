@@ -1,0 +1,992 @@
+# 9max 模擬平台 — 翻前預設組合表
+#
+# 這是離線產製的內容，請勿手改。重新產生：
+#   python3 tools/preflop_chart_from_xlsx.py docs/9MAX手牌組合_6.xlsx
+#
+# 來源是 9MAX 滿桌的顧問表。6–8 人桌不另立內容，改由刪位置得到
+# （8 人刪 UTG+2；7 人刪 UTG+1、UTG+2；6 人刪 UTG+1、UTG+2、LJ），
+# 與規則細則 8.4.1 的位置序列一致。
+#
+# 每一列是一格：深度|位置|情境|動作|手牌|說明
+#   手牌  `-` 無　`*` 其餘手牌（同組其他四個動作沒收走的）
+#         `+` 全部手牌　其餘為逗號分隔的 169 類代號
+#   說明  來源表 H 欄的原文，面板逐格顯示
+#
+# 校驗碼算在解析後的內容上，不是原始位元組：註解與換行因此都不參與，
+# Windows 端 checkout 出 CRLF 也不會讓資產突然載不進來。
+
+format 1
+source 9MAX手牌組合_6.xlsx
+checksum 0x561d5d9262b4735d
+
+# 0-15BB · UTG
+0-15|UTG|unopened|fold|*|此深度一律 All-in 或蓋牌。加注 2.5BB 後被推只能棄牌，等於白送籌碼，故 2.5 倍整欄不用。
+0-15|UTG|unopened|call|-|此情境不跟注
+0-15|UTG|unopened|raise-2.5x|-|此情境不使用此尺寸
+0-15|UTG|unopened|raise-8x|-|此情境不使用此尺寸
+0-15|UTG|unopened|allin|AA, KK, QQ, JJ, TT, 99, 88, 77, AKs, AQs, AJs, ATs, A9s, KQs, AKo, AQo, AJo|直接推全部籌碼。此深度開小加注後被 3-bet 只能棄牌，等於白送籌碼。
+0-15|UTG|open|fold|-|無此情境：UTG 為全桌第一個行動者，前方不可能已有加注
+0-15|UTG|open|call|-|無此情境：UTG 為全桌第一個行動者，前方不可能已有加注
+0-15|UTG|open|raise-2.5x|-|無此情境：UTG 為全桌第一個行動者，前方不可能已有加注
+0-15|UTG|open|raise-8x|-|無此情境：UTG 為全桌第一個行動者，前方不可能已有加注
+0-15|UTG|open|allin|-|無此情境：UTG 為全桌第一個行動者，前方不可能已有加注
+0-15|UTG|open-raise|fold|-|無此情境：UTG 前方無人行動，不可能出現「開牌＋再加注」
+0-15|UTG|open-raise|call|-|無此情境：UTG 前方無人行動，不可能出現「開牌＋再加注」
+0-15|UTG|open-raise|raise-2.5x|-|無此情境：UTG 前方無人行動，不可能出現「開牌＋再加注」
+0-15|UTG|open-raise|raise-8x|-|無此情境：UTG 前方無人行動，不可能出現「開牌＋再加注」
+0-15|UTG|open-raise|allin|-|無此情境：UTG 前方無人行動，不可能出現「開牌＋再加注」
+0-15|UTG|3bet|fold|*|你開牌後被 3-bet。對方多半已 All-in，此範圍同時是「跟注全下」與「反推」的範圍。
+0-15|UTG|3bet|call|-|此情境不跟注
+0-15|UTG|3bet|raise-2.5x|-|此情境不使用此尺寸
+0-15|UTG|3bet|raise-8x|-|此情境不使用此尺寸
+0-15|UTG|3bet|allin|AA, KK, QQ, JJ, TT, 99, AKs, AQs, AKo|4-bet 直接全下。籌碼不足以做「4-bet 後棄牌」，只能推或棄。
+0-15|UTG|4bet|fold|-|無此情境：UTG 前方無加注可打，無法 3-bet，故不會面對 4-bet
+0-15|UTG|4bet|call|-|無此情境：UTG 前方無加注可打，無法 3-bet，故不會面對 4-bet
+0-15|UTG|4bet|raise-2.5x|-|無此情境：UTG 前方無加注可打，無法 3-bet，故不會面對 4-bet
+0-15|UTG|4bet|raise-8x|-|無此情境：UTG 前方無加注可打，無法 3-bet，故不會面對 4-bet
+0-15|UTG|4bet|allin|-|無此情境：UTG 前方無加注可打，無法 3-bet，故不會面對 4-bet
+
+# 0-15BB · UTG+1
+0-15|UTG+1|unopened|fold|*|此深度一律 All-in 或蓋牌。加注 2.5BB 後被推只能棄牌，等於白送籌碼，故 2.5 倍整欄不用。
+0-15|UTG+1|unopened|call|-|此情境不跟注
+0-15|UTG+1|unopened|raise-2.5x|-|此情境不使用此尺寸
+0-15|UTG+1|unopened|raise-8x|-|此情境不使用此尺寸
+0-15|UTG+1|unopened|allin|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, AKs, AQs, AJs, ATs, A9s, A8s, KQs, KJs, AKo, AQo, AJo, ATo, KQo|直接推全部籌碼。此深度開小加注後被 3-bet 只能棄牌，等於白送籌碼。
+0-15|UTG+1|open|fold|*|以面對 UTG 小開牌為基準。若對手開牌即 All-in，跟注範圍改為 TT+, AKs, AKo。
+0-15|UTG+1|open|call|-|此情境不跟注
+0-15|UTG+1|open|raise-2.5x|-|此情境不使用此尺寸
+0-15|UTG+1|open|raise-8x|-|此情境不使用此尺寸
+0-15|UTG+1|open|allin|AA, KK, QQ, JJ, TT, 99, AKs, AQs, AKo|3-bet 直接全下。此深度 3-bet 到一半籌碼已 pot-committed，不如一次推完。
+0-15|UTG+1|open-raise|fold|-|無此情境：UTG+1 前方僅 UTG 一人，湊不出「開牌＋再加注」
+0-15|UTG+1|open-raise|call|-|無此情境：UTG+1 前方僅 UTG 一人，湊不出「開牌＋再加注」
+0-15|UTG+1|open-raise|raise-2.5x|-|無此情境：UTG+1 前方僅 UTG 一人，湊不出「開牌＋再加注」
+0-15|UTG+1|open-raise|raise-8x|-|無此情境：UTG+1 前方僅 UTG 一人，湊不出「開牌＋再加注」
+0-15|UTG+1|open-raise|allin|-|無此情境：UTG+1 前方僅 UTG 一人，湊不出「開牌＋再加注」
+0-15|UTG+1|3bet|fold|*|對方多半已 All-in，此範圍同時是「跟注全下」與「反推」的範圍。
+0-15|UTG+1|3bet|call|-|此情境不跟注
+0-15|UTG+1|3bet|raise-2.5x|-|此情境不使用此尺寸
+0-15|UTG+1|3bet|raise-8x|-|此情境不使用此尺寸
+0-15|UTG+1|3bet|allin|AA, KK, QQ, JJ, TT, 99, AKs, AQs, AKo|4-bet 直接全下。籌碼不足以做「4-bet 後棄牌」，只能推或棄。
+0-15|UTG+1|4bet|fold|*|僅在你的 3-bet 未全下時才會遇到。對方 4-bet 幾乎都是 All-in，只能跟或棄。
+0-15|UTG+1|4bet|call|AA, KK, QQ, JJ, TT, AKs, AKo|
+0-15|UTG+1|4bet|raise-2.5x|-|此情境不使用此尺寸
+0-15|UTG+1|4bet|raise-8x|-|此情境不使用此尺寸
+0-15|UTG+1|4bet|allin|-|此情境不全下
+
+# 0-15BB · UTG+2
+0-15|UTG+2|unopened|fold|*|此深度一律 All-in 或蓋牌。加注 2.5BB 後被推只能棄牌，等於白送籌碼，故 2.5 倍整欄不用。
+0-15|UTG+2|unopened|call|-|此情境不跟注
+0-15|UTG+2|unopened|raise-2.5x|-|此情境不使用此尺寸
+0-15|UTG+2|unopened|raise-8x|-|此情境不使用此尺寸
+0-15|UTG+2|unopened|allin|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, AKs, AQs, AJs, ATs, A9s, A8s, A7s, KQs, KJs, KTs, QJs, AKo, AQo, AJo, ATo, KQo|直接推全部籌碼。此深度開小加注後被 3-bet 只能棄牌，等於白送籌碼。
+0-15|UTG+2|open|fold|*|以面對 EP 小開牌為基準。若對手開牌即 All-in，跟注範圍改為 TT+, AKs, AKo。
+0-15|UTG+2|open|call|-|此情境不跟注
+0-15|UTG+2|open|raise-2.5x|-|此情境不使用此尺寸
+0-15|UTG+2|open|raise-8x|-|此情境不使用此尺寸
+0-15|UTG+2|open|allin|AA, KK, QQ, JJ, TT, 99, AKs, AQs, AKo|3-bet 直接全下。此深度 3-bet 到一半籌碼已 pot-committed，不如一次推完。
+0-15|UTG+2|open-raise|fold|*|前方兩人範圍都強，這是全表最緊的情境之一。TT、99、AQs、AQo、AJs 在此都是虧損牌。
+0-15|UTG+2|open-raise|call|-|此情境不跟注
+0-15|UTG+2|open-raise|raise-2.5x|-|此情境不使用此尺寸
+0-15|UTG+2|open-raise|raise-8x|-|此情境不使用此尺寸
+0-15|UTG+2|open-raise|allin|AA, KK, QQ, JJ, AKs, AKo|冷 4-bet 直接全下。前方兩人範圍都強，此格是全表最緊的情境之一。
+0-15|UTG+2|3bet|fold|*|對方多半已 All-in，此範圍同時是「跟注全下」與「反推」的範圍。
+0-15|UTG+2|3bet|call|-|此情境不跟注
+0-15|UTG+2|3bet|raise-2.5x|-|此情境不使用此尺寸
+0-15|UTG+2|3bet|raise-8x|-|此情境不使用此尺寸
+0-15|UTG+2|3bet|allin|AA, KK, QQ, JJ, TT, 99, AKs, AQs, AKo|4-bet 直接全下。籌碼不足以做「4-bet 後棄牌」，只能推或棄。
+0-15|UTG+2|4bet|fold|*|僅在你的 3-bet 未全下時才會遇到。
+0-15|UTG+2|4bet|call|AA, KK, QQ, JJ, TT, AKs, AKo|
+0-15|UTG+2|4bet|raise-2.5x|-|此情境不使用此尺寸
+0-15|UTG+2|4bet|raise-8x|-|此情境不使用此尺寸
+0-15|UTG+2|4bet|allin|-|此情境不全下
+
+# 0-15BB · LJ
+0-15|LJ|unopened|fold|*|此深度一律 All-in 或蓋牌。加注 2.5BB 後被推只能棄牌，等於白送籌碼，故 2.5 倍整欄不用。
+0-15|LJ|unopened|call|-|此情境不跟注
+0-15|LJ|unopened|raise-2.5x|-|此情境不使用此尺寸
+0-15|LJ|unopened|raise-8x|-|此情境不使用此尺寸
+0-15|LJ|unopened|allin|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, 44, AKs, AQs, AJs, ATs, A9s, A8s, A7s, A6s, A5s, A4s, A3s, A2s, KQs, KJs, KTs, K9s, QJs, AKo, AQo, AJo, ATo, A9o, KQo, KJo|直接推全部籌碼。此深度開小加注後被 3-bet 只能棄牌，等於白送籌碼。
+0-15|LJ|open|fold|*|以面對 MP 小開牌為基準；面對 EP 開牌收緊至 99+, AQs+, AKo。若對手已 All-in，跟注範圍為 99+, AQs+, AKo。
+0-15|LJ|open|call|-|此情境不跟注
+0-15|LJ|open|raise-2.5x|-|此情境不使用此尺寸
+0-15|LJ|open|raise-8x|-|此情境不使用此尺寸
+0-15|LJ|open|allin|AA, KK, QQ, JJ, TT, 99, 88, AKs, AQs, AJs, AKo, AQo|3-bet 直接全下。此深度 3-bet 到一半籌碼已 pot-committed，不如一次推完。
+0-15|LJ|open-raise|fold|*|前方兩人範圍都強。TT、99、AQs、AQo、AJs 在此都是虧損牌。
+0-15|LJ|open-raise|call|-|此情境不跟注
+0-15|LJ|open-raise|raise-2.5x|-|此情境不使用此尺寸
+0-15|LJ|open-raise|raise-8x|-|此情境不使用此尺寸
+0-15|LJ|open-raise|allin|AA, KK, QQ, JJ, AKs, AKo|冷 4-bet 直接全下。前方兩人範圍都強，此格是全表最緊的情境之一。
+0-15|LJ|3bet|fold|*|對方多半已 All-in，此範圍同時是「跟注全下」與「反推」的範圍。
+0-15|LJ|3bet|call|-|此情境不跟注
+0-15|LJ|3bet|raise-2.5x|-|此情境不使用此尺寸
+0-15|LJ|3bet|raise-8x|-|此情境不使用此尺寸
+0-15|LJ|3bet|allin|AA, KK, QQ, JJ, TT, 99, 88, AKs, AQs, AJs, AKo, AQo|4-bet 直接全下。籌碼不足以做「4-bet 後棄牌」，只能推或棄。
+0-15|LJ|4bet|fold|*|僅在你的 3-bet 未全下時才會遇到。
+0-15|LJ|4bet|call|AA, KK, QQ, JJ, TT, AKs, AKo|
+0-15|LJ|4bet|raise-2.5x|-|此情境不使用此尺寸
+0-15|LJ|4bet|raise-8x|-|此情境不使用此尺寸
+0-15|LJ|4bet|allin|-|此情境不全下
+
+# 0-15BB · HJ
+0-15|HJ|unopened|fold|*|此深度一律 All-in 或蓋牌。加注 2.5BB 後被推只能棄牌，等於白送籌碼，故 2.5 倍整欄不用。
+0-15|HJ|unopened|call|-|此情境不跟注
+0-15|HJ|unopened|raise-2.5x|-|此情境不使用此尺寸
+0-15|HJ|unopened|raise-8x|-|此情境不使用此尺寸
+0-15|HJ|unopened|allin|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, 44, 33, AKs, AQs, AJs, ATs, A9s, A8s, A7s, A6s, A5s, A4s, A3s, A2s, KQs, KJs, KTs, K9s, QJs, QTs, Q9s, JTs, AKo, AQo, AJo, ATo, A9o, A8o, KQo, KJo, KTo|直接推全部籌碼。此深度開小加注後被 3-bet 只能棄牌，等於白送籌碼。
+0-15|HJ|open|fold|*|以面對 MP 小開牌為基準；面對 EP 開牌收緊至 99+, AQs+, AKo。
+0-15|HJ|open|call|-|此情境不跟注
+0-15|HJ|open|raise-2.5x|-|此情境不使用此尺寸
+0-15|HJ|open|raise-8x|-|此情境不使用此尺寸
+0-15|HJ|open|allin|AA, KK, QQ, JJ, TT, 99, 88, 77, AKs, AQs, AJs, A5s, A4s, KQs, AKo, AQo|3-bet 直接全下。此深度 3-bet 到一半籌碼已 pot-committed，不如一次推完。
+0-15|HJ|open-raise|fold|*|前方兩人範圍都強。TT、99、AQs、AQo、AJs 在此都是虧損牌。
+0-15|HJ|open-raise|call|-|此情境不跟注
+0-15|HJ|open-raise|raise-2.5x|-|此情境不使用此尺寸
+0-15|HJ|open-raise|raise-8x|-|此情境不使用此尺寸
+0-15|HJ|open-raise|allin|AA, KK, QQ, JJ, AKs, AKo|冷 4-bet 直接全下。前方兩人範圍都強，此格是全表最緊的情境之一。
+0-15|HJ|3bet|fold|*|對方多半已 All-in，此範圍同時是「跟注全下」與「反推」的範圍。
+0-15|HJ|3bet|call|-|此情境不跟注
+0-15|HJ|3bet|raise-2.5x|-|此情境不使用此尺寸
+0-15|HJ|3bet|raise-8x|-|此情境不使用此尺寸
+0-15|HJ|3bet|allin|AA, KK, QQ, JJ, TT, 99, 88, AKs, AQs, AJs, AKo, AQo|4-bet 直接全下。籌碼不足以做「4-bet 後棄牌」，只能推或棄。
+0-15|HJ|4bet|fold|*|僅在你的 3-bet 未全下時才會遇到。
+0-15|HJ|4bet|call|AA, KK, QQ, JJ, TT, AKs, AKo|
+0-15|HJ|4bet|raise-2.5x|-|此情境不使用此尺寸
+0-15|HJ|4bet|raise-8x|-|此情境不使用此尺寸
+0-15|HJ|4bet|allin|-|此情境不全下
+
+# 0-15BB · CO
+0-15|CO|unopened|fold|*|此深度一律 All-in 或蓋牌。加注 2.5BB 後被推只能棄牌，等於白送籌碼，故 2.5 倍整欄不用。
+0-15|CO|unopened|call|-|此情境不跟注
+0-15|CO|unopened|raise-2.5x|-|此情境不使用此尺寸
+0-15|CO|unopened|raise-8x|-|此情境不使用此尺寸
+0-15|CO|unopened|allin|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AKs, AQs, AJs, ATs, A9s, A8s, A7s, A6s, A5s, A4s, A3s, A2s, KQs, KJs, KTs, K9s, K8s, QJs, QTs, Q9s, JTs, J9s, T9s, AKo, AQo, AJo, ATo, A9o, A8o, A7o, KQo, KJo, KTo, QJo|直接推全部籌碼。此深度開小加注後被 3-bet 只能棄牌，等於白送籌碼。
+0-15|CO|open|fold|*|以面對 HJ 小開牌為基準；面對 EP 開牌收緊至 99+, AQs+, AKo。
+0-15|CO|open|call|-|此情境不跟注
+0-15|CO|open|raise-2.5x|-|此情境不使用此尺寸
+0-15|CO|open|raise-8x|-|此情境不使用此尺寸
+0-15|CO|open|allin|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, AKs, AQs, AJs, ATs, A5s, A4s, KQs, AKo, AQo, AJo|3-bet 直接全下。此深度 3-bet 到一半籌碼已 pot-committed，不如一次推完。
+0-15|CO|open-raise|fold|*|前方為中後位互打時可略放寬；面對 EP 開牌＋EP 再加注則收緊至 JJ+, AKs, AKo。
+0-15|CO|open-raise|call|-|此情境不跟注
+0-15|CO|open-raise|raise-2.5x|-|此情境不使用此尺寸
+0-15|CO|open-raise|raise-8x|-|此情境不使用此尺寸
+0-15|CO|open-raise|allin|AA, KK, QQ, JJ, TT, AKs, AQs, AKo|冷 4-bet 直接全下。前方兩人範圍都強，此格是全表最緊的情境之一。
+0-15|CO|3bet|fold|*|你的開牌範圍寬，被打回來仍可用較寬的範圍反推。
+0-15|CO|3bet|call|-|此情境不跟注
+0-15|CO|3bet|raise-2.5x|-|此情境不使用此尺寸
+0-15|CO|3bet|raise-8x|-|此情境不使用此尺寸
+0-15|CO|3bet|allin|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, AKs, AQs, AJs, ATs, A5s, KQs, AKo, AQo, AJo|4-bet 直接全下。籌碼不足以做「4-bet 後棄牌」，只能推或棄。
+0-15|CO|4bet|fold|*|僅在你的 3-bet 未全下時才會遇到。
+0-15|CO|4bet|call|AA, KK, QQ, JJ, TT, AKs, AKo|
+0-15|CO|4bet|raise-2.5x|-|此情境不使用此尺寸
+0-15|CO|4bet|raise-8x|-|此情境不使用此尺寸
+0-15|CO|4bet|allin|-|此情境不全下
+
+# 0-15BB · BTN
+0-15|BTN|unopened|fold|*|此深度一律 All-in 或蓋牌。加注 2.5BB 後被推只能棄牌，等於白送籌碼，故 2.5 倍整欄不用。
+0-15|BTN|unopened|call|-|此情境不跟注
+0-15|BTN|unopened|raise-2.5x|-|此情境不使用此尺寸
+0-15|BTN|unopened|raise-8x|-|此情境不使用此尺寸
+0-15|BTN|unopened|allin|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AKs, AQs, AJs, ATs, A9s, A8s, A7s, A6s, A5s, A4s, A3s, A2s, KQs, KJs, KTs, K9s, K8s, K7s, K6s, K5s, QJs, QTs, Q9s, Q8s, Q7s, JTs, J9s, J8s, T9s, T8s, 98s, AKo, AQo, AJo, ATo, A9o, A8o, A7o, A6o, A5o, A4o, A3o, A2o, KQo, KJo, KTo, K9o, QJo, QTo, JTo|直接推全部籌碼。此深度開小加注後被 3-bet 只能棄牌，等於白送籌碼。
+0-15|BTN|open|fold|*|以面對 CO 小開牌為基準；面對 EP 開牌收緊至 99+, AQs+, AKo。
+0-15|BTN|open|call|-|此情境不跟注
+0-15|BTN|open|raise-2.5x|-|此情境不使用此尺寸
+0-15|BTN|open|raise-8x|-|此情境不使用此尺寸
+0-15|BTN|open|allin|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, AKs, AQs, AJs, ATs, A9s, A8s, A5s, A4s, A3s, A2s, KQs, KJs, KTs, QJs, AKo, AQo, AJo, ATo, KQo, KJo|3-bet 直接全下。此深度 3-bet 到一半籌碼已 pot-committed，不如一次推完。
+0-15|BTN|open-raise|fold|*|前方為中後位互打時可用此範圍；面對 EP 開牌＋EP 再加注則收緊至 JJ+, AKs, AKo。
+0-15|BTN|open-raise|call|-|此情境不跟注
+0-15|BTN|open-raise|raise-2.5x|-|此情境不使用此尺寸
+0-15|BTN|open-raise|raise-8x|-|此情境不使用此尺寸
+0-15|BTN|open-raise|allin|AA, KK, QQ, JJ, TT, AKs, AQs, AKo|冷 4-bet 直接全下。前方兩人範圍都強，此格是全表最緊的情境之一。
+0-15|BTN|3bet|fold|*|你的開牌範圍最寬，盲注 3-bet 你的範圍也寬，故可用較寬範圍反推。
+0-15|BTN|3bet|call|-|此情境不跟注
+0-15|BTN|3bet|raise-2.5x|-|此情境不使用此尺寸
+0-15|BTN|3bet|raise-8x|-|此情境不使用此尺寸
+0-15|BTN|3bet|allin|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, AKs, AQs, AJs, ATs, A5s, KQs, AKo, AQo, AJo|4-bet 直接全下。籌碼不足以做「4-bet 後棄牌」，只能推或棄。
+0-15|BTN|4bet|fold|*|僅在你的 3-bet 未全下時才會遇到。
+0-15|BTN|4bet|call|AA, KK, QQ, JJ, TT, AKs, AKo|
+0-15|BTN|4bet|raise-2.5x|-|此情境不使用此尺寸
+0-15|BTN|4bet|raise-8x|-|此情境不使用此尺寸
+0-15|BTN|4bet|allin|-|此情境不全下
+
+# 0-15BB · SB
+0-15|SB|unopened|fold|*|此深度一律 All-in 或蓋牌。加注 2.5BB 後被推只能棄牌，等於白送籌碼，故 2.5 倍整欄不用。 也不要跛入，會被 BB 免費看牌懲罰。
+0-15|SB|unopened|call|-|此情境不跟注
+0-15|SB|unopened|raise-2.5x|-|此情境不使用此尺寸
+0-15|SB|unopened|raise-8x|-|此情境不使用此尺寸
+0-15|SB|unopened|allin|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AKs, AQs, AJs, ATs, A9s, A8s, A7s, A6s, A5s, A4s, A3s, A2s, KQs, KJs, KTs, K9s, K8s, K7s, K6s, K5s, K4s, K3s, K2s, QJs, QTs, Q9s, Q8s, Q7s, Q6s, Q5s, Q4s, JTs, J9s, J8s, J7s, J6s, T9s, T8s, T7s, 98s, 97s, 87s, AKo, AQo, AJo, ATo, A9o, A8o, A7o, A6o, A5o, A4o, A3o, A2o, KQo, KJo, KTo, K9o, K8o, K7o, K6o, QJo, QTo, Q9o, Q8o, JTo, J9o, T9o|直接推全部籌碼。此深度開小加注後被 3-bet 只能棄牌，等於白送籌碼。
+0-15|SB|open|fold|*|以面對 CO/BTN 小開牌為基準；面對 EP 開牌收緊至 99+, AQs+, AKo。無位置，不冷跟。
+0-15|SB|open|call|-|此情境不跟注
+0-15|SB|open|raise-2.5x|-|此情境不使用此尺寸
+0-15|SB|open|raise-8x|-|此情境不使用此尺寸
+0-15|SB|open|allin|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, AKs, AQs, AJs, ATs, A9s, A8s, A5s, A4s, A3s, A2s, KQs, KJs, KTs, QJs, AKo, AQo, AJo, ATo, KQo, KJo|3-bet 直接全下。此深度 3-bet 到一半籌碼已 pot-committed，不如一次推完。
+0-15|SB|open-raise|fold|*|無位置且前方兩人範圍都強，此格要最緊。
+0-15|SB|open-raise|call|-|此情境不跟注
+0-15|SB|open-raise|raise-2.5x|-|此情境不使用此尺寸
+0-15|SB|open-raise|raise-8x|-|此情境不使用此尺寸
+0-15|SB|open-raise|allin|AA, KK, QQ, JJ, AKs, AKo|冷 4-bet 直接全下。前方兩人範圍都強，此格是全表最緊的情境之一。
+0-15|SB|3bet|fold|*|SB 開牌被 BB 3-bet。BB 的 3-bet 範圍很寬，可用寬範圍反推。
+0-15|SB|3bet|call|-|此情境不跟注
+0-15|SB|3bet|raise-2.5x|-|此情境不使用此尺寸
+0-15|SB|3bet|raise-8x|-|此情境不使用此尺寸
+0-15|SB|3bet|allin|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, 44, AKs, AQs, AJs, ATs, A9s, A8s, A5s, A4s, KQs, KJs, KTs, QJs, AKo, AQo, AJo, ATo, A9o, KQo, KJo|4-bet 直接全下。籌碼不足以做「4-bet 後棄牌」，只能推或棄。
+0-15|SB|4bet|fold|*|僅在你的 3-bet 未全下時才會遇到。
+0-15|SB|4bet|call|AA, KK, QQ, JJ, TT, AKs, AKo|
+0-15|SB|4bet|raise-2.5x|-|此情境不使用此尺寸
+0-15|SB|4bet|raise-8x|-|此情境不使用此尺寸
+0-15|SB|4bet|allin|-|此情境不全下
+
+# 0-15BB · BB
+0-15|BB|unopened|fold|-|無人加注時你已投入大盲，直接過牌看翻牌，不棄任何牌。若前方有跛入者，改用隔離推注：88+, ATs+, AJo+, KQs。
+0-15|BB|unopened|call|+|無人加注時你已投入大盲，直接過牌看翻牌，不棄任何牌。若前方有跛入者，改用隔離推注：88+, ATs+, AJo+, KQs。
+0-15|BB|unopened|raise-2.5x|-|尺寸過小，不用於此情境
+0-15|BB|unopened|raise-8x|-|僅在前方有跛入者時使用，見「蓋牌」列說明
+0-15|BB|unopened|allin|-|此深度無人加注時不全下
+0-15|BB|open|fold|*|以面對 BTN/SB 小開牌為基準（你關閉行動且賠率好，故跟注範圍很寬）。面對 EP 開牌時整體收緊：只推 99+, AQs+, AKo，其餘全棄。
+0-15|BB|open|call|33, 22, K8s, K7s, K6s, K5s, QTs, Q9s, Q8s, Q7s, JTs, J9s, J8s, J7s, T9s, T8s, T7s, 98s, 97s, 87s, 76s, 65s, 54s, A8o, A7o, A6o, A5o, A4o, A3o, A2o, KTo, K9o, QJo, QTo, Q9o, JTo, J9o, T9o|
+0-15|BB|open|raise-2.5x|-|此情境不使用此尺寸
+0-15|BB|open|raise-8x|-|此情境不使用此尺寸
+0-15|BB|open|allin|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, 44, AKs, AQs, AJs, ATs, A9s, A8s, A7s, A5s, A4s, A3s, A2s, KQs, KJs, KTs, K9s, QJs, AKo, AQo, AJo, ATo, A9o, KQo, KJo|3-bet 直接全下。此深度 3-bet 到一半籌碼已 pot-committed，不如一次推完。
+0-15|BB|open-raise|fold|*|前方兩人範圍都強，無位置，此格要最緊。
+0-15|BB|open-raise|call|-|此情境不跟注
+0-15|BB|open-raise|raise-2.5x|-|此情境不使用此尺寸
+0-15|BB|open-raise|raise-8x|-|此情境不使用此尺寸
+0-15|BB|open-raise|allin|AA, KK, QQ, JJ, AKs, AKo|冷 4-bet 直接全下。前方兩人範圍都強，此格是全表最緊的情境之一。
+0-15|BB|3bet|fold|*|你在 BB 隔離跛入者後被 3-bet。
+0-15|BB|3bet|call|-|此情境不跟注
+0-15|BB|3bet|raise-2.5x|-|此情境不使用此尺寸
+0-15|BB|3bet|raise-8x|-|此情境不使用此尺寸
+0-15|BB|3bet|allin|AA, KK, QQ, JJ, TT, 99, AKs, AQs, AKo|4-bet 直接全下。籌碼不足以做「4-bet 後棄牌」，只能推或棄。
+0-15|BB|4bet|fold|*|僅在你的 3-bet 未全下時才會遇到。
+0-15|BB|4bet|call|AA, KK, QQ, JJ, TT, AKs, AKo|
+0-15|BB|4bet|raise-2.5x|-|此情境不使用此尺寸
+0-15|BB|4bet|raise-8x|-|此情境不使用此尺寸
+0-15|BB|4bet|allin|-|此情境不全下
+
+# 35-50BB · UTG
+35-50|UTG|unopened|fold|*|開牌到 2.5BB。KJo、QJo、ATo 在此位置是虧損牌，全部蓋掉。
+35-50|UTG|unopened|call|-|此情境不跟注
+35-50|UTG|unopened|raise-2.5x|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, AKs, AQs, AJs, ATs, A9s, A5s, KQs, KJs, KTs, QJs, JTs, AKo, AQo, AJo, KQo|尺寸：加注到約 2.5BB（前方 1BB × 2.5）
+35-50|UTG|unopened|raise-8x|-|此情境不使用此尺寸
+35-50|UTG|unopened|allin|-|此情境不全下
+35-50|UTG|open|fold|-|無此情境：UTG 為全桌第一個行動者，前方不可能已有加注
+35-50|UTG|open|call|-|無此情境：UTG 為全桌第一個行動者，前方不可能已有加注
+35-50|UTG|open|raise-2.5x|-|無此情境：UTG 為全桌第一個行動者，前方不可能已有加注
+35-50|UTG|open|raise-8x|-|無此情境：UTG 為全桌第一個行動者，前方不可能已有加注
+35-50|UTG|open|allin|-|無此情境：UTG 為全桌第一個行動者，前方不可能已有加注
+35-50|UTG|open-raise|fold|-|無此情境：UTG 前方無人行動，不可能出現「開牌＋再加注」
+35-50|UTG|open-raise|call|-|無此情境：UTG 前方無人行動，不可能出現「開牌＋再加注」
+35-50|UTG|open-raise|raise-2.5x|-|無此情境：UTG 前方無人行動，不可能出現「開牌＋再加注」
+35-50|UTG|open-raise|raise-8x|-|無此情境：UTG 前方無人行動，不可能出現「開牌＋再加注」
+35-50|UTG|open-raise|allin|-|無此情境：UTG 前方無人行動，不可能出現「開牌＋再加注」
+35-50|UTG|3bet|fold|*|此深度 4-bet 到 19BB 已承諾近半籌碼，不如直接全下，故 2.5 倍不用於 4-bet。
+35-50|UTG|3bet|call|JJ, TT, 99, AQs|
+35-50|UTG|3bet|raise-2.5x|-|此情境不使用此尺寸
+35-50|UTG|3bet|raise-8x|-|此情境不使用此尺寸
+35-50|UTG|3bet|allin|AA, KK, QQ, AKs, AKo|4-bet 直接全下。籌碼不足以做「4-bet 後棄牌」，只能推或棄。
+35-50|UTG|4bet|fold|-|無此情境：UTG 前方無加注可打，無法 3-bet，故不會面對 4-bet
+35-50|UTG|4bet|call|-|無此情境：UTG 前方無加注可打，無法 3-bet，故不會面對 4-bet
+35-50|UTG|4bet|raise-2.5x|-|無此情境：UTG 前方無加注可打，無法 3-bet，故不會面對 4-bet
+35-50|UTG|4bet|raise-8x|-|無此情境：UTG 前方無加注可打，無法 3-bet，故不會面對 4-bet
+35-50|UTG|4bet|allin|-|無此情境：UTG 前方無加注可打，無法 3-bet，故不會面對 4-bet
+
+# 35-50BB · UTG+1
+35-50|UTG+1|unopened|fold|*|開牌到 2.5BB。
+35-50|UTG+1|unopened|call|-|此情境不跟注
+35-50|UTG+1|unopened|raise-2.5x|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, AKs, AQs, AJs, ATs, A9s, A8s, A5s, A4s, KQs, KJs, KTs, QJs, QTs, JTs, T9s, AKo, AQo, AJo, KQo|尺寸：加注到約 2.5BB（前方 1BB × 2.5）
+35-50|UTG+1|unopened|raise-8x|-|此情境不使用此尺寸
+35-50|UTG+1|unopened|allin|-|此情境不全下
+35-50|UTG+1|open|fold|*|3-bet 到 6.25BB。此深度 3-bet 範圍必須偏線性（少詐唬），因為被 4-bet 就沒有翻後空間。AQo 面對 UTG 開牌是虧損牌。
+35-50|UTG+1|open|call|TT, 99, 88, 77, AJs, KQs|
+35-50|UTG+1|open|raise-2.5x|AA, KK, QQ, JJ, AKs, AQs, AKo|尺寸：加注到約 6.2BB（前方 2.5BB × 2.5）
+35-50|UTG+1|open|raise-8x|-|此情境不使用此尺寸
+35-50|UTG+1|open|allin|-|此情境不全下
+35-50|UTG+1|open-raise|fold|-|無此情境：UTG+1 前方僅 UTG 一人，湊不出「開牌＋再加注」
+35-50|UTG+1|open-raise|call|-|無此情境：UTG+1 前方僅 UTG 一人，湊不出「開牌＋再加注」
+35-50|UTG+1|open-raise|raise-2.5x|-|無此情境：UTG+1 前方僅 UTG 一人，湊不出「開牌＋再加注」
+35-50|UTG+1|open-raise|raise-8x|-|無此情境：UTG+1 前方僅 UTG 一人，湊不出「開牌＋再加注」
+35-50|UTG+1|open-raise|allin|-|無此情境：UTG+1 前方僅 UTG 一人，湊不出「開牌＋再加注」
+35-50|UTG+1|3bet|fold|*|此深度 4-bet 到 19BB 已承諾近半籌碼，不如直接全下，故 2.5 倍不用於 4-bet。
+35-50|UTG+1|3bet|call|JJ, TT, 99, AQs|
+35-50|UTG+1|3bet|raise-2.5x|-|此情境不使用此尺寸
+35-50|UTG+1|3bet|raise-8x|-|此情境不使用此尺寸
+35-50|UTG+1|3bet|allin|AA, KK, QQ, AKs, AKo|4-bet 直接全下。籌碼不足以做「4-bet 後棄牌」，只能推或棄。
+35-50|UTG+1|4bet|fold|*|JJ 與 AQs 在 40BB 面對 4-bet 是虧損牌。
+35-50|UTG+1|4bet|call|QQ, AKo|
+35-50|UTG+1|4bet|raise-2.5x|-|此情境不使用此尺寸
+35-50|UTG+1|4bet|raise-8x|-|此情境不使用此尺寸
+35-50|UTG+1|4bet|allin|AA, KK, AKs|5-bet 直接全下。
+
+# 35-50BB · UTG+2
+35-50|UTG+2|unopened|fold|*|開牌到 2.5BB。
+35-50|UTG+2|unopened|call|-|此情境不跟注
+35-50|UTG+2|unopened|raise-2.5x|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, 44, AKs, AQs, AJs, ATs, A9s, A8s, A7s, A5s, A4s, A3s, KQs, KJs, KTs, K9s, QJs, QTs, JTs, T9s, 98s, AKo, AQo, AJo, ATo, KQo|尺寸：加注到約 2.5BB（前方 1BB × 2.5）
+35-50|UTG+2|unopened|raise-8x|-|此情境不使用此尺寸
+35-50|UTG+2|unopened|allin|-|此情境不全下
+35-50|UTG+2|open|fold|*|3-bet 到 6.25BB。以面對 EP 開牌為基準。
+35-50|UTG+2|open|call|TT, 99, 88, 77, AJs, KQs|
+35-50|UTG+2|open|raise-2.5x|AA, KK, QQ, JJ, AKs, AQs, AKo|尺寸：加注到約 6.2BB（前方 2.5BB × 2.5）
+35-50|UTG+2|open|raise-8x|-|此情境不使用此尺寸
+35-50|UTG+2|open|allin|-|此情境不全下
+35-50|UTG+2|open-raise|fold|*|冷 4-bet 直接全下。99、AQo、AJs、KQs 在此情境是經典虧損牌。
+35-50|UTG+2|open-raise|call|JJ, TT, AQs|
+35-50|UTG+2|open-raise|raise-2.5x|-|此情境不使用此尺寸
+35-50|UTG+2|open-raise|raise-8x|-|此情境不使用此尺寸
+35-50|UTG+2|open-raise|allin|AA, KK, QQ, AKs, AKo|冷 4-bet 直接全下。前方兩人範圍都強，此格是全表最緊的情境之一。
+35-50|UTG+2|3bet|fold|*|此深度 4-bet 到 19BB 已承諾近半籌碼，不如直接全下，故 2.5 倍不用於 4-bet。
+35-50|UTG+2|3bet|call|JJ, TT, 99, AQs|
+35-50|UTG+2|3bet|raise-2.5x|-|此情境不使用此尺寸
+35-50|UTG+2|3bet|raise-8x|-|此情境不使用此尺寸
+35-50|UTG+2|3bet|allin|AA, KK, QQ, AKs, AKo|4-bet 直接全下。籌碼不足以做「4-bet 後棄牌」，只能推或棄。
+35-50|UTG+2|4bet|fold|*|JJ 與 AQs 在 40BB 面對 4-bet 是虧損牌。
+35-50|UTG+2|4bet|call|QQ, AKo|
+35-50|UTG+2|4bet|raise-2.5x|-|此情境不使用此尺寸
+35-50|UTG+2|4bet|raise-8x|-|此情境不使用此尺寸
+35-50|UTG+2|4bet|allin|AA, KK, AKs|5-bet 直接全下。
+
+# 35-50BB · LJ
+35-50|LJ|unopened|fold|*|開牌到 2.5BB。
+35-50|LJ|unopened|call|-|此情境不跟注
+35-50|LJ|unopened|raise-2.5x|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, 44, 33, AKs, AQs, AJs, ATs, A9s, A8s, A7s, A6s, A5s, A4s, A3s, A2s, KQs, KJs, KTs, K9s, QJs, QTs, Q9s, JTs, J9s, T9s, T8s, 98s, AKo, AQo, AJo, ATo, KQo, KJo|尺寸：加注到約 2.5BB（前方 1BB × 2.5）
+35-50|LJ|unopened|raise-8x|-|此情境不使用此尺寸
+35-50|LJ|unopened|allin|-|此情境不全下
+35-50|LJ|open|fold|*|3-bet 到 6.25BB。以面對 EP 開牌為基準；跟注僅在有位置時使用。
+35-50|LJ|open|call|99, 88, 77, AJs, ATs, KQs, KJs, QJs, JTs|
+35-50|LJ|open|raise-2.5x|AA, KK, QQ, JJ, TT, AKs, AQs, A5s, AKo|尺寸：加注到約 6.2BB（前方 2.5BB × 2.5）
+35-50|LJ|open|raise-8x|-|此情境不使用此尺寸
+35-50|LJ|open|allin|-|此情境不全下
+35-50|LJ|open-raise|fold|*|冷 4-bet 直接全下。
+35-50|LJ|open-raise|call|JJ, TT, AQs|
+35-50|LJ|open-raise|raise-2.5x|-|此情境不使用此尺寸
+35-50|LJ|open-raise|raise-8x|-|此情境不使用此尺寸
+35-50|LJ|open-raise|allin|AA, KK, QQ, AKs, AKo|冷 4-bet 直接全下。前方兩人範圍都強，此格是全表最緊的情境之一。
+35-50|LJ|3bet|fold|*|此深度 4-bet 到 19BB 已承諾近半籌碼，不如直接全下，故 2.5 倍不用於 4-bet。
+35-50|LJ|3bet|call|JJ, TT, 99, 88, AQs, AJs, KQs|
+35-50|LJ|3bet|raise-2.5x|-|此情境不使用此尺寸
+35-50|LJ|3bet|raise-8x|-|此情境不使用此尺寸
+35-50|LJ|3bet|allin|AA, KK, QQ, AKs, A5s, AKo|4-bet 直接全下。籌碼不足以做「4-bet 後棄牌」，只能推或棄。
+35-50|LJ|4bet|fold|*|
+35-50|LJ|4bet|call|QQ, AKo|
+35-50|LJ|4bet|raise-2.5x|-|此情境不使用此尺寸
+35-50|LJ|4bet|raise-8x|-|此情境不使用此尺寸
+35-50|LJ|4bet|allin|AA, KK, AKs|5-bet 直接全下。
+
+# 35-50BB · HJ
+35-50|HJ|unopened|fold|*|開牌到 2.5BB。
+35-50|HJ|unopened|call|-|此情境不跟注
+35-50|HJ|unopened|raise-2.5x|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AKs, AQs, AJs, ATs, A9s, A8s, A7s, A6s, A5s, A4s, A3s, A2s, KQs, KJs, KTs, K9s, K8s, QJs, QTs, Q9s, JTs, J9s, T9s, T8s, 98s, 97s, 87s, 76s, AKo, AQo, AJo, ATo, KQo, KJo, QJo|尺寸：加注到約 2.5BB（前方 1BB × 2.5）
+35-50|HJ|unopened|raise-8x|-|此情境不使用此尺寸
+35-50|HJ|unopened|allin|-|此情境不全下
+35-50|HJ|open|fold|*|3-bet 到 6.25BB。以面對 MP 開牌為基準；面對 EP 開牌收緊至 TT+, AQs+, AKo。
+35-50|HJ|open|call|99, 88, 77, 66, 55, ATs, A9s, KJs, QJs, JTs, T9s, AJo|
+35-50|HJ|open|raise-2.5x|AA, KK, QQ, JJ, TT, AKs, AQs, AJs, A5s, A4s, KQs, AKo, AQo|尺寸：加注到約 6.2BB（前方 2.5BB × 2.5）
+35-50|HJ|open|raise-8x|-|此情境不使用此尺寸
+35-50|HJ|open|allin|-|此情境不全下
+35-50|HJ|open-raise|fold|*|冷 4-bet 直接全下。
+35-50|HJ|open-raise|call|JJ, TT, AQs|
+35-50|HJ|open-raise|raise-2.5x|-|此情境不使用此尺寸
+35-50|HJ|open-raise|raise-8x|-|此情境不使用此尺寸
+35-50|HJ|open-raise|allin|AA, KK, QQ, AKs, AKo|冷 4-bet 直接全下。前方兩人範圍都強，此格是全表最緊的情境之一。
+35-50|HJ|3bet|fold|*|此深度 4-bet 到 19BB 已承諾近半籌碼，不如直接全下，故 2.5 倍不用於 4-bet。
+35-50|HJ|3bet|call|JJ, TT, 99, 88, AQs, AJs, KQs|
+35-50|HJ|3bet|raise-2.5x|-|此情境不使用此尺寸
+35-50|HJ|3bet|raise-8x|-|此情境不使用此尺寸
+35-50|HJ|3bet|allin|AA, KK, QQ, AKs, A5s, AKo|4-bet 直接全下。籌碼不足以做「4-bet 後棄牌」，只能推或棄。
+35-50|HJ|4bet|fold|*|
+35-50|HJ|4bet|call|QQ, AKo|
+35-50|HJ|4bet|raise-2.5x|-|此情境不使用此尺寸
+35-50|HJ|4bet|raise-8x|-|此情境不使用此尺寸
+35-50|HJ|4bet|allin|AA, KK, AKs|5-bet 直接全下。
+
+# 35-50BB · CO
+35-50|CO|unopened|fold|*|開牌到 2.2-2.5BB。
+35-50|CO|unopened|call|-|此情境不跟注
+35-50|CO|unopened|raise-2.5x|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AKs, AQs, AJs, ATs, A9s, A8s, A7s, A6s, A5s, A4s, A3s, A2s, KQs, KJs, KTs, K9s, K8s, K7s, QJs, QTs, Q9s, Q8s, JTs, J9s, J8s, T9s, T8s, 98s, 97s, 87s, 86s, 76s, 65s, AKo, AQo, AJo, ATo, A9o, KQo, KJo, KTo, QJo|尺寸：加注到約 2.5BB（前方 1BB × 2.5）
+35-50|CO|unopened|raise-8x|-|此情境不使用此尺寸
+35-50|CO|unopened|allin|-|此情境不全下
+35-50|CO|open|fold|*|3-bet 到 6.25BB。以面對 MP/HJ 開牌為基準；面對 EP 開牌收緊至 TT+, AQs+, AKo。
+35-50|CO|open|call|99, 88, 77, 66, 55, ATs, A9s, KJs, QJs, JTs, T9s, 98s, AJo|
+35-50|CO|open|raise-2.5x|AA, KK, QQ, JJ, TT, AKs, AQs, AJs, A5s, A4s, KQs, AKo, AQo|尺寸：加注到約 6.2BB（前方 2.5BB × 2.5）
+35-50|CO|open|raise-8x|-|此情境不使用此尺寸
+35-50|CO|open|allin|-|此情境不全下
+35-50|CO|open-raise|fold|*|冷 4-bet 直接全下。前方為後位互打時可用此範圍。
+35-50|CO|open-raise|call|TT, 99, AQs, AJs, KQs|
+35-50|CO|open-raise|raise-2.5x|-|此情境不使用此尺寸
+35-50|CO|open-raise|raise-8x|-|此情境不使用此尺寸
+35-50|CO|open-raise|allin|AA, KK, QQ, AKs, AKo|冷 4-bet 直接全下。前方兩人範圍都強，此格是全表最緊的情境之一。
+35-50|CO|3bet|fold|*|此深度 4-bet 到 19BB 已承諾近半籌碼，不如直接全下，故 2.5 倍不用於 4-bet。 跟注僅在有位置時使用。
+35-50|CO|3bet|call|TT, 99, 88, 77, AQs, AJs, ATs, KQs, KJs, QJs|
+35-50|CO|3bet|raise-2.5x|-|此情境不使用此尺寸
+35-50|CO|3bet|raise-8x|-|此情境不使用此尺寸
+35-50|CO|3bet|allin|AA, KK, QQ, JJ, AKs, A5s, A4s, AKo|4-bet 直接全下。籌碼不足以做「4-bet 後棄牌」，只能推或棄。
+35-50|CO|4bet|fold|*|以面對 BTN/盲注的 4-bet 為基準；面對 EP 的 4-bet 收緊至全下 AA, KK, AKs、跟注 QQ, AKo。
+35-50|CO|4bet|call|JJ|
+35-50|CO|4bet|raise-2.5x|-|此情境不使用此尺寸
+35-50|CO|4bet|raise-8x|-|此情境不使用此尺寸
+35-50|CO|4bet|allin|AA, KK, QQ, AKs, AKo|5-bet 直接全下。
+
+# 35-50BB · BTN
+35-50|BTN|unopened|fold|*|開牌到 2.2BB。
+35-50|BTN|unopened|call|-|此情境不跟注
+35-50|BTN|unopened|raise-2.5x|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AKs, AQs, AJs, ATs, A9s, A8s, A7s, A6s, A5s, A4s, A3s, A2s, KQs, KJs, KTs, K9s, K8s, K7s, K6s, K5s, K4s, QJs, QTs, Q9s, Q8s, Q7s, Q6s, JTs, J9s, J8s, J7s, T9s, T8s, T7s, 98s, 97s, 96s, 87s, 86s, 76s, 75s, 65s, 54s, AKo, AQo, AJo, ATo, A9o, A8o, A7o, A6o, A5o, A4o, KQo, KJo, KTo, K9o, K8o, QJo, QTo, Q9o, JTo, J9o, T9o|尺寸：加注到約 2.5BB（前方 1BB × 2.5）
+35-50|BTN|unopened|raise-8x|-|此情境不使用此尺寸
+35-50|BTN|unopened|allin|-|此情境不全下
+35-50|BTN|open|fold|*|3-bet 到 6.25BB。以面對 CO 開牌為基準；面對 EP 開牌收緊至 TT+, AQs+, AKo。
+35-50|BTN|open|call|77, 66, 55, 44, 33, 22, A9s, A8s, A7s, A6s, KTs, QTs, Q9s, J9s, T9s, 98s, 87s, 76s, AJo, ATo, KQo, KJo|
+35-50|BTN|open|raise-2.5x|AA, KK, QQ, JJ, TT, 99, 88, AKs, AQs, AJs, ATs, A5s, A4s, A3s, A2s, KQs, KJs, QJs, AKo, AQo|尺寸：加注到約 6.2BB（前方 2.5BB × 2.5）
+35-50|BTN|open|raise-8x|-|此情境不使用此尺寸
+35-50|BTN|open|allin|-|此情境不全下
+35-50|BTN|open-raise|fold|*|冷 4-bet 直接全下。
+35-50|BTN|open-raise|call|TT, 99, AQs, AJs, KQs|
+35-50|BTN|open-raise|raise-2.5x|-|此情境不使用此尺寸
+35-50|BTN|open-raise|raise-8x|-|此情境不使用此尺寸
+35-50|BTN|open-raise|allin|AA, KK, QQ, AKs, AKo|冷 4-bet 直接全下。前方兩人範圍都強，此格是全表最緊的情境之一。
+35-50|BTN|3bet|fold|*|此深度 4-bet 到 19BB 已承諾近半籌碼，不如直接全下，故 2.5 倍不用於 4-bet。 盲注 3-bet 你的範圍很寬，故你的跟注範圍也可以寬。
+35-50|BTN|3bet|call|TT, 99, 88, 77, 66, 55, AQs, AJs, ATs, A9s, KQs, KJs, KTs, QJs, JTs, T9s, AQo, AJo, KQo|
+35-50|BTN|3bet|raise-2.5x|-|此情境不使用此尺寸
+35-50|BTN|3bet|raise-8x|-|此情境不使用此尺寸
+35-50|BTN|3bet|allin|AA, KK, QQ, JJ, AKs, A5s, A4s, K9s, AKo|4-bet 直接全下。籌碼不足以做「4-bet 後棄牌」，只能推或棄。
+35-50|BTN|4bet|fold|*|
+35-50|BTN|4bet|call|JJ|
+35-50|BTN|4bet|raise-2.5x|-|此情境不使用此尺寸
+35-50|BTN|4bet|raise-8x|-|此情境不使用此尺寸
+35-50|BTN|4bet|allin|AA, KK, QQ, AKs, AKo|5-bet 直接全下。
+
+# 35-50BB · SB
+35-50|SB|unopened|fold|*|開牌到 3BB。此深度建議純加注策略，不跛入。
+35-50|SB|unopened|call|-|此情境不跟注
+35-50|SB|unopened|raise-2.5x|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AKs, AQs, AJs, ATs, A9s, A8s, A7s, A6s, A5s, A4s, A3s, A2s, KQs, KJs, KTs, K9s, K8s, K7s, K6s, QJs, QTs, Q9s, Q8s, JTs, J9s, J8s, T9s, T8s, 98s, 97s, 87s, 76s, AKo, AQo, AJo, ATo, A9o, A8o, A7o, A5o, A4o, KQo, KJo, KTo, K9o, QJo, QTo, Q9o, JTo|尺寸：加注到約 2.5BB（前方 1BB × 2.5）
+35-50|SB|unopened|raise-8x|-|此情境不使用此尺寸
+35-50|SB|unopened|allin|-|此情境不全下
+35-50|SB|open|fold|*|3-bet 到 7.5BB（無位置加大）。以面對 CO/BTN 開牌為基準；面對 EP 開牌收緊至 JJ+, AQs+, AKo。無位置，建議偏 3-bet or fold。
+35-50|SB|open|call|77, 66, 55, A9s, A8s, KTs, QJs|
+35-50|SB|open|raise-2.5x|AA, KK, QQ, JJ, TT, 99, 88, AKs, AQs, AJs, ATs, A5s, A4s, A3s, A2s, KQs, KJs, JTs, AKo, AQo, AJo|尺寸：加注到約 6.2BB（前方 2.5BB × 2.5）
+35-50|SB|open|raise-8x|-|此情境不使用此尺寸
+35-50|SB|open|allin|-|此情境不全下
+35-50|SB|open-raise|fold|*|無位置＋低 SPR，此格要極緊。
+35-50|SB|open-raise|call|JJ, AQs|
+35-50|SB|open-raise|raise-2.5x|-|此情境不使用此尺寸
+35-50|SB|open-raise|raise-8x|-|此情境不使用此尺寸
+35-50|SB|open-raise|allin|AA, KK, QQ, AKs, AKo|冷 4-bet 直接全下。前方兩人範圍都強，此格是全表最緊的情境之一。
+35-50|SB|3bet|fold|*|此深度 4-bet 到 19BB 已承諾近半籌碼，不如直接全下，故 2.5 倍不用於 4-bet。
+35-50|SB|3bet|call|99, 88, 77, 66, AQs, AJs, ATs, KQs, KJs, QJs, AQo|
+35-50|SB|3bet|raise-2.5x|-|此情境不使用此尺寸
+35-50|SB|3bet|raise-8x|-|此情境不使用此尺寸
+35-50|SB|3bet|allin|AA, KK, QQ, JJ, TT, AKs, A5s, A4s, AKo|4-bet 直接全下。籌碼不足以做「4-bet 後棄牌」，只能推或棄。
+35-50|SB|4bet|fold|*|
+35-50|SB|4bet|call|JJ|
+35-50|SB|4bet|raise-2.5x|-|此情境不使用此尺寸
+35-50|SB|4bet|raise-8x|-|此情境不使用此尺寸
+35-50|SB|4bet|allin|AA, KK, QQ, AKs, AKo|5-bet 直接全下。
+
+# 35-50BB · BB
+35-50|BB|unopened|fold|-|無人加注時你已投入大盲，直接過牌看翻牌。若前方有跛入者，改用隔離加注到 5BB：88+, ATs+, KJs+, QJs, AJo+, KQo。
+35-50|BB|unopened|call|+|無人加注時你已投入大盲，直接過牌看翻牌。若前方有跛入者，改用隔離加注到 5BB：88+, ATs+, KJs+, QJs, AJo+, KQo。
+35-50|BB|unopened|raise-2.5x|-|尺寸過小，不用於此情境
+35-50|BB|unopened|raise-8x|-|僅在前方有跛入者時使用，見「蓋牌」列說明
+35-50|BB|unopened|allin|-|此深度無人加注時不全下
+35-50|BB|open|fold|*|3-bet 到 8BB（無位置加大）。以面對 CO/BTN/SB 開牌為基準；面對 EP 開牌時 3-bet 收緊至 TT+, AQs+, AKo，跟注收緊至 99-22, ATs+, KTs+, QTs+, J9s+, T9s, 98s, AJo+, KQo。
+35-50|BB|open|call|66, 55, 44, 33, 22, A8s, A7s, A6s, K9s, K8s, K7s, K6s, K5s, Q9s, Q8s, Q7s, J9s, J8s, J7s, T9s, T8s, T7s, 97s, 96s, 86s, 76s, 75s, 65s, 54s, A9o, A8o, A7o, A6o, A5o, A4o, A3o, A2o, KJo, KTo, K9o, K8o, QJo, QTo, Q9o, JTo, J9o|
+35-50|BB|open|raise-2.5x|AA, KK, QQ, JJ, TT, 99, 88, 77, AKs, AQs, AJs, ATs, A9s, A5s, A4s, A3s, A2s, KQs, KJs, KTs, QJs, QTs, JTs, 98s, 87s, AKo, AQo, AJo, ATo, KQo|尺寸：加注到約 6.2BB（前方 2.5BB × 2.5）
+35-50|BB|open|raise-8x|-|此情境不使用此尺寸
+35-50|BB|open|allin|-|此情境不全下
+35-50|BB|open-raise|fold|*|小對子有賠率可搏三條；中等強度的闊牌（AQo、AJs、KQs）在此是虧損牌。
+35-50|BB|open-raise|call|JJ, 77, 66, 55, 44, 33, 22, AQs|
+35-50|BB|open-raise|raise-2.5x|-|此情境不使用此尺寸
+35-50|BB|open-raise|raise-8x|-|此情境不使用此尺寸
+35-50|BB|open-raise|allin|AA, KK, QQ, AKs, AKo|冷 4-bet 直接全下。前方兩人範圍都強，此格是全表最緊的情境之一。
+35-50|BB|3bet|fold|*|你在 BB 隔離跛入者後被 3-bet。
+35-50|BB|3bet|call|JJ, TT, 99, AQs|
+35-50|BB|3bet|raise-2.5x|-|此情境不使用此尺寸
+35-50|BB|3bet|raise-8x|-|此情境不使用此尺寸
+35-50|BB|3bet|allin|AA, KK, QQ, AKs, AKo|4-bet 直接全下。籌碼不足以做「4-bet 後棄牌」，只能推或棄。
+35-50|BB|4bet|fold|*|
+35-50|BB|4bet|call|QQ, AKo|
+35-50|BB|4bet|raise-2.5x|-|此情境不使用此尺寸
+35-50|BB|4bet|raise-8x|-|此情境不使用此尺寸
+35-50|BB|4bet|allin|AA, KK, AKs|5-bet 直接全下。
+
+# 100BB · UTG
+100|UTG|unopened|fold|*|開牌到 2.5BB。KJo、QJo、ATo、KQo、A9s 在 UTG 都是虧損牌。若前方有跛入者，改用 8 倍隔離：TT+, AQs+, AKo。
+100|UTG|unopened|call|-|此情境不跟注
+100|UTG|unopened|raise-2.5x|AA, KK, QQ, JJ, TT, 99, 88, 77, AKs, AQs, AJs, ATs, A5s, KQs, KJs, KTs, QJs, JTs, T9s, AKo, AQo, AJo|尺寸：加注到約 2.5BB（前方 1BB × 2.5）
+100|UTG|unopened|raise-8x|-|此情境不使用此尺寸
+100|UTG|unopened|allin|-|此情境不全下
+100|UTG|open|fold|-|無此情境：UTG 為全桌第一個行動者，前方不可能已有加注
+100|UTG|open|call|-|無此情境：UTG 為全桌第一個行動者，前方不可能已有加注
+100|UTG|open|raise-2.5x|-|無此情境：UTG 為全桌第一個行動者，前方不可能已有加注
+100|UTG|open|raise-8x|-|無此情境：UTG 為全桌第一個行動者，前方不可能已有加注
+100|UTG|open|allin|-|無此情境：UTG 為全桌第一個行動者，前方不可能已有加注
+100|UTG|open-raise|fold|-|無此情境：UTG 前方無人行動，不可能出現「開牌＋再加注」
+100|UTG|open-raise|call|-|無此情境：UTG 前方無人行動，不可能出現「開牌＋再加注」
+100|UTG|open-raise|raise-2.5x|-|無此情境：UTG 前方無人行動，不可能出現「開牌＋再加注」
+100|UTG|open-raise|raise-8x|-|無此情境：UTG 前方無人行動，不可能出現「開牌＋再加注」
+100|UTG|open-raise|allin|-|無此情境：UTG 前方無人行動，不可能出現「開牌＋再加注」
+100|UTG|3bet|fold|*|4-bet 到 19-22BB。A5s 是詐唬用牌（阻斷 A、可做輪子順）。4-bet 用 2.5 倍即可，保留 5-bet 空間，故 8 倍不用。
+100|UTG|3bet|call|JJ, TT, 99, AQs, AJs, KQs|
+100|UTG|3bet|raise-2.5x|AA, KK, QQ, AKs, A5s, AKo|尺寸：加注到約 22.5BB（前方 9BB × 2.5）
+100|UTG|3bet|raise-8x|-|此情境不使用此尺寸
+100|UTG|3bet|allin|-|此情境不全下
+100|UTG|4bet|fold|-|無此情境：UTG 前方無加注可打，無法 3-bet，故不會面對 4-bet
+100|UTG|4bet|call|-|無此情境：UTG 前方無加注可打，無法 3-bet，故不會面對 4-bet
+100|UTG|4bet|raise-2.5x|-|無此情境：UTG 前方無加注可打，無法 3-bet，故不會面對 4-bet
+100|UTG|4bet|raise-8x|-|無此情境：UTG 前方無加注可打，無法 3-bet，故不會面對 4-bet
+100|UTG|4bet|allin|-|無此情境：UTG 前方無加注可打，無法 3-bet，故不會面對 4-bet
+
+# 100BB · UTG+1
+100|UTG+1|unopened|fold|*|開牌到 2.5BB。若前方有跛入者，改用 8 倍隔離：99+, AJs+, AQo+。
+100|UTG+1|unopened|call|-|此情境不跟注
+100|UTG+1|unopened|raise-2.5x|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, AKs, AQs, AJs, ATs, A9s, A5s, A4s, KQs, KJs, KTs, QJs, QTs, JTs, T9s, AKo, AQo, AJo, KQo|尺寸：加注到約 2.5BB（前方 1BB × 2.5）
+100|UTG+1|unopened|raise-8x|-|此情境不使用此尺寸
+100|UTG+1|unopened|allin|-|此情境不全下
+100|UTG+1|open|fold|*|3-bet 到 6.25BB。面對 UTG 開牌時 AQo、ATs、JTs 都是虧損牌。8 倍尺寸不用：100BB 面對單一開牌者用大尺寸只會趕走弱牌、留下強牌，價值全失。8 倍只在擠壓（前方有開牌＋跟注者）或隔離跛入者時才用。
+100|UTG+1|open|call|JJ, TT, 99, AQs, AJs, KQs|
+100|UTG+1|open|raise-2.5x|AA, KK, QQ, AKs, A5s, AKo|尺寸：加注到約 6.2BB（前方 2.5BB × 2.5）
+100|UTG+1|open|raise-8x|-|此情境不使用此尺寸
+100|UTG+1|open|allin|-|此情境不全下
+100|UTG+1|open-raise|fold|-|無此情境：UTG+1 前方僅 UTG 一人，湊不出「開牌＋再加注」
+100|UTG+1|open-raise|call|-|無此情境：UTG+1 前方僅 UTG 一人，湊不出「開牌＋再加注」
+100|UTG+1|open-raise|raise-2.5x|-|無此情境：UTG+1 前方僅 UTG 一人，湊不出「開牌＋再加注」
+100|UTG+1|open-raise|raise-8x|-|無此情境：UTG+1 前方僅 UTG 一人，湊不出「開牌＋再加注」
+100|UTG+1|open-raise|allin|-|無此情境：UTG+1 前方僅 UTG 一人，湊不出「開牌＋再加注」
+100|UTG+1|3bet|fold|*|4-bet 到 19-22BB。4-bet 用 2.5 倍即可，保留 5-bet 空間，故 8 倍不用。
+100|UTG+1|3bet|call|JJ, TT, 99, AQs, AJs, KQs|
+100|UTG+1|3bet|raise-2.5x|AA, KK, QQ, AKs, A5s, AKo|尺寸：加注到約 22.5BB（前方 9BB × 2.5）
+100|UTG+1|3bet|raise-8x|-|此情境不使用此尺寸
+100|UTG+1|3bet|allin|-|此情境不全下
+100|UTG+1|4bet|fold|*|5-bet 一律全下。QQ 面對 EP 的 4-bet 只跟注不全下，這是 100BB 最常見的爆炸點。
+100|UTG+1|4bet|call|QQ, JJ, AKs, AKo|
+100|UTG+1|4bet|raise-2.5x|-|此情境不使用此尺寸
+100|UTG+1|4bet|raise-8x|-|此情境不使用此尺寸
+100|UTG+1|4bet|allin|AA, KK, A5s|5-bet 直接全下。
+
+# 100BB · UTG+2
+100|UTG+2|unopened|fold|*|開牌到 2.5BB。若前方有跛入者，改用 8 倍隔離：99+, AJs+, AQo+, KQs。
+100|UTG+2|unopened|call|-|此情境不跟注
+100|UTG+2|unopened|raise-2.5x|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, AKs, AQs, AJs, ATs, A9s, A8s, A5s, A4s, A3s, KQs, KJs, KTs, K9s, QJs, QTs, JTs, T9s, 98s, AKo, AQo, AJo, KQo|尺寸：加注到約 2.5BB（前方 1BB × 2.5）
+100|UTG+2|unopened|raise-8x|-|此情境不使用此尺寸
+100|UTG+2|unopened|allin|-|此情境不全下
+100|UTG+2|open|fold|*|3-bet 到 6.25BB。以面對 EP 開牌為基準。8 倍尺寸不用：100BB 面對單一開牌者用大尺寸只會趕走弱牌、留下強牌，價值全失。8 倍只在擠壓（前方有開牌＋跟注者）或隔離跛入者時才用。
+100|UTG+2|open|call|JJ, TT, 99, AQs, AJs, KQs|
+100|UTG+2|open|raise-2.5x|AA, KK, QQ, AKs, A5s, AKo|尺寸：加注到約 6.2BB（前方 2.5BB × 2.5）
+100|UTG+2|open|raise-8x|-|此情境不使用此尺寸
+100|UTG+2|open|allin|-|此情境不全下
+100|UTG+2|open-raise|fold|*|冷 4-bet 到 19BB。★此格是全表最大的錢坑：TT、AQo、AKo（邊緣）、AJs、KQs 拿來冷跟或冷 4-bet 長期都虧損。
+100|UTG+2|open-raise|call|JJ, AQs|
+100|UTG+2|open-raise|raise-2.5x|AA, KK, QQ, AKs|尺寸：加注到約 18.8BB（前方 7.5BB × 2.5）
+100|UTG+2|open-raise|raise-8x|-|此情境不使用此尺寸
+100|UTG+2|open-raise|allin|-|此情境不全下
+100|UTG+2|3bet|fold|*|4-bet 到 19-22BB。4-bet 用 2.5 倍即可，保留 5-bet 空間，故 8 倍不用。
+100|UTG+2|3bet|call|JJ, TT, 99, 88, AQs, AJs, ATs, KQs, KJs, QJs|
+100|UTG+2|3bet|raise-2.5x|AA, KK, QQ, AKs, A5s, A4s, AKo|尺寸：加注到約 22.5BB（前方 9BB × 2.5）
+100|UTG+2|3bet|raise-8x|-|此情境不使用此尺寸
+100|UTG+2|3bet|allin|-|此情境不全下
+100|UTG+2|4bet|fold|*|5-bet 一律全下。
+100|UTG+2|4bet|call|QQ, JJ, AKs, AKo|
+100|UTG+2|4bet|raise-2.5x|-|此情境不使用此尺寸
+100|UTG+2|4bet|raise-8x|-|此情境不使用此尺寸
+100|UTG+2|4bet|allin|AA, KK, A5s|5-bet 直接全下。
+
+# 100BB · LJ
+100|LJ|unopened|fold|*|開牌到 2.5BB。若前方有跛入者，改用 8 倍隔離：88+, ATs+, AJo+, KQs。
+100|LJ|unopened|call|-|此情境不跟注
+100|LJ|unopened|raise-2.5x|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, 44, AKs, AQs, AJs, ATs, A9s, A8s, A7s, A5s, A4s, A3s, A2s, KQs, KJs, KTs, K9s, QJs, QTs, Q9s, JTs, J9s, T9s, T8s, 98s, AKo, AQo, AJo, ATo, KQo, KJo|尺寸：加注到約 2.5BB（前方 1BB × 2.5）
+100|LJ|unopened|raise-8x|-|此情境不使用此尺寸
+100|LJ|unopened|allin|-|此情境不全下
+100|LJ|open|fold|*|3-bet 到 6.25BB。以面對 EP 開牌為基準。8 倍尺寸不用：100BB 面對單一開牌者用大尺寸只會趕走弱牌、留下強牌，價值全失。8 倍只在擠壓（前方有開牌＋跟注者）或隔離跛入者時才用。
+100|LJ|open|call|JJ, TT, 99, AQs, AJs, KQs|
+100|LJ|open|raise-2.5x|AA, KK, QQ, AKs, A5s, AKo|尺寸：加注到約 6.2BB（前方 2.5BB × 2.5）
+100|LJ|open|raise-8x|-|此情境不使用此尺寸
+100|LJ|open|allin|-|此情境不全下
+100|LJ|open-raise|fold|*|冷 4-bet 到 19BB。★TT、AQo、AJs、KQs 在此情境是經典虧損牌。
+100|LJ|open-raise|call|JJ, AQs|
+100|LJ|open-raise|raise-2.5x|AA, KK, QQ, AKs|尺寸：加注到約 18.8BB（前方 7.5BB × 2.5）
+100|LJ|open-raise|raise-8x|-|此情境不使用此尺寸
+100|LJ|open-raise|allin|-|此情境不全下
+100|LJ|3bet|fold|*|4-bet 到 19-22BB。4-bet 用 2.5 倍即可，保留 5-bet 空間，故 8 倍不用。
+100|LJ|3bet|call|JJ, TT, 99, 88, AQs, AJs, ATs, KQs, KJs, QJs|
+100|LJ|3bet|raise-2.5x|AA, KK, QQ, AKs, A5s, A4s, AKo|尺寸：加注到約 22.5BB（前方 9BB × 2.5）
+100|LJ|3bet|raise-8x|-|此情境不使用此尺寸
+100|LJ|3bet|allin|-|此情境不全下
+100|LJ|4bet|fold|*|5-bet 一律全下。
+100|LJ|4bet|call|QQ, JJ, AQs, AKo|
+100|LJ|4bet|raise-2.5x|-|此情境不使用此尺寸
+100|LJ|4bet|raise-8x|-|此情境不使用此尺寸
+100|LJ|4bet|allin|AA, KK, AKs, A5s, A4s|5-bet 直接全下。
+
+# 100BB · HJ
+100|HJ|unopened|fold|*|開牌到 2.5BB。若前方有跛入者，改用 8 倍隔離：77+, A9s+, ATo+, KJs+, KQo。
+100|HJ|unopened|call|-|此情境不跟注
+100|HJ|unopened|raise-2.5x|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AKs, AQs, AJs, ATs, A9s, A8s, A7s, A6s, A5s, A4s, A3s, A2s, KQs, KJs, KTs, K9s, K8s, QJs, QTs, Q9s, JTs, J9s, T9s, T8s, 98s, 97s, 87s, 76s, AKo, AQo, AJo, ATo, KQo, KJo, QJo|尺寸：加注到約 2.5BB（前方 1BB × 2.5）
+100|HJ|unopened|raise-8x|-|此情境不使用此尺寸
+100|HJ|unopened|allin|-|此情境不全下
+100|HJ|open|fold|*|3-bet 到 6.25BB。以面對 EP/MP 開牌為基準。8 倍尺寸不用：100BB 面對單一開牌者用大尺寸只會趕走弱牌、留下強牌，價值全失。8 倍只在擠壓（前方有開牌＋跟注者）或隔離跛入者時才用。
+100|HJ|open|call|TT, 99, 88, 77, AJs, ATs, KQs, KJs, QJs, JTs|
+100|HJ|open|raise-2.5x|AA, KK, QQ, JJ, AKs, AQs, A5s, A4s, AKo|尺寸：加注到約 6.2BB（前方 2.5BB × 2.5）
+100|HJ|open|raise-8x|-|此情境不使用此尺寸
+100|HJ|open|allin|-|此情境不全下
+100|HJ|open-raise|fold|*|冷 4-bet 到 19BB。範圍要比「面對單一開牌」緊 3-4 倍。
+100|HJ|open-raise|call|JJ, TT, AQs, AJs, KQs|
+100|HJ|open-raise|raise-2.5x|AA, KK, QQ, AKs, A5s, AKo|尺寸：加注到約 18.8BB（前方 7.5BB × 2.5）
+100|HJ|open-raise|raise-8x|-|此情境不使用此尺寸
+100|HJ|open-raise|allin|-|此情境不全下
+100|HJ|3bet|fold|*|4-bet 到 19-22BB。4-bet 用 2.5 倍即可，保留 5-bet 空間，故 8 倍不用。
+100|HJ|3bet|call|JJ, TT, 99, 88, 77, AQs, AJs, ATs, KQs, KJs, QJs, JTs|
+100|HJ|3bet|raise-2.5x|AA, KK, QQ, AKs, A5s, A4s, AKo|尺寸：加注到約 22.5BB（前方 9BB × 2.5）
+100|HJ|3bet|raise-8x|-|此情境不使用此尺寸
+100|HJ|3bet|allin|-|此情境不全下
+100|HJ|4bet|fold|*|5-bet 一律全下。
+100|HJ|4bet|call|QQ, JJ, AQs, AKo|
+100|HJ|4bet|raise-2.5x|-|此情境不使用此尺寸
+100|HJ|4bet|raise-8x|-|此情境不使用此尺寸
+100|HJ|4bet|allin|AA, KK, AKs, A5s, A4s|5-bet 直接全下。
+
+# 100BB · CO
+100|CO|unopened|fold|*|開牌到 2.2-2.5BB。若前方有跛入者，改用 8 倍隔離：66+, A8s+, A9o+, KTs+, KJo+, QJs。
+100|CO|unopened|call|-|此情境不跟注
+100|CO|unopened|raise-2.5x|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AKs, AQs, AJs, ATs, A9s, A8s, A7s, A6s, A5s, A4s, A3s, A2s, KQs, KJs, KTs, K9s, K8s, K7s, QJs, QTs, Q9s, Q8s, JTs, J9s, J8s, T9s, T8s, T7s, 98s, 97s, 96s, 87s, 86s, 76s, 75s, 65s, 54s, AKo, AQo, AJo, ATo, A9o, KQo, KJo, KTo, QJo, JTo|尺寸：加注到約 2.5BB（前方 1BB × 2.5）
+100|CO|unopened|raise-8x|-|此情境不使用此尺寸
+100|CO|unopened|allin|-|此情境不全下
+100|CO|open|fold|*|3-bet 到 6.25BB。以面對 MP/HJ 開牌為基準；面對 EP 開牌時 3-bet 收緊至 TT+, AQs+, AKo。8 倍尺寸不用：100BB 面對單一開牌者用大尺寸只會趕走弱牌、留下強牌，價值全失。8 倍只在擠壓（前方有開牌＋跟注者）或隔離跛入者時才用。
+100|CO|open|call|99, 88, 77, 66, 55, AJs, ATs, A9s, KQs, QJs, JTs, T9s, 98s, AJo|
+100|CO|open|raise-2.5x|AA, KK, QQ, JJ, TT, AKs, AQs, A5s, A4s, KJs, AKo|尺寸：加注到約 6.2BB（前方 2.5BB × 2.5）
+100|CO|open|raise-8x|-|此情境不使用此尺寸
+100|CO|open|allin|-|此情境不全下
+100|CO|open-raise|fold|*|冷 4-bet 到 19BB。99、AQo、ATs、JTs、T9s 在此都是虧損牌。
+100|CO|open-raise|call|JJ, TT, AQs, AJs, KQs|
+100|CO|open-raise|raise-2.5x|AA, KK, QQ, AKs, A5s, AKo|尺寸：加注到約 18.8BB（前方 7.5BB × 2.5）
+100|CO|open-raise|raise-8x|-|此情境不使用此尺寸
+100|CO|open-raise|allin|-|此情境不全下
+100|CO|3bet|fold|*|4-bet 到 19-22BB。4-bet 用 2.5 倍即可，保留 5-bet 空間，故 8 倍不用。
+100|CO|3bet|call|TT, 99, 88, 77, 66, AQs, AJs, ATs, KQs, KJs, QJs, JTs, T9s, AQo|
+100|CO|3bet|raise-2.5x|AA, KK, QQ, JJ, AKs, A5s, A4s, K9s, AKo|尺寸：加注到約 22.5BB（前方 9BB × 2.5）
+100|CO|3bet|raise-8x|-|此情境不使用此尺寸
+100|CO|3bet|allin|-|此情境不全下
+100|CO|4bet|fold|*|5-bet 一律全下。
+100|CO|4bet|call|QQ, JJ, AQs, AKo|
+100|CO|4bet|raise-2.5x|-|此情境不使用此尺寸
+100|CO|4bet|raise-8x|-|此情境不使用此尺寸
+100|CO|4bet|allin|AA, KK, AKs, A5s, A4s|5-bet 直接全下。
+
+# 100BB · BTN
+100|BTN|unopened|fold|*|開牌到 2.2-2.5BB。這是全桌最寬的開牌範圍（約 45%）。若前方有跛入者，改用 8 倍隔離：44+, A7s+, A8o+, K9s+, KTo+, QTs+, JTs。
+100|BTN|unopened|call|-|此情境不跟注
+100|BTN|unopened|raise-2.5x|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AKs, AQs, AJs, ATs, A9s, A8s, A7s, A6s, A5s, A4s, A3s, A2s, KQs, KJs, KTs, K9s, K8s, K7s, K6s, K5s, K4s, K3s, K2s, QJs, QTs, Q9s, Q8s, Q7s, Q6s, Q5s, Q4s, JTs, J9s, J8s, J7s, J6s, T9s, T8s, T7s, T6s, 98s, 97s, 96s, 95s, 87s, 86s, 85s, 76s, 75s, 74s, 65s, 64s, 54s, 53s, 43s, AKo, AQo, AJo, ATo, A9o, A8o, A7o, A6o, A5o, A4o, A3o, A2o, KQo, KJo, KTo, K9o, K8o, K7o, QJo, QTo, Q9o, Q8o, JTo, J9o, J8o, T9o, T8o, 98o, 87o|尺寸：加注到約 2.5BB（前方 1BB × 2.5）
+100|BTN|unopened|raise-8x|-|此情境不使用此尺寸
+100|BTN|unopened|allin|-|此情境不全下
+100|BTN|open|fold|*|3-bet 到 6.25BB。以面對 CO 開牌為基準；面對 EP 開牌時 3-bet 收緊至 TT+, AQs+, AKo。8 倍尺寸不用：100BB 面對單一開牌者用大尺寸只會趕走弱牌、留下強牌，價值全失。8 倍只在擠壓（前方有開牌＋跟注者）或隔離跛入者時才用。
+100|BTN|open|call|88, 77, 66, 55, 44, 33, 22, A9s, A8s, A7s, A6s, KTs, QTs, Q9s, J9s, 98s, 87s, 76s, AJo, ATo, KQo, KJo|
+100|BTN|open|raise-2.5x|AA, KK, QQ, JJ, TT, 99, AKs, AQs, AJs, ATs, A5s, A4s, A3s, A2s, KQs, KJs, K9s, QJs, JTs, T9s, AKo, AQo|尺寸：加注到約 6.2BB（前方 2.5BB × 2.5）
+100|BTN|open|raise-8x|-|此情境不使用此尺寸
+100|BTN|open|allin|-|此情境不全下
+100|BTN|open-raise|fold|*|冷 4-bet 到 19BB。此範圍適用於「前方兩人皆為後位」；若前方是 EP 開牌＋EP 再加注，收緊至 QQ+, AKs 加注、JJ/AQs 跟注。
+100|BTN|open-raise|call|TT, 99, 88, AQs, AJs, KQs, QJs, JTs|
+100|BTN|open-raise|raise-2.5x|AA, KK, QQ, JJ, AKs, A5s, A4s, AKo|尺寸：加注到約 18.8BB（前方 7.5BB × 2.5）
+100|BTN|open-raise|raise-8x|-|此情境不使用此尺寸
+100|BTN|open-raise|allin|-|此情境不全下
+100|BTN|3bet|fold|*|4-bet 到 19-22BB。盲注 3-bet 你的範圍很寬，故你的跟注範圍也可以很寬。4-bet 用 2.5 倍即可，保留 5-bet 空間，故 8 倍不用。
+100|BTN|3bet|call|JJ, TT, 99, 88, 77, 66, 55, AQs, AJs, ATs, A9s, A8s, KQs, KJs, KTs, QJs, QTs, JTs, T9s, 98s, AQo, AJo, KQo|
+100|BTN|3bet|raise-2.5x|AA, KK, QQ, AKs, A5s, A4s, K9s, K8s, AKo|尺寸：加注到約 22.5BB（前方 9BB × 2.5）
+100|BTN|3bet|raise-8x|-|此情境不使用此尺寸
+100|BTN|3bet|allin|-|此情境不全下
+100|BTN|4bet|fold|*|5-bet 一律全下。以面對盲注 4-bet 為基準；面對 EP 的 4-bet 收緊至全下 AA, KK。
+100|BTN|4bet|call|JJ, TT, AQs, AKo|
+100|BTN|4bet|raise-2.5x|-|此情境不使用此尺寸
+100|BTN|4bet|raise-8x|-|此情境不使用此尺寸
+100|BTN|4bet|allin|AA, KK, QQ, AKs, A5s, A4s|5-bet 直接全下。
+
+# 100BB · SB
+100|SB|unopened|fold|*|開牌到 3BB。此表為純加注策略。進階可改用「跛入＋加注」混合策略，但需搭配完整的 limp-call／limp-raise 計畫，新手建議先用純加注。
+100|SB|unopened|call|-|此情境不跟注
+100|SB|unopened|raise-2.5x|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AKs, AQs, AJs, ATs, A9s, A8s, A7s, A6s, A5s, A4s, A3s, A2s, KQs, KJs, KTs, K9s, K8s, K7s, K6s, K5s, K4s, QJs, QTs, Q9s, Q8s, Q7s, Q6s, JTs, J9s, J8s, J7s, T9s, T8s, T7s, 98s, 97s, 96s, 87s, 86s, 76s, 75s, 65s, 54s, AKo, AQo, AJo, ATo, A9o, A8o, A7o, A6o, A5o, A4o, KQo, KJo, KTo, K9o, QJo, QTo, Q9o, JTo, J9o, T9o|尺寸：加注到約 2.5BB（前方 1BB × 2.5）
+100|SB|unopened|raise-8x|-|此情境不使用此尺寸
+100|SB|unopened|allin|-|此情境不全下
+100|SB|open|fold|*|3-bet 到 10BB（無位置加大到 4 倍）。以面對 CO/BTN 開牌為基準；面對 EP 開牌時 3-bet 收緊至 JJ+, AQs+, AKo。無位置，建議偏 3-bet or fold。8 倍尺寸不用：100BB 面對單一開牌者用大尺寸只會趕走弱牌、留下強牌，價值全失。8 倍只在擠壓（前方有開牌＋跟注者）或隔離跛入者時才用。
+100|SB|open|call|88, 77, ATs, A9s, KTs, QTs|
+100|SB|open|raise-2.5x|AA, KK, QQ, JJ, TT, 99, AKs, AQs, AJs, A5s, A4s, A3s, A2s, KQs, KJs, QJs, JTs, AKo, AQo|尺寸：加注到約 6.2BB（前方 2.5BB × 2.5）
+100|SB|open|raise-8x|-|此情境不使用此尺寸
+100|SB|open|allin|-|此情境不全下
+100|SB|open-raise|fold|*|冷 4-bet 到 19-22BB。無位置，此格要極緊：TT、AQs、AQo、AJs 全部蓋掉。
+100|SB|open-raise|call|JJ|
+100|SB|open-raise|raise-2.5x|AA, KK, QQ, AKs, AKo|尺寸：加注到約 18.8BB（前方 7.5BB × 2.5）
+100|SB|open-raise|raise-8x|-|此情境不使用此尺寸
+100|SB|open-raise|allin|-|此情境不全下
+100|SB|3bet|fold|*|4-bet 到 22-25BB。4-bet 用 2.5 倍即可，保留 5-bet 空間，故 8 倍不用。
+100|SB|3bet|call|TT, 99, 88, 77, 66, AQs, AJs, ATs, KQs, KJs, QJs, JTs, AQo|
+100|SB|3bet|raise-2.5x|AA, KK, QQ, JJ, AKs, A5s, A4s, AKo|尺寸：加注到約 22.5BB（前方 9BB × 2.5）
+100|SB|3bet|raise-8x|-|此情境不使用此尺寸
+100|SB|3bet|allin|-|此情境不全下
+100|SB|4bet|fold|*|5-bet 一律全下。
+100|SB|4bet|call|JJ, TT, AQs, AKo|
+100|SB|4bet|raise-2.5x|-|此情境不使用此尺寸
+100|SB|4bet|raise-8x|-|此情境不使用此尺寸
+100|SB|4bet|allin|AA, KK, QQ, AKs, A5s, A4s|5-bet 直接全下。
+
+# 100BB · BB
+100|BB|unopened|fold|-|無人加注時你已投入大盲，直接過牌看翻牌，不棄任何牌。若前方有跛入者，改用隔離加注到 5BB：88+, ATs+, KJs+, QJs, AJo+, KQo。
+100|BB|unopened|call|+|無人加注時你已投入大盲，直接過牌看翻牌，不棄任何牌。若前方有跛入者，改用隔離加注到 5BB：88+, ATs+, KJs+, QJs, AJo+, KQo。
+100|BB|unopened|raise-2.5x|-|尺寸過小，不用於此情境
+100|BB|unopened|raise-8x|-|僅在前方有跛入者時使用，見「蓋牌」列說明
+100|BB|unopened|allin|-|此深度無人加注時不全下
+100|BB|open|fold|*|3-bet 到 10-11BB（無位置加大到 4 倍）。以面對 BTN/SB 開牌為基準——你投入 2BB 拿 4.5BB 底池，賠率極好，棄牌率不應超過 35-40%。面對 EP 開牌時整體收緊：3-bet 用 JJ+, AQs+, AKo, A5s-A2s，跟注用 99-22, ATs+, KTs+, QTs+, J9s+, T9s, 98s, 87s, 76s, AJo+, KQo。8 倍尺寸不用：100BB 面對單一開牌者用大尺寸只會趕走弱牌、留下強牌，價值全失。8 倍只在擠壓（前方有開牌＋跟注者）或隔離跛入者時才用。
+100|BB|open|call|77, 66, 55, 44, 33, 22, A9s, A8s, A7s, A6s, KTs, K8s, K7s, K6s, K5s, QTs, Q9s, Q8s, Q7s, Q6s, JTs, J9s, J8s, J7s, T8s, T7s, 97s, 96s, 86s, 75s, 65s, 54s, ATo, A9o, A8o, A7o, A6o, A5o, A4o, A3o, A2o, KJo, KTo, K9o, K8o, QJo, QTo, Q9o, JTo, J9o, T9o, 98o|
+100|BB|open|raise-2.5x|AA, KK, QQ, JJ, TT, 99, 88, AKs, AQs, AJs, ATs, A5s, A4s, A3s, A2s, KQs, KJs, K9s, QJs, T9s, 98s, 87s, 76s, AKo, AQo, AJo, KQo|尺寸：加注到約 6.2BB（前方 2.5BB × 2.5）
+100|BB|open|raise-8x|-|此情境不使用此尺寸
+100|BB|open|allin|-|此情境不全下
+100|BB|open-raise|fold|*|冷 4-bet 到 22BB。小對子有賠率可搏三條；99、AQo、AJs、KQs 在此是虧損牌。
+100|BB|open-raise|call|JJ, TT, 77, 66, 55, 44, 33, 22, AQs|
+100|BB|open-raise|raise-2.5x|AA, KK, QQ, AKs, A5s, AKo|尺寸：加注到約 18.8BB（前方 7.5BB × 2.5）
+100|BB|open-raise|raise-8x|-|此情境不使用此尺寸
+100|BB|open-raise|allin|-|此情境不全下
+100|BB|3bet|fold|*|你在 BB 隔離跛入者後被 3-bet。4-bet 用 2.5 倍即可，保留 5-bet 空間，故 8 倍不用。
+100|BB|3bet|call|JJ, TT, 99, AQs, AJs, KQs|
+100|BB|3bet|raise-2.5x|AA, KK, QQ, AKs, AKo|尺寸：加注到約 22.5BB（前方 9BB × 2.5）
+100|BB|3bet|raise-8x|-|此情境不使用此尺寸
+100|BB|3bet|allin|-|此情境不全下
+100|BB|4bet|fold|*|5-bet 一律全下。
+100|BB|4bet|call|QQ, JJ, AQs, AKo|
+100|BB|4bet|raise-2.5x|-|此情境不使用此尺寸
+100|BB|4bet|raise-8x|-|此情境不使用此尺寸
+100|BB|4bet|allin|AA, KK, AKs|5-bet 直接全下。
+
+# 200-250BB · UTG
+200-250|UTG|unopened|fold|*|開牌到 2.5-3BB。★深籌碼三大調整：①加入 22-66 與同花連張（暗示賠率高）②刪除 KJo/ATo/QJo 等易被支配的非同花闊牌 ③降低弱同花 K（做出第二大同花是災難牌）。 KQo、AJo 在 250BB 的 UTG 也要蓋掉。
+200-250|UTG|unopened|call|-|此情境不跟注
+200-250|UTG|unopened|raise-2.5x|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AKs, AQs, AJs, ATs, A9s, A8s, A7s, A6s, A5s, A4s, A3s, A2s, KQs, KJs, KTs, QJs, QTs, JTs, J9s, T9s, 98s, 87s, AKo, AQo|尺寸：加注到約 2.5BB（前方 1BB × 2.5）
+200-250|UTG|unopened|raise-8x|-|此情境不使用此尺寸
+200-250|UTG|unopened|allin|-|此情境不全下
+200-250|UTG|open|fold|-|無此情境：UTG 為全桌第一個行動者，前方不可能已有加注
+200-250|UTG|open|call|-|無此情境：UTG 為全桌第一個行動者，前方不可能已有加注
+200-250|UTG|open|raise-2.5x|-|無此情境：UTG 為全桌第一個行動者，前方不可能已有加注
+200-250|UTG|open|raise-8x|-|無此情境：UTG 為全桌第一個行動者，前方不可能已有加注
+200-250|UTG|open|allin|-|無此情境：UTG 為全桌第一個行動者，前方不可能已有加注
+200-250|UTG|open-raise|fold|-|無此情境：UTG 前方無人行動，不可能出現「開牌＋再加注」
+200-250|UTG|open-raise|call|-|無此情境：UTG 前方無人行動，不可能出現「開牌＋再加注」
+200-250|UTG|open-raise|raise-2.5x|-|無此情境：UTG 前方無人行動，不可能出現「開牌＋再加注」
+200-250|UTG|open-raise|raise-8x|-|無此情境：UTG 前方無人行動，不可能出現「開牌＋再加注」
+200-250|UTG|open-raise|allin|-|無此情境：UTG 前方無人行動，不可能出現「開牌＋再加注」
+200-250|UTG|3bet|fold|*|4-bet 只用 2.2 倍（約 17BB），保留 5-bet 空間。★QQ 與 AKo 從 4-bet 移到跟注：深籌碼用 QQ 建大底池，遇到 AA/KK 的損失是 100BB 的 2.5 倍。深籌碼一律用小尺寸控制底池，8 倍不用。
+200-250|UTG|3bet|call|QQ, JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AQs, AJs, KQs, JTs, T9s, AKo|
+200-250|UTG|3bet|raise-2.5x|AA, KK, AKs, A5s|尺寸：加注到約 22.5BB（前方 9BB × 2.5）
+200-250|UTG|3bet|raise-8x|-|此情境不使用此尺寸
+200-250|UTG|3bet|allin|-|此情境不全下
+200-250|UTG|4bet|fold|-|無此情境：UTG 前方無加注可打，無法 3-bet，故不會面對 4-bet
+200-250|UTG|4bet|call|-|無此情境：UTG 前方無加注可打，無法 3-bet，故不會面對 4-bet
+200-250|UTG|4bet|raise-2.5x|-|無此情境：UTG 前方無加注可打，無法 3-bet，故不會面對 4-bet
+200-250|UTG|4bet|raise-8x|-|無此情境：UTG 前方無加注可打，無法 3-bet，故不會面對 4-bet
+200-250|UTG|4bet|allin|-|無此情境：UTG 前方無加注可打，無法 3-bet，故不會面對 4-bet
+
+# 200-250BB · UTG+1
+200-250|UTG+1|unopened|fold|*|開牌到 2.5-3BB。★深籌碼三大調整：①加入 22-66 與同花連張（暗示賠率高）②刪除 KJo/ATo/QJo 等易被支配的非同花闊牌 ③降低弱同花 K（做出第二大同花是災難牌）。
+200-250|UTG+1|unopened|call|-|此情境不跟注
+200-250|UTG+1|unopened|raise-2.5x|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AKs, AQs, AJs, ATs, A9s, A8s, A7s, A6s, A5s, A4s, A3s, A2s, KQs, KJs, KTs, K9s, QJs, QTs, Q9s, JTs, J9s, T9s, T8s, 98s, 87s, 76s, AKo, AQo, AJo, KQo|尺寸：加注到約 2.5BB（前方 1BB × 2.5）
+200-250|UTG+1|unopened|raise-8x|-|此情境不使用此尺寸
+200-250|UTG+1|unopened|allin|-|此情境不全下
+200-250|UTG+1|open|fold|*|3-bet 到 3.5 倍（約 9BB）。★深籌碼 3-bet 更極化：JJ、AQs、KQs 改為跟注，只用 QQ+/AKs 加注＋同花 A 詐唬。深籌碼一律用小尺寸控制底池，8 倍不用。
+200-250|UTG+1|open|call|JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AQs, AJs, ATs, KQs, KJs, QJs, JTs, T9s, 98s, AKo, AQo|
+200-250|UTG+1|open|raise-2.5x|AA, KK, QQ, AKs, A5s, A4s|尺寸：加注到約 6.2BB（前方 2.5BB × 2.5）
+200-250|UTG+1|open|raise-8x|-|此情境不使用此尺寸
+200-250|UTG+1|open|allin|-|此情境不全下
+200-250|UTG+1|open-raise|fold|-|無此情境：UTG+1 前方僅 UTG 一人，湊不出「開牌＋再加注」
+200-250|UTG+1|open-raise|call|-|無此情境：UTG+1 前方僅 UTG 一人，湊不出「開牌＋再加注」
+200-250|UTG+1|open-raise|raise-2.5x|-|無此情境：UTG+1 前方僅 UTG 一人，湊不出「開牌＋再加注」
+200-250|UTG+1|open-raise|raise-8x|-|無此情境：UTG+1 前方僅 UTG 一人，湊不出「開牌＋再加注」
+200-250|UTG+1|open-raise|allin|-|無此情境：UTG+1 前方僅 UTG 一人，湊不出「開牌＋再加注」
+200-250|UTG+1|3bet|fold|*|4-bet 只用 2.2 倍。QQ 與 AKo 改為跟注。深籌碼一律用小尺寸控制底池，8 倍不用。
+200-250|UTG+1|3bet|call|QQ, JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AQs, AJs, KQs, JTs, T9s, AKo|
+200-250|UTG+1|3bet|raise-2.5x|AA, KK, AKs, A5s|尺寸：加注到約 22.5BB（前方 9BB × 2.5）
+200-250|UTG+1|3bet|raise-8x|-|此情境不使用此尺寸
+200-250|UTG+1|3bet|allin|-|此情境不全下
+200-250|UTG+1|4bet|fold|*|★250BB 的全下範圍應接近堅果，只有 AA。KK 與 AKs 用小尺寸 5-bet。
+200-250|UTG+1|4bet|call|QQ, JJ, TT, AQs, AKo|
+200-250|UTG+1|4bet|raise-2.5x|KK, AKs|尺寸：加注到約 55BB（前方 22BB × 2.5）
+200-250|UTG+1|4bet|raise-8x|-|此情境不使用此尺寸
+200-250|UTG+1|4bet|allin|AA|5-bet 直接全下。
+
+# 200-250BB · UTG+2
+200-250|UTG+2|unopened|fold|*|開牌到 2.5-3BB。★深籌碼三大調整：①加入 22-66 與同花連張（暗示賠率高）②刪除 KJo/ATo/QJo 等易被支配的非同花闊牌 ③降低弱同花 K（做出第二大同花是災難牌）。
+200-250|UTG+2|unopened|call|-|此情境不跟注
+200-250|UTG+2|unopened|raise-2.5x|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AKs, AQs, AJs, ATs, A9s, A8s, A7s, A6s, A5s, A4s, A3s, A2s, KQs, KJs, KTs, K9s, QJs, QTs, Q9s, JTs, J9s, J8s, T9s, T8s, 98s, 97s, 87s, 76s, AKo, AQo, AJo, KQo|尺寸：加注到約 2.5BB（前方 1BB × 2.5）
+200-250|UTG+2|unopened|raise-8x|-|此情境不使用此尺寸
+200-250|UTG+2|unopened|allin|-|此情境不全下
+200-250|UTG+2|open|fold|*|3-bet 到 3.5 倍。★中等強度的牌改為跟注，範圍更極化。深籌碼一律用小尺寸控制底池，8 倍不用。
+200-250|UTG+2|open|call|JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AQs, AJs, ATs, KQs, KJs, QJs, JTs, T9s, 98s, AKo, AQo|
+200-250|UTG+2|open|raise-2.5x|AA, KK, QQ, AKs, A5s, A4s|尺寸：加注到約 6.2BB（前方 2.5BB × 2.5）
+200-250|UTG+2|open|raise-8x|-|此情境不使用此尺寸
+200-250|UTG+2|open|allin|-|此情境不全下
+200-250|UTG+2|open-raise|fold|*|冷 4-bet 到 2.2 倍。★深籌碼是唯一適合冷跟 open-raise 的深度：投入 7.5BB 搏 250BB 底池，小對子打中三條的回報極高。AKo、AQo、AJs、KQs 仍要蓋掉。
+200-250|UTG+2|open-raise|call|JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AQs|
+200-250|UTG+2|open-raise|raise-2.5x|AA, KK, QQ, AKs|尺寸：加注到約 18.8BB（前方 7.5BB × 2.5）
+200-250|UTG+2|open-raise|raise-8x|-|此情境不使用此尺寸
+200-250|UTG+2|open-raise|allin|-|此情境不全下
+200-250|UTG+2|3bet|fold|*|4-bet 只用 2.2 倍。QQ 與 AKo 改為跟注。深籌碼一律用小尺寸控制底池，8 倍不用。
+200-250|UTG+2|3bet|call|QQ, JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AQs, AJs, KQs, JTs, T9s, AKo|
+200-250|UTG+2|3bet|raise-2.5x|AA, KK, AKs, A5s|尺寸：加注到約 22.5BB（前方 9BB × 2.5）
+200-250|UTG+2|3bet|raise-8x|-|此情境不使用此尺寸
+200-250|UTG+2|3bet|allin|-|此情境不全下
+200-250|UTG+2|4bet|fold|*|★250BB 的全下範圍應接近堅果。
+200-250|UTG+2|4bet|call|QQ, JJ, TT, AQs, AKo|
+200-250|UTG+2|4bet|raise-2.5x|KK, AKs|尺寸：加注到約 55BB（前方 22BB × 2.5）
+200-250|UTG+2|4bet|raise-8x|-|此情境不使用此尺寸
+200-250|UTG+2|4bet|allin|AA|5-bet 直接全下。
+
+# 200-250BB · LJ
+200-250|LJ|unopened|fold|*|開牌到 2.5-3BB。★深籌碼三大調整：①加入 22-66 與同花連張（暗示賠率高）②刪除 KJo/ATo/QJo 等易被支配的非同花闊牌 ③降低弱同花 K（做出第二大同花是災難牌）。
+200-250|LJ|unopened|call|-|此情境不跟注
+200-250|LJ|unopened|raise-2.5x|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AKs, AQs, AJs, ATs, A9s, A8s, A7s, A6s, A5s, A4s, A3s, A2s, KQs, KJs, KTs, K9s, K8s, QJs, QTs, Q9s, Q8s, JTs, J9s, J8s, T9s, T8s, 98s, 97s, 87s, 76s, 65s, AKo, AQo, AJo, ATo, KQo, KJo|尺寸：加注到約 2.5BB（前方 1BB × 2.5）
+200-250|LJ|unopened|raise-8x|-|此情境不使用此尺寸
+200-250|LJ|unopened|allin|-|此情境不全下
+200-250|LJ|open|fold|*|3-bet 到 3.5 倍。★極化結構：強牌（QQ+/AKs）＋高潛力弱牌（同花 A、小同花連張）加注，中等牌全部跟注。深籌碼一律用小尺寸控制底池，8 倍不用。
+200-250|LJ|open|call|JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AQs, AJs, ATs, A9s, A8s, KQs, KJs, KTs, QJs, QTs, JTs, T9s, 98s, 87s, 76s, AKo, AQo, KQo|
+200-250|LJ|open|raise-2.5x|AA, KK, QQ, AKs, A5s, A4s, A3s, A2s, 65s, 54s|尺寸：加注到約 6.2BB（前方 2.5BB × 2.5）
+200-250|LJ|open|raise-8x|-|此情境不使用此尺寸
+200-250|LJ|open|allin|-|此情境不全下
+200-250|LJ|open-raise|fold|*|冷 4-bet 到 2.2 倍。深籌碼可用小對子冷跟搏三條。
+200-250|LJ|open-raise|call|JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AQs|
+200-250|LJ|open-raise|raise-2.5x|AA, KK, QQ, AKs|尺寸：加注到約 18.8BB（前方 7.5BB × 2.5）
+200-250|LJ|open-raise|raise-8x|-|此情境不使用此尺寸
+200-250|LJ|open-raise|allin|-|此情境不全下
+200-250|LJ|3bet|fold|*|4-bet 只用 2.2 倍。QQ 與 AKo 改為跟注。深籌碼一律用小尺寸控制底池，8 倍不用。
+200-250|LJ|3bet|call|QQ, JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AQs, AJs, ATs, KQs, KJs, QJs, JTs, T9s, AKo|
+200-250|LJ|3bet|raise-2.5x|AA, KK, AKs, A5s, A4s|尺寸：加注到約 22.5BB（前方 9BB × 2.5）
+200-250|LJ|3bet|raise-8x|-|此情境不使用此尺寸
+200-250|LJ|3bet|allin|-|此情境不全下
+200-250|LJ|4bet|fold|*|全下範圍接近堅果；AKs 用小尺寸 5-bet。
+200-250|LJ|4bet|call|QQ, JJ, TT, 99, AQs, AKo|
+200-250|LJ|4bet|raise-2.5x|AKs, A5s|尺寸：加注到約 55BB（前方 22BB × 2.5）
+200-250|LJ|4bet|raise-8x|-|此情境不使用此尺寸
+200-250|LJ|4bet|allin|AA, KK|5-bet 直接全下。
+
+# 200-250BB · HJ
+200-250|HJ|unopened|fold|*|開牌到 2.5-3BB。★深籌碼三大調整：①加入 22-66 與同花連張（暗示賠率高）②刪除 KJo/ATo/QJo 等易被支配的非同花闊牌 ③降低弱同花 K（做出第二大同花是災難牌）。
+200-250|HJ|unopened|call|-|此情境不跟注
+200-250|HJ|unopened|raise-2.5x|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AKs, AQs, AJs, ATs, A9s, A8s, A7s, A6s, A5s, A4s, A3s, A2s, KQs, KJs, KTs, K9s, K8s, K7s, QJs, QTs, Q9s, Q8s, JTs, J9s, J8s, J7s, T9s, T8s, T7s, 98s, 97s, 96s, 87s, 86s, 76s, 65s, 54s, AKo, AQo, AJo, ATo, KQo, KJo, QJo|尺寸：加注到約 2.5BB（前方 1BB × 2.5）
+200-250|HJ|unopened|raise-8x|-|此情境不使用此尺寸
+200-250|HJ|unopened|allin|-|此情境不全下
+200-250|HJ|open|fold|*|3-bet 到 3.5 倍。以面對 MP/HJ 開牌為基準；面對 EP 開牌收緊至 QQ+, AKs 加注。深籌碼一律用小尺寸控制底池，8 倍不用。
+200-250|HJ|open|call|TT, 99, 88, 77, 66, 55, 44, 33, 22, AJs, ATs, A9s, A8s, KQs, KJs, KTs, QJs, QTs, JTs, T9s, 98s, AQo, AJo, KQo|
+200-250|HJ|open|raise-2.5x|AA, KK, QQ, JJ, AKs, AQs, A5s, A4s, A3s, A2s, 87s, 76s, 65s, AKo|尺寸：加注到約 6.2BB（前方 2.5BB × 2.5）
+200-250|HJ|open|raise-8x|-|此情境不使用此尺寸
+200-250|HJ|open|allin|-|此情境不全下
+200-250|HJ|open-raise|fold|*|冷 4-bet 到 2.2 倍。
+200-250|HJ|open-raise|call|JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AQs|
+200-250|HJ|open-raise|raise-2.5x|AA, KK, QQ, AKs|尺寸：加注到約 18.8BB（前方 7.5BB × 2.5）
+200-250|HJ|open-raise|raise-8x|-|此情境不使用此尺寸
+200-250|HJ|open-raise|allin|-|此情境不全下
+200-250|HJ|3bet|fold|*|4-bet 只用 2.2 倍。深籌碼一律用小尺寸控制底池，8 倍不用。
+200-250|HJ|3bet|call|QQ, JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AQs, AJs, ATs, KQs, KJs, QJs, JTs, T9s, AKo|
+200-250|HJ|3bet|raise-2.5x|AA, KK, AKs, A5s, A4s|尺寸：加注到約 22.5BB（前方 9BB × 2.5）
+200-250|HJ|3bet|raise-8x|-|此情境不使用此尺寸
+200-250|HJ|3bet|allin|-|此情境不全下
+200-250|HJ|4bet|fold|*|
+200-250|HJ|4bet|call|QQ, JJ, TT, 99, AQs, AKo|
+200-250|HJ|4bet|raise-2.5x|AKs, A5s|尺寸：加注到約 55BB（前方 22BB × 2.5）
+200-250|HJ|4bet|raise-8x|-|此情境不使用此尺寸
+200-250|HJ|4bet|allin|AA, KK|5-bet 直接全下。
+
+# 200-250BB · CO
+200-250|CO|unopened|fold|*|開牌到 2.5-3BB。★深籌碼三大調整：①加入 22-66 與同花連張（暗示賠率高）②刪除 KJo/ATo/QJo 等易被支配的非同花闊牌 ③降低弱同花 K（做出第二大同花是災難牌）。
+200-250|CO|unopened|call|-|此情境不跟注
+200-250|CO|unopened|raise-2.5x|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AKs, AQs, AJs, ATs, A9s, A8s, A7s, A6s, A5s, A4s, A3s, A2s, KQs, KJs, KTs, K9s, K8s, K7s, K6s, QJs, QTs, Q9s, Q8s, Q7s, JTs, J9s, J8s, J7s, T9s, T8s, T7s, 98s, 97s, 96s, 87s, 86s, 76s, 75s, 65s, 54s, AKo, AQo, AJo, ATo, A9o, KQo, KJo, KTo, QJo|尺寸：加注到約 2.5BB（前方 1BB × 2.5）
+200-250|CO|unopened|raise-8x|-|此情境不使用此尺寸
+200-250|CO|unopened|allin|-|此情境不全下
+200-250|CO|open|fold|*|3-bet 到 3.5 倍。以面對 MP/HJ 開牌為基準。深籌碼一律用小尺寸控制底池，8 倍不用。
+200-250|CO|open|call|JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AJs, ATs, A9s, A8s, KQs, KJs, KTs, QJs, QTs, JTs, T9s, 98s, 87s, 76s, AQo, AJo, KQo|
+200-250|CO|open|raise-2.5x|AA, KK, QQ, AKs, AQs, A5s, A4s, A3s, A2s, 65s, 54s, AKo|尺寸：加注到約 6.2BB（前方 2.5BB × 2.5）
+200-250|CO|open|raise-8x|-|此情境不使用此尺寸
+200-250|CO|open|allin|-|此情境不全下
+200-250|CO|open-raise|fold|*|冷 4-bet 到 2.2 倍。★有位置時，250BB 是唯一適合冷跟的深度：所有小對子都可跟（賠率 33:1 對上打中三條的 7.5:1）。但 AKo、AQo、KQs 仍要蓋掉。
+200-250|CO|open-raise|call|JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AQs, AJs, JTs, T9s, 98s, 87s, 76s, 65s|
+200-250|CO|open-raise|raise-2.5x|AA, KK, QQ, AKs, A5s|尺寸：加注到約 18.8BB（前方 7.5BB × 2.5）
+200-250|CO|open-raise|raise-8x|-|此情境不使用此尺寸
+200-250|CO|open-raise|allin|-|此情境不全下
+200-250|CO|3bet|fold|*|4-bet 只用 2.2 倍。QQ 與 AKo 改為跟注。深籌碼一律用小尺寸控制底池，8 倍不用。
+200-250|CO|3bet|call|QQ, JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AQs, AJs, ATs, A9s, KQs, KJs, KTs, QJs, QTs, JTs, T9s, 98s, AKo, AQo|
+200-250|CO|3bet|raise-2.5x|AA, KK, AKs, A5s, A4s, K9s|尺寸：加注到約 22.5BB（前方 9BB × 2.5）
+200-250|CO|3bet|raise-8x|-|此情境不使用此尺寸
+200-250|CO|3bet|allin|-|此情境不全下
+200-250|CO|4bet|fold|*|
+200-250|CO|4bet|call|QQ, JJ, TT, 99, AQs, AKo|
+200-250|CO|4bet|raise-2.5x|AKs, A5s|尺寸：加注到約 55BB（前方 22BB × 2.5）
+200-250|CO|4bet|raise-8x|-|此情境不使用此尺寸
+200-250|CO|4bet|allin|AA, KK|5-bet 直接全下。
+
+# 200-250BB · BTN
+200-250|BTN|unopened|fold|*|開牌到 2.5BB。★深籌碼的非同花牌比 100BB 收緊（K7o、Q8o、J8o、T8o 移除），因為被支配的損失放大。
+200-250|BTN|unopened|call|-|此情境不跟注
+200-250|BTN|unopened|raise-2.5x|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AKs, AQs, AJs, ATs, A9s, A8s, A7s, A6s, A5s, A4s, A3s, A2s, KQs, KJs, KTs, K9s, K8s, K7s, K6s, K5s, K4s, K3s, K2s, QJs, QTs, Q9s, Q8s, Q7s, Q6s, Q5s, Q4s, JTs, J9s, J8s, J7s, J6s, T9s, T8s, T7s, T6s, 98s, 97s, 96s, 95s, 87s, 86s, 85s, 76s, 75s, 74s, 65s, 64s, 54s, 53s, 43s, AKo, AQo, AJo, ATo, A9o, A8o, A7o, A6o, A5o, A4o, A3o, A2o, KQo, KJo, KTo, K9o, K8o, QJo, QTo, Q9o, JTo, J9o, T9o|尺寸：加注到約 2.5BB（前方 1BB × 2.5）
+200-250|BTN|unopened|raise-8x|-|此情境不使用此尺寸
+200-250|BTN|unopened|allin|-|此情境不全下
+200-250|BTN|open|fold|*|3-bet 到 3.5 倍。以面對 CO 開牌為基準；面對 EP 開牌收緊至 QQ+, AKs 加注。深籌碼一律用小尺寸控制底池，8 倍不用。
+200-250|BTN|open|call|99, 88, 77, 66, 55, 44, 33, 22, ATs, A9s, A8s, A7s, A6s, KJs, KTs, QJs, QTs, JTs, J9s, 76s, 65s, AJo, ATo, KQo, KJo|
+200-250|BTN|open|raise-2.5x|AA, KK, QQ, JJ, TT, AKs, AQs, AJs, A5s, A4s, A3s, A2s, KQs, K9s, T9s, 98s, 87s, AKo, AQo|尺寸：加注到約 6.2BB（前方 2.5BB × 2.5）
+200-250|BTN|open|raise-8x|-|此情境不使用此尺寸
+200-250|BTN|open|allin|-|此情境不全下
+200-250|BTN|open-raise|fold|*|冷 4-bet 到 2.2 倍。★有位置＋深籌碼＝唯一適合冷跟的組合。AKo、AQo、KQs 在深籌碼跟注比 4-bet 好，但此處仍建議蓋掉以保持範圍乾淨。
+200-250|BTN|open-raise|call|JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AQs, AJs, JTs, T9s, 98s, 87s, 76s, 65s|
+200-250|BTN|open-raise|raise-2.5x|AA, KK, QQ, AKs, A5s|尺寸：加注到約 18.8BB（前方 7.5BB × 2.5）
+200-250|BTN|open-raise|raise-8x|-|此情境不使用此尺寸
+200-250|BTN|open-raise|allin|-|此情境不全下
+200-250|BTN|3bet|fold|*|4-bet 只用 2.2 倍。QQ 與 AKo 改為跟注。深籌碼一律用小尺寸控制底池，8 倍不用。
+200-250|BTN|3bet|call|QQ, JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AQs, AJs, ATs, A9s, A8s, KQs, KJs, KTs, QJs, QTs, JTs, T9s, 98s, 87s, AKo, AQo, AJo, KQo|
+200-250|BTN|3bet|raise-2.5x|AA, KK, AKs, A5s, A4s, K9s, K8s, 76s|尺寸：加注到約 22.5BB（前方 9BB × 2.5）
+200-250|BTN|3bet|raise-8x|-|此情境不使用此尺寸
+200-250|BTN|3bet|allin|-|此情境不全下
+200-250|BTN|4bet|fold|*|全下範圍接近堅果。
+200-250|BTN|4bet|call|QQ, JJ, TT, AQs, AJs, KQs|
+200-250|BTN|4bet|raise-2.5x|AKs, A5s, A4s, AKo|尺寸：加注到約 55BB（前方 22BB × 2.5）
+200-250|BTN|4bet|raise-8x|-|此情境不使用此尺寸
+200-250|BTN|4bet|allin|AA, KK|5-bet 直接全下。
+
+# 200-250BB · SB
+200-250|SB|unopened|fold|*|開牌到 3BB。★深籌碼的 SB 也可考慮跛入混合策略（可控制底池、保護過牌範圍），跛入範圍約：22-88, A2s-A9s, K5s-K9s, Q7s-QTs, J8s-JTs。本表為純加注版本。
+200-250|SB|unopened|call|-|此情境不跟注
+200-250|SB|unopened|raise-2.5x|AA, KK, QQ, JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AKs, AQs, AJs, ATs, A9s, A8s, A7s, A6s, A5s, A4s, A3s, A2s, KQs, KJs, KTs, K9s, K8s, K7s, K6s, K5s, QJs, QTs, Q9s, Q8s, Q7s, JTs, J9s, J8s, T9s, T8s, 98s, 97s, 87s, 76s, 65s, AKo, AQo, AJo, ATo, A9o, A8o, A7o, A6o, A5o, KQo, KJo, KTo, QJo, QTo, JTo|尺寸：加注到約 2.5BB（前方 1BB × 2.5）
+200-250|SB|unopened|raise-8x|-|此情境不使用此尺寸
+200-250|SB|unopened|allin|-|此情境不全下
+200-250|SB|open|fold|*|3-bet 到 4 倍（無位置加大）。以面對 CO/BTN 開牌為基準；面對 EP 開牌收緊至 QQ+, AKs, AKo。★深籌碼的無位置遊戲是最貴的錯誤，跟注要謹慎。深籌碼一律用小尺寸控制底池，8 倍不用。
+200-250|SB|open|call|99, 88, 77, 66, 55, 44, 33, 22, ATs, A9s, KJs, QJs|
+200-250|SB|open|raise-2.5x|AA, KK, QQ, JJ, TT, AKs, AQs, AJs, A5s, A4s, A3s, A2s, KQs, JTs, T9s, 98s, AKo, AQo|尺寸：加注到約 6.2BB（前方 2.5BB × 2.5）
+200-250|SB|open|raise-8x|-|此情境不使用此尺寸
+200-250|SB|open|allin|-|此情境不全下
+200-250|SB|open-raise|fold|*|冷 4-bet 到 2.5 倍。無位置，此格要緊；只留小對子搏三條。
+200-250|SB|open-raise|call|JJ, 55, 44, 33, 22|
+200-250|SB|open-raise|raise-2.5x|AA, KK, QQ, AKs, AKo|尺寸：加注到約 18.8BB（前方 7.5BB × 2.5）
+200-250|SB|open-raise|raise-8x|-|此情境不使用此尺寸
+200-250|SB|open-raise|allin|-|此情境不全下
+200-250|SB|3bet|fold|*|4-bet 只用 2.5 倍。QQ 與 AKo 改為跟注。深籌碼一律用小尺寸控制底池，8 倍不用。
+200-250|SB|3bet|call|QQ, JJ, TT, 99, 88, 77, 66, AQs, AJs, ATs, KQs, KJs, QJs, JTs, T9s, AKo|
+200-250|SB|3bet|raise-2.5x|AA, KK, AKs, A5s, A4s|尺寸：加注到約 22.5BB（前方 9BB × 2.5）
+200-250|SB|3bet|raise-8x|-|此情境不使用此尺寸
+200-250|SB|3bet|allin|-|此情境不全下
+200-250|SB|4bet|fold|*|
+200-250|SB|4bet|call|QQ, JJ, TT, AQs, AKo|
+200-250|SB|4bet|raise-2.5x|AKs, A5s|尺寸：加注到約 55BB（前方 22BB × 2.5）
+200-250|SB|4bet|raise-8x|-|此情境不使用此尺寸
+200-250|SB|4bet|allin|AA, KK|5-bet 直接全下。
+
+# 200-250BB · BB
+200-250|BB|unopened|fold|-|無人加注時你已投入大盲，直接過牌看翻牌，不棄任何牌。若前方有跛入者，改用隔離加注到 5-6BB：88+, ATs+, KJs+, QJs, AJo+, KQo。
+200-250|BB|unopened|call|+|無人加注時你已投入大盲，直接過牌看翻牌，不棄任何牌。若前方有跛入者，改用隔離加注到 5-6BB：88+, ATs+, KJs+, QJs, AJo+, KQo。
+200-250|BB|unopened|raise-2.5x|-|尺寸過小，不用於此情境
+200-250|BB|unopened|raise-8x|-|僅在前方有跛入者時使用，見「蓋牌」列說明
+200-250|BB|unopened|allin|-|此深度無人加注時不全下
+200-250|BB|open|fold|*|3-bet 到 4 倍（無位置加大）。以面對 CO/BTN/SB 開牌為基準。★深籌碼賠率＋暗示賠率俱佳，棄牌率應比 100BB 更低；面對 EP 開牌時 3-bet 收緊至 QQ+, AKs, AKo, A5s-A2s, 76s, 65s, 54s。深籌碼一律用小尺寸控制底池，8 倍不用。
+200-250|BB|open|call|88, 77, 66, 55, 44, 33, 22, A9s, A8s, A7s, A6s, KTs, K8s, K7s, K6s, K5s, QTs, Q9s, Q8s, Q7s, Q6s, JTs, J9s, J8s, J7s, T8s, T7s, 97s, 96s, 86s, 75s, 54s, ATo, A9o, A8o, A7o, A6o, A5o, A4o, A3o, A2o, KJo, KTo, K9o, QJo, QTo, Q9o, JTo, J9o, T9o, 98o|
+200-250|BB|open|raise-2.5x|AA, KK, QQ, JJ, TT, 99, AKs, AQs, AJs, ATs, A5s, A4s, A3s, A2s, KQs, KJs, K9s, QJs, T9s, 98s, 87s, 76s, 65s, AKo, AQo, AJo, KQo|尺寸：加注到約 6.2BB（前方 2.5BB × 2.5）
+200-250|BB|open|raise-8x|-|此情境不使用此尺寸
+200-250|BB|open|allin|-|此情境不全下
+200-250|BB|open-raise|fold|*|冷 4-bet 到 2.5 倍。★賠率極佳，用所有小對子搏三條；AKo 在此為邊緣牌，AQo、AJs、KQs 蓋掉。
+200-250|BB|open-raise|call|JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AQs|
+200-250|BB|open-raise|raise-2.5x|AA, KK, QQ, AKs, AKo|尺寸：加注到約 18.8BB（前方 7.5BB × 2.5）
+200-250|BB|open-raise|raise-8x|-|此情境不使用此尺寸
+200-250|BB|open-raise|allin|-|此情境不全下
+200-250|BB|3bet|fold|*|你在 BB 隔離跛入者後被 3-bet。QQ 與 AKo 改為跟注。深籌碼一律用小尺寸控制底池，8 倍不用。
+200-250|BB|3bet|call|QQ, JJ, TT, 99, 88, 77, 66, 55, 44, 33, 22, AQs, AJs, KQs, AKo|
+200-250|BB|3bet|raise-2.5x|AA, KK, AKs, A5s|尺寸：加注到約 22.5BB（前方 9BB × 2.5）
+200-250|BB|3bet|raise-8x|-|此情境不使用此尺寸
+200-250|BB|3bet|allin|-|此情境不全下
+200-250|BB|4bet|fold|*|★250BB 的全下範圍應接近堅果，只有 AA。
+200-250|BB|4bet|call|QQ, JJ, TT, AQs, AKo|
+200-250|BB|4bet|raise-2.5x|KK, AKs|尺寸：加注到約 55BB（前方 22BB × 2.5）
+200-250|BB|4bet|raise-8x|-|此情境不使用此尺寸
+200-250|BB|4bet|allin|AA|5-bet 直接全下。

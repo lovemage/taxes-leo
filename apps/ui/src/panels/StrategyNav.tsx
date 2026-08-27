@@ -146,14 +146,16 @@ export function StrategyNav({
               onClick={() => onChange({ ...selection, bucket: bucket.key })}
             >
               <span style={{ fontFamily: 'var(--font-mono)' }}>{bucket.label}</span>
+              {/* 引擎分九檔、顧問的表只有四檔。選了 40–70BB 實際看到的是
+                  表上 35–50BB 那一欄，不寫出來的話畫面上毫無跡象 */}
               <span className="dim" style={{ fontSize: 10, marginLeft: 'auto' }}>
-                {bucket.pushFold ? '推入或棄牌' : `×${(bucket.multiplier / 10000).toFixed(2)}`}
+                → {bucket.chartDepth}
               </span>
             </Choice>
           ))}
         </div>
         <div className="dim" style={{ fontSize: 10, marginTop: 6, lineHeight: 1.5 }}>
-          規則細則 8.5 的 9 檔。乘數是該檔對範圍寬度的縮放。
+          規則細則 8.5 的 9 檔，右側為對應到預設組合表的深度欄。
         </div>
       </section>
 

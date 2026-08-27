@@ -15,7 +15,12 @@ combos: number,
 /**
  * 主動（加注或推入）頻率，萬分比
  */
-aggressive: number, call: number, fold: number, 
+aggressive: number, call: number, 
+/**
+ * 過牌頻率。**不併進棄牌**：無人加注時大盲過牌看翻牌，
+ * 與把牌丟掉是完全不同的一件事
+ */
+check: number, fold: number, 
 /**
  * equity 排序百分位，萬分比（0 為最強）
  */
@@ -23,4 +28,9 @@ percentile: number,
 /**
  * 這一格是使用者覆寫的結果，不是參數產生的
  */
-overridden: boolean, };
+overridden: boolean, 
+/**
+ * 這一格在預設組合表上的動作鍵（`fold`／`call`／`raise-2.5x`／
+ * `raise-8x`／`allin`）。`null` 代表這個節點不在表上，走參數產生器
+ */
+chartAction: string | null, };

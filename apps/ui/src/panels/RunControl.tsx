@@ -12,9 +12,6 @@ export function RunControl({
   desktop,
   invalid,
   failure,
-  onStart,
-  onPause,
-  onCancel,
 }: {
   request: RunRequest;
   progress: RunProgress | null;
@@ -23,9 +20,6 @@ export function RunControl({
   /** 設定不合法時的原因，合法為 null */
   invalid: string | null;
   failure: string | null;
-  onStart: () => void;
-  onPause: () => void;
-  onCancel: () => void;
 }) {
   const done = progress?.handsDone ?? 0;
   const total = progress?.handsTotal ?? request.handLimit;
@@ -173,18 +167,10 @@ export function RunControl({
         </div>
       </section>
 
-      {/* E.3 控制 */}
-      <div style={{ display: 'flex', gap: 8 }}>
-        <Button primary disabled={!desktop || running || invalid !== null} onClick={onStart}>
-          開始執行
-        </Button>
-        <Button disabled={!running} onClick={onPause}>
-          {progress?.paused ? '繼續' : '暫停'}
-        </Button>
-        <Button disabled={!running} tone="negative" onClick={onCancel}>
-          取消
-        </Button>
-      </div>
+      {/* E.4 的控制在頂部列。放在這裡的話，執行期間切到別的面板就按不到了 */}
+      <p className="dim" style={{ fontSize: 11, marginTop: 4 }}>
+        開始、暫停與取消在畫面頂端。
+      </p>
 
       {running && (
         <p className="dim" style={{ fontSize: 11, marginTop: 12 }}>
@@ -268,43 +254,6 @@ function Metric({
         {value}
       </div>
     </div>
-  );
-}
-
-function Button({
-  children,
-  onClick,
-  disabled,
-  primary,
-  tone,
-}: {
-  children: React.ReactNode;
-  onClick: () => void;
-  disabled?: boolean;
-  primary?: boolean;
-  tone?: 'negative';
-}) {
-  const color = tone === 'negative' ? 'var(--negative)' : 'var(--accent)';
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      style={{
-        padding: '8px 18px',
-        borderRadius: 'var(--radius-control)',
-        border: `1px solid ${primary ? color : 'var(--border)'}`,
-        background: primary ? color : 'transparent',
-        color: primary ? 'var(--bg-base)' : tone === 'negative' ? color : 'var(--text-primary)',
-        fontFamily: 'inherit',
-        fontSize: 12,
-        fontWeight: primary ? 600 : 400,
-        cursor: disabled ? 'default' : 'pointer',
-        opacity: disabled ? 0.4 : 1,
-      }}
-    >
-      {children}
-    </button>
   );
 }
 

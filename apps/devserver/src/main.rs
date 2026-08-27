@@ -195,6 +195,8 @@ fn serve(mut stream: TcpStream, handler: &IpcHandler, run_id: i64) -> std::io::R
         //
         // 同樣不碰 store。少了這兩條，瀏覽器開發模式的面板 C 是空的，
         // 等於在開發機上完全看不到自己改的版面
+        // status bar（V.1）。同樣不碰 store，瀏覽器開發模式照樣看得到
+        "/api/runtime" => serde_json::to_string(&poker_ipc::runtime::status()).ok(),
         "/api/bots/params" => serde_json::to_string(&poker_ipc::bots::all_specs()).ok(),
         "/api/bots/presets" => serde_json::to_string(&poker_ipc::bots::demo_presets()).ok(),
 

@@ -20,6 +20,7 @@ use crate::hand::{ActionProvider, Street};
 use crate::position::PositionLabel;
 use crate::rng::{Rng, RngDomain};
 use crate::strategy::baseline::{self, BaselineRules};
+use crate::strategy::default_chart::ChartShift;
 use crate::strategy::cell_override::CellOverrides;
 use crate::strategy::distribution::{ActionDistribution, Myriad, FULL};
 use crate::strategy::preflop::{PreflopNode, PreflopScenario};
@@ -42,6 +43,12 @@ pub const MAX_EXPECTED_OPPONENTS: usize = 4;
 ///
 /// 逐座持有一份 [`BotConfig`]，因此不同座位可以是不同人格。
 pub struct BotAgent {
+    /// 逐座的**未套用人格**規則集。
+    ///
+    /// 管線第 5 步夾的是「偏離基準的幅度」，而人格已經在內容層動過手
+    /// （見 `ChartShift`）。沒有這一份，進管線的分佈自己就是基準，
+    /// 上限永遠量到 0
+    reference: Vec<BaselineRules>,
     /// 逐座規則集，已套用該座的 `rangeWidth`。
     ///
     /// 在建構時就縮放好，而不是每次決策才算：縮放要走遍全部寬度表，
@@ -71,18 +78,32 @@ impl BotAgent {
         seats: Vec<BotConfig>,
         master_seed: u64,
     ) -> Self {
+        let reference = rules.clone();
         let rules = seats
             .iter()
             .map(|config| {
-                let width = config
-                    .effective("rangeWidth")
-                    .and_then(ParamValue::as_myriad)
-                    .and_then(|v| Myriad::try_from(v).ok())
-                    .unwrap_or(FULL);
-                rules.scaled(width)
+                let myriad = |key: &str| {
+                    config
+                        .effective(key)
+                        .and_then(ParamValue::as_myriad)
+                        .and_then(|v| Myriad::try_from(v).ok())
+                        .unwrap_or(FULL)
+                };
+                let mut scaled = rules.scaled(myriad("rangeWidth"));
+                // 預設組合表是純策略，管線的權重縮放對它是空操作；
+                // 這三個人格參數必須在內容層作用，否則走表的節點上
+                // 三支滑桿全是裝飾品（見 `ChartShift`）
+                scaled.chart_shift = ChartShift {
+                    range_width: myriad("rangeWidth"),
+                    aggression: myriad("preflopAggression"),
+                    call_persistence: myriad("callPersistence"),
+                    fold_discipline: myriad("foldDiscipline"),
+                };
+                scaled
             })
             .collect();
         Self {
+            reference: vec![reference; seats.len()],
             rules,
             rankings,
             seats,
@@ -111,6 +132,11 @@ impl BotAgent {
     /// `SessionConfig::validate` 把關，這裡不當第二個驗證點。
     pub fn set_seat_overrides(&mut self, seat: usize, overrides: CellOverrides) {
         if let Some(rules) = self.rules.get_mut(seat) {
+            rules.overrides = overrides.clone();
+        }
+        // 基準也要跟著裝：覆寫是使用者親手訂的內容，不是人格偏移，
+        // 夾幅度時不該把它算成「偏離基準」
+        if let Some(rules) = self.reference.get_mut(seat) {
             rules.overrides = overrides;
         }
     }
@@ -126,6 +152,12 @@ impl BotAgent {
             .get(seat)
             .unwrap_or_else(|| self.rules.first().expect("至少一組規則"))
     }
+
+    fn reference_for(&self, seat: usize) -> &BaselineRules {
+        self.reference
+            .get(seat)
+            .unwrap_or_else(|| self.reference.first().expect("至少一組規則"))
+    }
 }
 
 impl ActionProvider for BotAgent {
@@ -135,21 +167,29 @@ impl ActionProvider for BotAgent {
         let roll = Myriad::try_from(rng.below(u64::from(FULL))).unwrap_or(0);
 
         let config = self.config_for(view.seat);
-        let baseline = match view.street {
-            Street::Preflop => {
-                preflop_baseline(view, self.rules_for(view.seat), &self.rankings)
-            }
-            _ => None,
+        let fit = |d: ActionDistribution| {
+            drop_free_fold(&fit_raise_sizes(&d, &view.legal), &view.legal)
+        };
+        let (baseline, reference) = match view.street {
+            Street::Preflop => (
+                preflop_baseline(view, self.rules_for(view.seat), &self.rankings).map(fit),
+                preflop_baseline(view, self.reference_for(view.seat), &self.rankings).map(fit),
+            ),
+            _ => (None, None),
         };
 
-        let Some(baseline) = baseline
-            .map(|d| fit_raise_sizes(&d, &view.legal))
-            .map(|d| drop_free_fold(&d, &view.legal))
-        else {
+        let Some(baseline) = baseline else {
             return fallback(&view.legal);
         };
+        let reference = reference.unwrap_or_else(|| baseline.clone());
 
-        match pipeline::run(&baseline, config, legality(&view.legal), roll) {
+        match pipeline::run_with_reference(
+            &reference,
+            &baseline,
+            config,
+            legality(&view.legal),
+            roll,
+        ) {
             Ok(trace) => trace.final_action,
             // 遮蔽後無合法行動：核心規格 4.2 要求進入 fallback，
             // 不得除以 0 或任選行動
@@ -228,9 +268,13 @@ pub fn scenario_of(view: &DecisionView) -> PreflopScenario {
         },
         2 => {
             let by = raisers[1];
-            // 英雄開牌、有人跟注後被再加注才是 squeeze；
-            // 中間沒有跟注者的話那只是單純的 3-bet
-            if hero_raise_index == Some(0) && callers_since_hero_raise > 0 {
+            // 英雄自己沒下過注 → 前方是「開牌＋再加注」，這是冷 4-bet 的
+            // 決策，賠率與範圍都與「自己開牌後被 3-bet」不同，不得併用
+            if hero_raise_index.is_none() {
+                PreflopScenario::VsOpenRaise { opener: raisers[0] }
+            } else if hero_raise_index == Some(0) && callers_since_hero_raise > 0 {
+                // 英雄開牌、有人跟注後被再加注才是 squeeze；
+                // 中間沒有跟注者的話那只是單純的 3-bet
                 PreflopScenario::VsSqueeze { by }
             } else {
                 PreflopScenario::VsThreeBet { by }

@@ -16,6 +16,7 @@ pub mod preflop;
 pub mod vs_open;
 pub mod baseline;
 pub mod calibration;
+pub mod default_chart;
 pub mod cell_override;
 pub mod postflop;
 pub mod range;
@@ -30,6 +31,9 @@ pub use playability::{PlayabilityAdjustments, PlayabilityCategory};
 pub use preflop::{PreflopNode, PreflopScenario};
 pub use vs_open::VsOpenWidths;
 pub use baseline::{BaselineRules, ScenarioWidths};
+pub use default_chart::{
+    ChartAction, ChartDepth, ChartEntry, ChartError, ChartRow, ChartScenario, DefaultChart,
+};
 pub use calibration::{Attribution, MatrixCell, ParameterRef, RangeMatrix, Verdict};
 pub use cell_override::{CellOverrides, OverrideCell};
 pub use range::{Range, RangeTracker, COMBO_COUNT};

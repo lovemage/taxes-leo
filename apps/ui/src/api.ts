@@ -22,6 +22,7 @@ import type {
   RunPhase,
   RunProgress,
   RunView,
+  RuntimeStatusView,
   StrategyMetaView,
   StrategyNodesView,
 } from '../../../packages/poker-types/src/index';
@@ -160,6 +161,20 @@ export function listBotPresets(): Promise<BotSeatConfig[]> {
   const bridge = tauri();
   if (bridge) return bridge.core.invoke<BotSeatConfig[]>('list_bot_presets');
   return http<BotSeatConfig[]>('/api/bots/presets');
+}
+
+// ── 執行環境（status bar）──────────────────────────────────────────
+
+/**
+ * 引擎版本、儲存格式版本與批次節流設定。
+ *
+ * 全部由引擎給，前端不抄。核心規格 3.3 要求跨 engine 版本的 run 不得合併
+ * 統計——狀態列上的版本號抄錯，使用者就會拿不可比的資料下判斷。
+ */
+export function runtimeStatus(): Promise<RuntimeStatusView> {
+  const bridge = tauri();
+  if (bridge) return bridge.core.invoke<RuntimeStatusView>('runtime_status');
+  return http<RuntimeStatusView>('/api/runtime');
 }
 
 // ── 策略（面板 D）───────────────────────────────────────────────────

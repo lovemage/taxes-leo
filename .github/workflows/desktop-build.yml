@@ -1,0 +1,114 @@
+# Windows 桌面殼打包。
+#
+# 兩種觸發方式：
+#   - 手動（workflow_dispatch）：產物放 Actions artifacts，給內部測試人員抓。
+#   - 推 v* tag：額外開一個 GitHub Release，產物掛在上面，不必登入即可下載。
+#
+# 建置環境刻意跟 README「Windows 端一次性準備」對齊：MSVC build tools 與
+# WebView2 都是 windows-latest runner 內建，不需要另外安裝。
+name: 桌面殼打包（Windows）
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: desktop-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # apps/desktop 排除在根 workspace 之外（根 Cargo.toml 的 exclude），
+      # 因此它的 target 目錄在 apps/desktop/target，快取要指到那裡。
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop -> target
+
+      - name: 安裝 node 相依
+        run: pnpm install --frozen-lockfile
+
+      # tauri.conf.json 的 beforeBuildCommand 會自己跑 UI 的 vite build，
+      # 這裡只要呼叫 desktop 的 build 即可。
+      - name: 建置 installer
+        run: pnpm --filter @taxes-leo/desktop build
+
+      # productName「9max 模擬平台」含中文，Tauri 產出的檔名也跟著含中文。
+      # 下載時 URL 會被百分號編碼，部分瀏覽器會存成亂碼檔名，故統一改為 ASCII。
+      - name: 整理產物檔名
+        shell: pwsh
+        run: |
+          $out = 'dist-windows'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $ver = (Get-Content apps/desktop/tauri.conf.json -Raw | ConvertFrom-Json).version
+
+          # 各類產物都必須剛好一個；抓到零個或多個就讓建置失敗，
+          # 不要靜靜產出一包缺東西的東西給測試人員。
+          function Take-One([string]$glob) {
+            $hits = @(Get-ChildItem $glob -ErrorAction SilentlyContinue)
+            if ($hits.Count -ne 1) {
+              throw "$glob 預期剛好 1 個檔案，實際 $($hits.Count) 個"
+            }
+            return $hits[0].FullName
+          }
+
+          Copy-Item (Take-One 'apps/desktop/target/release/bundle/nsis/*.exe') "$out/9max-sim-$ver-setup.exe"
+          Copy-Item (Take-One 'apps/desktop/target/release/bundle/msi/*.msi')  "$out/9max-sim-$ver.msi"
+
+          # 免安裝版：前端資產已編進二進位檔，複製出去就能直接跑
+          #（機器上仍需有 WebView2，Win10/11 通常內建）。
+          Copy-Item (Take-One 'apps/desktop/target/release/*.exe') "$out/9max-sim-$ver-portable.exe"
+
+          Get-ChildItem $out | Format-Table Name, Length
+
+      - name: 上傳 artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: 9max-windows
+          path: dist-windows/*
+          retention-days: 30
+
+      - name: 發佈 Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          Set-Content -Path release-notes.md -Encoding utf8 -Value @'
+          Windows 測試版，三種擇一：
+
+          - `*-setup.exe` — NSIS 安裝檔（建議）
+          - `*.msi` — MSI 安裝檔，適合用群組原則派送
+          - `*-portable.exe` — 免安裝，下載直接執行
+
+          未做程式碼簽章，首次執行時 SmartScreen 會攔下來，
+          點「其他資訊」→「仍要執行」即可。
+
+          若視窗開得起來但畫面空白，多半是缺 WebView2 執行階段：
+          https://developer.microsoft.com/microsoft-edge/webview2/
+          '@
+
+          $files = @(Get-ChildItem dist-windows | ForEach-Object FullName)
+          gh release create $env:GITHUB_REF_NAME @files `
+            --title $env:GITHUB_REF_NAME `
+            --notes-file release-notes.md

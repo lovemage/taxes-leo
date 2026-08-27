@@ -22,6 +22,9 @@ use poker_engine::position::PositionLabel;
 use poker_engine::strategy::baseline::{self, BaselineRules};
 use poker_engine::strategy::calibration::RangeMatrix;
 use poker_engine::strategy::cell_override::{CellOverrides, OverrideCell};
+use poker_engine::strategy::default_chart::{
+    raise_size_centi_bb, ChartAction, ChartDepth, ChartEntry, DefaultChart, CHART_VERSION,
+};
 use poker_engine::strategy::decision::StackBucket;
 use poker_engine::strategy::hand_class::HandClass;
 use poker_engine::strategy::preflop::{
@@ -67,6 +70,20 @@ pub struct StrategyMetaView {
     pub ranking_content_grade: bool,
     /// 給使用者看的一句話說明排序來源
     pub ranking_note: String,
+
+    /// 預設組合表的來源檔名（顧問給的那份 Excel）
+    pub chart_source: String,
+    /// 預設組合表的內容版本
+    pub chart_version: String,
+    /// 表是否成功載入。false 時 `chart_note` 帶著失敗原因
+    pub chart_loaded: bool,
+    /// 表上的格數（深度 × 位置 × 情境）
+    #[ts(type = "number")]
+    pub chart_cell_count: u64,
+    /// 引擎的翻前節點之中，由表提供內容的比例（萬分比）
+    pub chart_coverage_myriad: u32,
+    /// 給使用者看的一句話說明：表涵蓋什麼、沒涵蓋什麼
+    pub chart_note: String,
 }
 
 /// 一個有效籌碼分檔（規則細則 8.5）。
@@ -78,8 +95,16 @@ pub struct BucketOptionView {
     pub label: String,
     /// 這一檔採推入或棄牌，不做小額加注
     pub push_fold: bool,
-    /// 該檔對範圍寬度的乘數（萬分比，10000 = 不變）
+    /// 該檔對範圍寬度的乘數（萬分比，10000 = 不變）。
+    ///
+    /// 這是**參數產生器**的欄位。走預設組合表的節點不看它——表的內容
+    /// 直接就是那一檔的手牌清單
     pub multiplier: u32,
+    /// 這一檔對應到預設組合表的哪一欄深度。
+    ///
+    /// 引擎分九檔、表只有四檔，對應關係必須說出來：否則使用者選了
+    /// 40–70BB，看到的其實是表上 35–50BB 那一欄，而畫面上毫無跡象
+    pub chart_depth: String,
 }
 
 /// 一個翻前情境（UI 規格 D.4 的節點情境清單）。
@@ -122,11 +147,37 @@ pub struct MatrixCellView {
     /// 主動（加注或推入）頻率，萬分比
     pub aggressive: u32,
     pub call: u32,
+    /// 過牌頻率。**不併進棄牌**：無人加注時大盲過牌看翻牌，
+    /// 與把牌丟掉是完全不同的一件事
+    pub check: u32,
     pub fold: u32,
     /// equity 排序百分位，萬分比（0 為最強）
     pub percentile: u32,
     /// 這一格是使用者覆寫的結果，不是參數產生的
     pub overridden: bool,
+    /// 這一格在預設組合表上的動作鍵（`fold`／`call`／`raise-2.5x`／
+    /// `raise-8x`／`allin`）。`null` 代表這個節點不在表上，走參數產生器
+    pub chart_action: Option<String>,
+}
+
+/// 預設組合表上的一列（一個動作）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
+#[serde(rename_all = "camelCase")]
+pub struct ChartRowView {
+    /// 動作鍵，與 `MatrixCellView::chart_action` 同一組字串
+    pub action: String,
+    pub label: String,
+    /// 這一列涵蓋的牌類代號。來源表寫「其餘手牌」的列已在載入時展開
+    pub hands: Vec<String>,
+    /// 這一列涵蓋的 combo 數（全部 1326 個之中）
+    pub combos: u32,
+    /// 佔 1326 個 combo 的比例，萬分比
+    pub share_myriad: u32,
+    /// 這一列若是加注，加注到多少（BB 的百分之一）
+    pub raise_to_centi_bb: Option<u32>,
+    /// 來源表 H 欄的原文
+    pub note: String,
 }
 
 /// 一個節點的完整範圍矩陣。
@@ -153,6 +204,15 @@ pub struct RangeMatrixView {
     pub aggressive_action: String,
     /// 產生排序時假設的對手數（見 `baseline::expected_opponents`）
     pub expected_opponents: u8,
+    /// 這個節點的內容來源：`chart`（顧問的預設組合表）或 `baseline`（參數產生器）
+    pub source: String,
+    /// 本節點用的是表上哪一檔深度。引擎有九檔 bucket、表只有四檔，
+    /// 對應關係必須說出來，否則使用者不知道 40–70BB 看的是 35–50BB 那一欄
+    pub chart_depth: Option<String>,
+    /// 本節點用的是表上哪一欄情境
+    pub chart_scenario: Option<String>,
+    /// 表上這一格的五列原文。`source` 為 `baseline` 時是空的
+    pub chart_rows: Vec<ChartRowView>,
 }
 
 /// 一格覆寫。節點鍵的欄位與引擎決策時查表用的完全相同。
@@ -179,7 +239,30 @@ pub fn meta() -> StrategyMetaView {
     // 排序的來源與等級隨 meta 一起送出。面板必須說得出自己畫的是什麼
     // 內容——低樣本替代品畫出來的矩陣與正式的長得一模一樣
     let status = crate::rankings::status();
+    // 預設組合表的現況同樣要說出來。表載不進來時面板畫的是參數產生的
+    // 佔位內容，那與顧問簽核過的東西不是同一份，使用者沒有辦法自己分辨
+    let chart = DefaultChart::embedded();
+    let (chart_cell_count, chart_coverage_myriad, chart_note) = match chart {
+        Ok(chart) => {
+            let covered = enumerate_nodes().iter().filter(|n| chart.covers(n)).count() as u64;
+            let coverage = u32::try_from(covered * 10_000 / nodes.max(1)).unwrap_or(0);
+            (
+                chart.entries().len() as u64,
+                coverage,
+                "翻前一律照顧問的預設組合表。表沒有「面對跛入」那一欄，\
+                 該情境仍走參數產生器；引擎的九檔籌碼分檔對應到表上的四檔深度。"
+                    .to_owned(),
+            )
+        }
+        Err(error) => (0, 0, format!("預設組合表載入失敗，已退回參數產生器：{error}")),
+    };
     StrategyMetaView {
+        chart_source: chart.map_or_else(|_| "（未載入）".to_owned(), |c| c.source.clone()),
+        chart_version: CHART_VERSION.to_owned(),
+        chart_loaded: chart.is_ok(),
+        chart_cell_count,
+        chart_coverage_myriad,
+        chart_note,
         baseline_name: rules.name.clone(),
         baseline_version: rules.version.clone(),
         consultant_approved: rules.consultant_approved,
@@ -229,6 +312,7 @@ pub fn nodes(seated: u8, hero: &str) -> StrategyNodesView {
                 label: bucket_label(bucket),
                 push_fold: rules.is_push_fold(bucket),
                 multiplier: rules.bucket_multiplier_of(bucket),
+                chart_depth: ChartDepth::from_bucket(bucket).label().to_owned(),
             })
             .collect(),
     }
@@ -258,6 +342,11 @@ pub fn matrix(
         .map_err(|reason| format!("equity 排序內容不可用：{reason}"))?;
     let built = RangeMatrix::build(node, &rules, ranking);
 
+    // 這個節點的內容是表給的還是參數產生的。面板必須畫得出來：兩者
+    // 一個是顧問寫的清單、一個是 equity 排序的啟發式，長相一樣但意義
+    // 完全不同
+    let entry = DefaultChart::embedded().ok().and_then(|chart| chart.lookup(&node));
+
     let cells: Vec<MatrixCellView> = HandClass::all()
         .into_iter()
         .map(|class| {
@@ -270,9 +359,13 @@ pub fn matrix(
                 combos: class.combos(),
                 aggressive: cell.aggressive,
                 call: cell.call,
+                check: cell.check,
                 fold: cell.fold,
                 percentile: cell.percentile,
                 overridden: rules.overrides.get(&node, class).is_some(),
+                chart_action: entry
+                    .and_then(|entry| entry.action_of(class))
+                    .map(|action| action.as_str().to_owned()),
             }
         })
         .collect();
@@ -289,6 +382,10 @@ pub fn matrix(
         width_myriad: built.width_myriad(),
         aggressive_action: aggressive_action(&node, &rules),
         expected_opponents: u8::try_from(opponents).unwrap_or(1),
+        source: if entry.is_some() { "chart" } else { "baseline" }.to_owned(),
+        chart_depth: entry.map(|_| ChartDepth::from_bucket(node.bucket).label().to_owned()),
+        chart_scenario: entry.map(|e| e.scenario.label().to_owned()),
+        chart_rows: entry.map(chart_rows).unwrap_or_default(),
         cells,
     })
 }
@@ -370,6 +467,12 @@ fn parse_scenario(text: &str) -> Option<PreflopScenario> {
             .ok()
             .map(|limpers| PreflopScenario::VsLimp { limpers });
     }
+    // 這一段必須排在 `vs-open-` 之前：`vs-open-raise-UTG` 也以 `vs-open-`
+    // 開頭，順序反過來會把它解析成位置「raise-UTG」而失敗，使用者的覆寫
+    // 就悄悄落到別的節點上
+    if let Some(rest) = text.strip_prefix("vs-open-raise-") {
+        return parse_position(rest).map(|opener| PreflopScenario::VsOpenRaise { opener });
+    }
     if let Some(rest) = text.strip_prefix("vs-open-") {
         return parse_position(rest).map(|opener| PreflopScenario::VsOpen { opener });
     }
@@ -394,6 +497,9 @@ fn scenario_label(scenario: PreflopScenario) -> String {
         PreflopScenario::Unopened => "無人進池".to_owned(),
         PreflopScenario::VsLimp { limpers } => format!("面對 {limpers} 名跛入"),
         PreflopScenario::VsOpen { opener } => format!("面對 {} 開牌", opener.as_str()),
+        PreflopScenario::VsOpenRaise { opener } => {
+            format!("面對 {} 開牌後再被加注", opener.as_str())
+        }
         PreflopScenario::VsThreeBet { by } => format!("被 {} 3-bet", by.as_str()),
         PreflopScenario::VsFourBet { by } => format!("被 {} 4-bet", by.as_str()),
         PreflopScenario::VsSqueeze { by } => format!("被 {} 擠壓", by.as_str()),
@@ -405,6 +511,7 @@ const fn scenario_group(scenario: PreflopScenario) -> &'static str {
         PreflopScenario::Unopened => "開牌",
         PreflopScenario::VsLimp { .. } => "面對跛入",
         PreflopScenario::VsOpen { .. } => "面對開牌",
+        PreflopScenario::VsOpenRaise { .. } => "面對開牌＋再加注",
         PreflopScenario::VsThreeBet { .. } => "面對 3-bet",
         PreflopScenario::VsFourBet { .. } => "面對 4-bet",
         PreflopScenario::VsSqueeze { .. } => "面對擠壓",
@@ -424,11 +531,40 @@ fn bucket_label(bucket: StackBucket) -> String {
 /// UI 不得自行推導加注金額（UI 規格 E.1），因此尺度由引擎給：短碼採
 /// 推入，其餘走該情境的加注尺度。
 fn aggressive_action(node: &PreflopNode, rules: &BaselineRules) -> String {
+    // 走表的節點用表自己的尺度：表的倍數乘的是前方最大下注額，
+    // 與參數產生器的 centi-BB 不是同一組數字
+    if let Some(entry) = DefaultChart::embedded().ok().and_then(|c| c.lookup(node)) {
+        return match entry.primary_aggressive() {
+            Some(ChartAction::AllIn) => "全下".to_owned(),
+            Some(action) => raise_size_centi_bb(entry.scenario, action).map_or_else(
+                || "全下".to_owned(),
+                |centi| format!("加注到 {:.2} BB", f64::from(centi) / 100.0),
+            ),
+            None => "此情境不主動下注".to_owned(),
+        };
+    }
     if rules.is_push_fold(node.bucket) {
         return "全下".to_owned();
     }
     let centi = baseline::raise_size(node.scenario, rules);
     format!("加注到 {:.2} BB", f64::from(centi) / 100.0)
+}
+
+/// 表上這一格的五列原文，供面板逐列顯示。
+fn chart_rows(entry: &ChartEntry) -> Vec<ChartRowView> {
+    entry
+        .rows()
+        .iter()
+        .map(|row| ChartRowView {
+            action: row.action.as_str().to_owned(),
+            label: row.action.label().to_owned(),
+            hands: row.classes().iter().map(|c| c.label()).collect(),
+            combos: row.combos(),
+            share_myriad: row.share_myriad(),
+            raise_to_centi_bb: raise_size_centi_bb(entry.scenario, row.action),
+            note: row.note.clone(),
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -581,7 +717,7 @@ mod tests {
         assert_eq!(view.cells.len(), 169);
         for cell in &view.cells {
             assert_eq!(
-                cell.aggressive + cell.call + cell.fold,
+                cell.aggressive + cell.call + cell.check + cell.fold,
                 FULL,
                 "{} 的頻率合計不是 100%",
                 cell.class
@@ -628,5 +764,135 @@ mod tests {
         assert!(!view.consultant_approved, "工程佔位內容不得標成已簽核");
         assert_eq!(view.preflop_cell_count, view.preflop_node_count * 169);
         assert_eq!(view.postflop_fallback, "checkFold/v0");
+    }
+
+    // ── 預設組合表 ─────────────────────────────────────────────────────
+
+    /// 面板必須說得出這一格是顧問寫的還是參數算的。
+    ///
+    /// 兩者畫出來長得一模一樣：一個是逐格的手牌清單、一個是 equity 排序
+    /// 的啟發式。不標來源的話，使用者沒有任何辦法分辨自己在看什麼。
+    #[test]
+    fn 走預設組合表的節點標明來源並附上表的原文() {
+        let view = matrix(9, "UTG", "0-15", "unopened", &[]).expect("節點合法");
+        assert_eq!(view.source, "chart");
+        assert_eq!(view.chart_depth.as_deref(), Some("0–15BB"));
+        assert_eq!(view.chart_rows.len(), 5, "表上一格恆有五個動作");
+
+        let shove = view
+            .chart_rows
+            .iter()
+            .find(|r| r.action == "allin")
+            .expect("有 ALL IN 那一列");
+        assert_eq!(shove.combos, 108);
+        assert!(shove.hands.contains(&"AA".to_owned()));
+        assert!(!shove.note.is_empty(), "來源表 H 欄的原文不得在傳輸中丟掉");
+
+        let aces = view.cells.iter().find(|c| c.class == "AA").expect("有 AA");
+        assert_eq!(aces.chart_action.as_deref(), Some("allin"));
+        let junk = view.cells.iter().find(|c| c.class == "72o").expect("有 72o");
+        assert_eq!(junk.chart_action.as_deref(), Some("fold"));
+    }
+
+    /// 表沒有「面對跛入」那一欄，那些節點如實標成參數產生。
+    #[test]
+    fn 表未涵蓋的節點標為參數產生() {
+        let view = matrix(9, "BTN", "70-110", "vs-limp-1", &[]).expect("節點合法");
+        assert_eq!(view.source, "baseline");
+        assert!(view.chart_rows.is_empty());
+        assert!(view.chart_depth.is_none());
+        assert!(view.cells.iter().all(|c| c.chart_action.is_none()));
+    }
+
+    /// 大盲在無人加注時是過牌，不是棄牌。
+    ///
+    /// 併進棄牌的話，面板會把「整張表都留下來看翻牌」畫成「什麼牌都丟」。
+    #[test]
+    fn 大盲無人加注畫成過牌而不是棄牌() {
+        let view = matrix(9, "BB", "70-110", "unopened", &[]).expect("節點合法");
+        assert_eq!(view.source, "chart");
+        for cell in &view.cells {
+            assert_eq!(cell.check, FULL, "{} 應為 100% 過牌", cell.class);
+            assert_eq!(cell.fold, 0);
+        }
+    }
+
+    /// 引擎九檔籌碼分檔各自對應到表上的哪一欄，導航要說得出來。
+    #[test]
+    fn 導航列出每一檔對應的表深度() {
+        let view = nodes(9, "BTN");
+        let depth_of = |key: &str| {
+            view.buckets
+                .iter()
+                .find(|b| b.key == key)
+                .map(|b| b.chart_depth.clone())
+                .expect("該檔存在")
+        };
+        assert_eq!(depth_of("0-15"), "0–15BB");
+        assert_eq!(depth_of("40-70"), "35–50BB");
+        assert_eq!(depth_of("70-110"), "100BB");
+        assert_eq!(depth_of("400+"), "200–250BB");
+    }
+
+    /// 面對「開牌＋再加注」是獨立的情境，導航要列得出來。
+    #[test]
+    fn 導航列出面對開牌加再加注的情境() {
+        let view = nodes(9, "BTN");
+        assert!(
+            view.scenarios.iter().any(|s| s.key == "vs-open-raise-UTG"),
+            "BTN 前方有多人，冷 4-bet 的情境到得了"
+        );
+        let early = nodes(9, "UTG+1");
+        assert!(!early
+            .scenarios
+            .iter()
+            .any(|s| s.key.starts_with("vs-open-raise-")));
+        assert!(parse_node(9, "UTG+1", "70-110", "vs-open-raise-UTG").is_err());
+    }
+
+    /// 內容現況要帶著預設組合表的來源與涵蓋率。
+    #[test]
+    fn 內容現況帶著預設組合表的來源() {
+        let view = meta();
+        assert!(view.chart_loaded, "表必須載得進來");
+        assert!(view.chart_source.contains("9MAX"));
+        assert_eq!(view.chart_cell_count, 180);
+        assert!(
+            view.chart_coverage_myriad > 7_000,
+            "表應涵蓋絕大多數翻前節點，實得 {}",
+            view.chart_coverage_myriad
+        );
+        assert!(!view.chart_note.is_empty());
+    }
+
+    /// 走表的節點，主動行動的尺度要用表的倍數而不是參數的 centi-BB。
+    #[test]
+    fn 走表的節點用表自己的加注尺度() {
+        let open = matrix(9, "BTN", "70-110", "unopened", &[]).expect("節點合法");
+        assert_eq!(open.aggressive_action, "加注到 2.50 BB");
+        let three_bet = matrix(9, "BTN", "70-110", "vs-open-CO", &[]).expect("節點合法");
+        assert_eq!(three_bet.aggressive_action, "加注到 6.25 BB");
+        let short = matrix(9, "BTN", "0-15", "unopened", &[]).expect("節點合法");
+        assert_eq!(short.aggressive_action, "全下");
+    }
+
+    /// 覆寫仍然勝過表：使用者親手改的那一格最大。
+    #[test]
+    fn 覆寫勝過預設組合表() {
+        let overrides = vec![CellOverrideView {
+            seated: 9,
+            hero: "UTG".to_owned(),
+            bucket: "0-15".to_owned(),
+            scenario: "unopened".to_owned(),
+            class: "72o".to_owned(),
+            aggressive: FULL,
+            call: 0,
+        }];
+        let view = matrix(9, "UTG", "0-15", "unopened", &overrides).expect("節點合法");
+        let cell = view.cells.iter().find(|c| c.class == "72o").expect("有 72o");
+        assert_eq!(cell.aggressive, FULL);
+        assert!(cell.overridden);
+        // 表上仍然寫著蓋牌——面板要畫得出「你改掉了表的哪一格」
+        assert_eq!(cell.chart_action.as_deref(), Some("fold"));
     }
 }

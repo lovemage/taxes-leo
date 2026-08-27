@@ -251,7 +251,12 @@ fn 棄牌紀律改變混合格的棄牌權重() {
     use poker_engine::strategy::baseline::distribution_for;
     use poker_engine::strategy::{HandClass, PreflopNode, PreflopScenario};
 
-    let rules = BaselineRules::engineering_placeholder();
+    // 這條驗的是管線的人格階段，作用在**權重**上，因此需要一格混合的
+    // 基準。出貨內容走顧問的預設組合表，那是純策略（逐格只有一個動作），
+    // 混合格由定義就不存在——參數在表上改走內容層的邊界位移，見
+    // `default_chart::ChartShift`
+    let mut rules = BaselineRules::engineering_placeholder();
+    rules.use_default_chart = false;
     let rankings = BotAgent::rankings(FAST_SAMPLES);
     let ranking = &rankings[&2];
     let node = PreflopNode {
@@ -542,6 +547,9 @@ fn 短碼全下跟注不算加注() {
 }
 
 /// 推高注額的全下才是加注。
+///
+/// 英雄自己沒下過注，因此他面對的是「開牌＋再加注」而不是「自己開牌後
+/// 被 3-bet」：選項是冷 4-bet／冷跟／棄，賠率與所需範圍都不同。
 #[test]
 fn 推高注額的全下算加注() {
     use poker_engine::strategy::PreflopScenario;
@@ -556,9 +564,32 @@ fn 推高注額的全下算加注() {
 
     assert_eq!(
         scenario_of(&view_with(history, hero)),
+        PreflopScenario::VsOpenRaise {
+            opener: PositionLabel::Utg1
+        }
+    );
+}
+
+/// 英雄自己開過牌，才算「被 3-bet」。
+///
+/// 兩者的公開行動史長得幾乎一樣——差別只在那次加注是不是英雄自己下的。
+/// 混成同一個節點等於整場用錯一欄內容：冷 4-bet 的範圍遠比 4-bet 窄。
+#[test]
+fn 英雄沒下注時面對的是開牌加再加注而不是_3bet() {
+    use poker_engine::strategy::PreflopScenario;
+
+    let hero = 2;
+    // 英雄（UTG+1）自己開牌，被身後的 UTG+2 再加注
+    let history = vec![
+        acted(2, PositionLabel::Utg1, Action::RaiseTo(Chips::new(6))),
+        acted(3, PositionLabel::Utg2, Action::RaiseTo(Chips::new(20))),
+    ];
+    assert_eq!(
+        scenario_of(&view_with(history, hero)),
         PreflopScenario::VsThreeBet {
             by: PositionLabel::Utg2
-        }
+        },
+        "英雄開過牌，這是被 3-bet"
     );
 }
 
@@ -713,4 +744,93 @@ fn 逐格覆寫只影響指定座位() {
         aggressive, 30,
         "其他座位不得被英雄的覆寫連帶改掉，AKs 必須照樣開牌"
     );
+}
+
+// ── 預設組合表真的接上決策路徑 ─────────────────────────────────────────
+
+/// 顧問的表必須決定 Bot 實際打出來的牌，不是只畫在面板上。
+///
+/// 這條守的是「內容裝進去了，但決策路徑還是走舊的參數」——那種漂移不會
+/// 報錯，面板與 Bot 各自看起來都正常，只是兩邊打的不是同一份策略。
+#[test]
+fn 預設組合表決定_bot_的翻前行動() {
+    let rankings = BotAgent::rankings(FAST_SAMPLES);
+    let mut agent = BotAgent::new(
+        BaselineRules::engineering_placeholder(),
+        rankings,
+        vec![BotConfig::defaults("照表"); 9],
+        7,
+    );
+
+    // 0–15BB 的 UTG 無人加注：表上整欄是 ALL IN 或蓋牌
+    let mut view = view_with(Vec::new(), 0);
+    view.position = PositionLabel::Utg;
+    view.effective_stack_bucket = StackBucket::VeryShort;
+    view.legal.can_check = false;
+
+    // 88 在表的推入範圍內
+    view.hole_cards = [
+        Card::new(Rank::Eight, Suit::Spades),
+        Card::new(Rank::Eight, Suit::Hearts),
+    ];
+    assert_eq!(agent.choose(&view), Action::AllIn, "88 在表的推入範圍內");
+
+    // 66 不在——表上寫的是蓋牌，參數化 baseline 在短碼會把它算進推入範圍，
+    // 因此這一格同時證明走的是表而不是參數
+    view.hole_cards = [
+        Card::new(Rank::Six, Suit::Spades),
+        Card::new(Rank::Six, Suit::Hearts),
+    ];
+    assert_eq!(agent.choose(&view), Action::Fold, "66 不在表的推入範圍內");
+}
+
+/// 大盲在無人加注時過牌看翻牌，不得棄掉一個免費的翻牌。
+///
+/// 表上那一列寫的是「跟注」，但無人加注時沒有錢要跟。送出 `Call` 會在
+/// legal mask 被整段清掉，分佈歸零、Bot 掉進 fallback。
+#[test]
+fn 大盲照表過牌而不是棄牌() {
+    let rankings = BotAgent::rankings(FAST_SAMPLES);
+    let mut agent = BotAgent::new(
+        BaselineRules::engineering_placeholder(),
+        rankings,
+        vec![BotConfig::defaults("照表"); 9],
+        7,
+    );
+
+    let mut view = view_with(Vec::new(), 8);
+    view.position = PositionLabel::Bb;
+    view.effective_stack_bucket = StackBucket::Deeper;
+    view.to_call = Chips::new(0);
+    view.legal.can_check = true;
+    view.legal.call_to = None;
+    view.hole_cards = [
+        Card::new(Rank::Seven, Suit::Spades),
+        Card::new(Rank::Two, Suit::Hearts),
+    ];
+
+    assert_eq!(agent.choose(&view), Action::Check, "最爛的牌也要免費看翻牌");
+}
+
+/// 表的加注尺度是「前方最大下注額 × 倍數」，不是參數的 centi-BB。
+#[test]
+fn 開牌尺度來自表的倍數() {
+    let rankings = BotAgent::rankings(FAST_SAMPLES);
+    let mut agent = BotAgent::new(
+        BaselineRules::engineering_placeholder(),
+        rankings,
+        vec![BotConfig::defaults("照表"); 9],
+        7,
+    );
+
+    // 100BB 的 BTN 無人加注：表的 2.5 倍乘的是前方 1BB，即 2.5BB。
+    // 桌上 BB 是 2 個籌碼單位，因此加注到 5
+    let mut view = view_with(Vec::new(), 6);
+    view.position = PositionLabel::Btn;
+    view.effective_stack_bucket = StackBucket::Deeper;
+    view.hole_cards = [
+        Card::new(Rank::Ace, Suit::Spades),
+        Card::new(Rank::Ace, Suit::Hearts),
+    ];
+    assert_eq!(agent.choose(&view), Action::RaiseTo(Chips::new(5)));
 }

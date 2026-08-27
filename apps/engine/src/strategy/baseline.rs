@@ -37,6 +37,7 @@ use crate::strategy::opening::OpeningWidths;
 use crate::strategy::playability::PlayabilityAdjustments;
 use crate::strategy::preflop::{positions_for, PreflopNode, PreflopScenario};
 use crate::strategy::cell_override::CellOverrides;
+use crate::strategy::default_chart::{ChartShift, DefaultChart};
 use crate::strategy::vs_open::VsOpenWidths;
 use crate::strategy::ranking::EquityRanking;
 
@@ -74,6 +75,8 @@ pub struct BaselineRules {
     pub unopened: ScenarioWidths,
     pub vs_limp: ScenarioWidths,
     pub vs_open: ScenarioWidths,
+    /// 面對「開牌＋再加注」的冷 4-bet／冷跟寬度
+    pub vs_open_raise: ScenarioWidths,
     pub vs_three_bet: ScenarioWidths,
     pub vs_four_bet: ScenarioWidths,
     pub vs_squeeze: ScenarioWidths,
@@ -96,6 +99,19 @@ pub struct BaselineRules {
     /// 永遠算不到（內插終點與盲注位分支都落在 `aggressive_latest`），
     /// 且「面對誰開牌」完全不影響寬度。見 `vs_open` 模組。
     pub vs_open_width: VsOpenWidths,
+
+    /// 是否採用顧問的預設組合表（`default_chart` 模組）。
+    ///
+    /// 開啟時，表上有的節點一律以表為準，參數只負責表涵蓋不到的節點
+    /// （面對跛入）。關掉的話整份內容退回 equity 排序的工程佔位品——
+    /// 那是給校準工具做 A／B 對照用的，不是出貨組態。
+    pub use_default_chart: bool,
+
+    /// 人格對預設組合表的邊界位移。
+    ///
+    /// 表是純策略，權重縮放對它無效——人格因此在內容層作用，
+    /// 見 [`ChartShift`]。逐座設定由 `BotAgent::new` 填入
+    pub chart_shift: ChartShift,
 
     /// 顧問逐格覆寫。**參數表達不出來的意見**才會落到這裡，
     /// 因此這份清單同時是「模型還缺哪些參數」的證據（見 `cell_override` 模組）
@@ -148,9 +164,17 @@ impl BaselineRules {
         }
 
         Self {
+            // 表是純策略，縮放寬度參數對它沒有作用；`rangeWidth` 必須
+            // 同時帶進內容層的邊界位移，否則走表的節點完全不受這個
+            // 人格參數影響
+            chart_shift: ChartShift {
+                range_width: multiplier,
+                ..self.chart_shift
+            },
             unopened: scale_widths(self.unopened),
             vs_limp: scale_widths(self.vs_limp),
             vs_open: scale_widths(self.vs_open),
+            vs_open_raise: scale_widths(self.vs_open_raise),
             vs_three_bet: scale_widths(self.vs_three_bet),
             vs_four_bet: scale_widths(self.vs_four_bet),
             vs_squeeze: scale_widths(self.vs_squeeze),
@@ -192,6 +216,13 @@ impl BaselineRules {
                 call_extra: 1_200,
                 mix_band: 300,
             },
+            // 面對開牌＋再加注：英雄尚未下注，冷 4-bet 比自己被 3-bet 更窄
+            vs_open_raise: ScenarioWidths {
+                aggressive_earliest: 150,
+                aggressive_latest: 350,
+                call_extra: 500,
+                mix_band: 150,
+            },
             // 面對 3-bet：4-bet 更窄
             vs_three_bet: ScenarioWidths {
                 aggressive_earliest: 250,
@@ -227,6 +258,9 @@ impl BaselineRules {
                 9_000,  // [400,∞)
             ],
             push_fold_below: StackBucket::Short,
+
+            use_default_chart: true,
+            chart_shift: ChartShift::NEUTRAL,
 
             opening: OpeningWidths::engineering_placeholder(),
             vs_open_width: VsOpenWidths::engineering_placeholder(),
@@ -290,6 +324,7 @@ impl BaselineRules {
             PreflopScenario::Unopened => &mut self.unopened,
             PreflopScenario::VsLimp { .. } => &mut self.vs_limp,
             PreflopScenario::VsOpen { .. } => &mut self.vs_open,
+            PreflopScenario::VsOpenRaise { .. } => &mut self.vs_open_raise,
             PreflopScenario::VsThreeBet { .. } => &mut self.vs_three_bet,
             PreflopScenario::VsFourBet { .. } => &mut self.vs_four_bet,
             PreflopScenario::VsSqueeze { .. } => &mut self.vs_squeeze,
@@ -301,6 +336,7 @@ impl BaselineRules {
             PreflopScenario::Unopened => self.unopened,
             PreflopScenario::VsLimp { .. } => self.vs_limp,
             PreflopScenario::VsOpen { .. } => self.vs_open,
+            PreflopScenario::VsOpenRaise { .. } => self.vs_open_raise,
             PreflopScenario::VsThreeBet { .. } => self.vs_three_bet,
             PreflopScenario::VsFourBet { .. } => self.vs_four_bet,
             PreflopScenario::VsSqueeze { .. } => self.vs_squeeze,
@@ -344,6 +380,8 @@ pub fn expected_opponents(node: &PreflopNode) -> usize {
         PreflopScenario::VsLimp { limpers } => usize::from(limpers).clamp(1, 3) + 1,
         // 面對加注：多為單挑或三人底池
         PreflopScenario::VsOpen { .. } | PreflopScenario::VsSqueeze { .. } => 2,
+        // 冷 4-bet 進池後幾乎必為單挑
+        PreflopScenario::VsOpenRaise { .. } => 1,
         // 3-bet／4-bet 後幾乎必為單挑
         PreflopScenario::VsThreeBet { .. } | PreflopScenario::VsFourBet { .. } => 1,
     }
@@ -440,6 +478,19 @@ pub fn distribution_for(
         return ActionDistribution::new(entries);
     }
 
+    // 顧問的預設組合表優先於參數產生器：表上有的節點一律以表為準。
+    // 順序在覆寫之後、參數之前——使用者親手改的那一格仍然最大。
+    // 表涵蓋不到的節點（面對跛入）才會往下走參數，見 `default_chart`
+    if rules.use_default_chart {
+        if let Ok(chart) = DefaultChart::embedded() {
+            if let Some(distribution) =
+                chart.distribution_for(node, class, ranking, rules.chart_shift, big_blind)
+            {
+                return Ok(distribution);
+            }
+        }
+    }
+
     let weights = if percentile + band <= aggressive_width {
         // 完全落在主動範圍內
         vec![(aggressive_action, 100u64)]
@@ -474,6 +525,8 @@ pub fn raise_size(scenario: PreflopScenario, rules: &BaselineRules) -> u32 {
     match scenario {
         PreflopScenario::Unopened | PreflopScenario::VsLimp { .. } => rules.open_size_centi_bb,
         PreflopScenario::VsOpen { .. } => rules.three_bet_size_centi_bb,
+        // 冷 4-bet：前方已有開牌＋再加注，尺度同 4-bet
+        PreflopScenario::VsOpenRaise { .. } => rules.four_bet_size_centi_bb,
         PreflopScenario::VsThreeBet { .. } | PreflopScenario::VsSqueeze { .. } => {
             rules.four_bet_size_centi_bb
         }

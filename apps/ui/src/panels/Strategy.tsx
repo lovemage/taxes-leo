@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   CellOverrideView,
+  ChartRowView,
   MatrixCellView,
   RangeMatrixView,
   StrategyMetaView,
@@ -132,17 +133,22 @@ export function Strategy({
         </span>
       </div>
       <p className="dim" style={{ fontSize: 11, margin: '0 0 16px', lineHeight: 1.6 }}>
-        節點在左欄選。點任一格可改該手牌的行動頻率；改過的格會蓋掉參數產生的結果，
+        節點在左欄選。點任一格可改該手牌的行動頻率；改過的格會蓋掉內容產生的結果，
         並隨 run 寫進 RunManifest 快照。
       </p>
 
       {failure && <Banner tone="negative">{failure}</Banner>}
       {locked && <Banner tone="warning">run 進行中，策略鎖定。</Banner>}
-      {meta && !meta.consultantApproved && (
+      {meta && !meta.chartLoaded && (
+        <Banner tone="negative">
+          預設組合表<strong>沒有載進來</strong>：{meta.chartNote}
+        </Banner>
+      )}
+      {meta && meta.chartLoaded && matrix?.source === 'baseline' && (
         <Banner tone="warning">
-          目前的 {meta.baselineName}（{meta.baselineVersion}）
-          <strong>尚未經牌手顧問簽核</strong>，是參數化產生的工程佔位內容。
-          可以拿來驗證管線，不得當成校準過的策略解讀。
+          這個節點<strong>不在預設組合表上</strong>（表沒有「面對跛入」那一欄），
+          畫的是 {meta.baselineName}（{meta.baselineVersion}）——參數化產生的工程佔位內容，
+          未經牌手顧問簽核。
         </Banner>
       )}
       {/* 低樣本排序畫出來的矩陣與正式的長得一模一樣，使用者沒有任何辦法
@@ -177,7 +183,13 @@ export function Strategy({
               }}
             >
               <Stat label="範圍寬度" value={`${(matrix.widthMyriad / 100).toFixed(1)}%`} />
-              <Stat label="混合格" value={`${matrix.mixedCount} 格`} />
+              <Stat
+                label="內容來源"
+                value={matrix.source === 'chart' ? '預設組合表' : '參數 baseline'}
+              />
+              {/* 引擎分九檔籌碼、表只有四檔。使用者選了 40–70BB 看到的其實是
+                  表上 35–50BB 那一欄，不寫出來的話畫面上毫無跡象 */}
+              <Stat label="表的深度欄" value={matrix.chartDepth ?? '—'} />
               <Stat label="主動行動" value={matrix.aggressiveAction} />
               <Stat label="排序對手數" value={`${matrix.expectedOpponents} 人`} />
             </div>
@@ -189,6 +201,7 @@ export function Strategy({
               <Swatch color="var(--matrix-aggressive)">100% 主動</Swatch>
               <Swatch color="rgba(var(--matrix-mix-rgb), 0.45)">混合</Swatch>
               <Swatch color="var(--matrix-call)">跟注</Swatch>
+              <Swatch color="var(--matrix-check)">過牌</Swatch>
               <Swatch color="var(--matrix-empty)">棄牌</Swatch>
               <span>寬度以 combo 加權，非 169 類等權</span>
             </div>
@@ -245,6 +258,14 @@ export function Strategy({
               onSet={(aggressive, call) => cell && setCell(cell.class, aggressive, call)}
               onClear={() => cell && clearCell(cell.class)}
             />
+            {matrix.chartRows.length > 0 && (
+              <ChartCard
+                rows={matrix.chartRows}
+                scenario={matrix.chartScenario}
+                depth={matrix.chartDepth}
+                picked={cell?.chartAction ?? null}
+              />
+            )}
             {meta && <ContentCard meta={meta} />}
           </aside>
         </div>
@@ -274,9 +295,16 @@ function Cell({
     <button
       type="button"
       onClick={onClick}
-      title={`${cell.class}｜主動 ${pct(cell.aggressive)}／跟注 ${pct(cell.call)}／棄牌 ${pct(
-        cell.fold,
-      )}`}
+      title={[
+        cell.class,
+        cell.chartAction ? `表：${chartActionLabel(cell.chartAction)}` : null,
+        `主動 ${pct(cell.aggressive)}`,
+        `跟注 ${pct(cell.call)}`,
+        cell.check > 0 ? `過牌 ${pct(cell.check)}` : null,
+        `棄牌 ${pct(cell.fold)}`,
+      ]
+        .filter(Boolean)
+        .join('｜')}
       style={{
         position: 'relative',
         aspectRatio: '1',
@@ -325,7 +353,28 @@ function cellTone(cell: MatrixCellView): React.CSSProperties {
     return { background: `rgba(var(--matrix-mix-rgb), ${ratio})`, color: 'var(--bg-base)' };
   }
   if (cell.call > 0) return { background: 'var(--matrix-call)', color: 'var(--text-primary)' };
+  // 過牌不是棄牌。大盲無人加注時整張表都是過牌看翻牌，畫成棄牌色
+  // 會讓使用者以為那一格「什麼牌都丟」
+  if (cell.check > 0) return { background: 'var(--matrix-check)', color: 'var(--text-primary)' };
   return { background: 'var(--matrix-empty)', color: 'var(--text-tertiary)' };
+}
+
+/** 表上的動作鍵 → 中文。與引擎的 `ChartAction::label` 同一組字 */
+function chartActionLabel(action: string): string {
+  switch (action) {
+    case 'fold':
+      return '蓋牌';
+    case 'call':
+      return '跟注';
+    case 'raise-2.5x':
+      return '加注（前方 2.5 倍）';
+    case 'raise-8x':
+      return '加注（前方 8 倍）';
+    case 'allin':
+      return 'ALL IN';
+    default:
+      return action;
+  }
 }
 
 /**
@@ -378,8 +427,38 @@ function CellEditor({
         </span>
       </div>
 
+      {cell.chartAction && (
+        <div
+          style={{
+            fontSize: 11,
+            padding: '4px 6px',
+            marginBottom: 8,
+            background: 'var(--matrix-empty)',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          預設組合表：<strong>{chartActionLabel(cell.chartAction)}</strong>
+        </div>
+      )}
+
       <Freq label="主動" value={cell.aggressive} locked={locked} onChange={setAggressive} />
       <Freq label="跟注" value={cell.call} locked={locked} onChange={setCall} />
+      {/* 過牌只顯示不編輯：覆寫的結構是「主動 ＋ 跟注，棄牌為餘數」，
+          裝不下第四個動作。硬塞一支滑桿只會讓使用者以為改得動 */}
+      {cell.check > 0 && (
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            fontSize: 11,
+            padding: '4px 0',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          <span>過牌（無人加注，不需跟注）</span>
+          <span className="num">{pct(cell.check)}</span>
+        </div>
+      )}
       <div
         style={{
           display: 'flex',
@@ -412,8 +491,10 @@ function CellEditor({
 
       <div className="dim" style={{ fontSize: 10, marginTop: 8, lineHeight: 1.5 }}>
         {cell.overridden
-          ? '這一格是你的覆寫，參數不再影響它。'
-          : '目前由參數產生。改動後即成為覆寫。'}
+          ? '這一格是你的覆寫，內容不再影響它。'
+          : cell.chartAction
+            ? '目前照預設組合表。改動後即成為覆寫，蓋掉表上的那一格。'
+            : '目前由參數產生。改動後即成為覆寫。'}
       </div>
     </section>
   );
@@ -458,14 +539,87 @@ function Freq({
   );
 }
 
+
+/**
+ * 表上這一格的五列原文。
+ *
+ * 面板 D 原本只畫得出「主動／跟注／棄牌」三個彙總頻率，那會把顧問寫的
+ * 兩種加注尺寸壓成同一件事。這張卡片照表逐列攤開，包含 H 欄的原文說明
+ * ——那是內容的一部分，不是註解。
+ */
+function ChartCard({
+  rows,
+  scenario,
+  depth,
+  picked,
+}: {
+  rows: ChartRowView[];
+  scenario: string | null;
+  depth: string | null;
+  picked: string | null;
+}) {
+  return (
+    <section style={cardStyle}>
+      <SectionTitle>預設組合表</SectionTitle>
+      <div className="dim" style={{ fontSize: 10, marginBottom: 8, lineHeight: 1.5 }}>
+        {[depth, scenario].filter(Boolean).join('｜')}
+      </div>
+      <div style={{ display: 'grid', gap: 8 }}>
+        {rows.map((row) => (
+          <div
+            key={row.action}
+            style={{
+              padding: '6px 8px',
+              background: row.action === picked ? 'var(--matrix-empty)' : 'transparent',
+              borderTop: '1px solid var(--border)',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'baseline',
+                gap: 8,
+                fontSize: 11,
+              }}
+            >
+              <span style={{ color: 'var(--text-primary)' }}>{row.label}</span>
+              <span className="num" style={{ color: 'var(--text-secondary)' }}>
+                {row.combos === 0 ? '無' : `${pct(row.shareMyriad)}｜${row.combos} combo`}
+              </span>
+            </div>
+            {row.raiseToCentiBb !== null && (
+              <div className="dim" style={{ fontSize: 10, marginTop: 2 }}>
+                加注到 {(row.raiseToCentiBb / 100).toFixed(2)} BB
+              </div>
+            )}
+            {row.note && (
+              <div
+                className="dim"
+                style={{ fontSize: 10, marginTop: 3, lineHeight: 1.5 }}
+              >
+                {row.note}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 /** D.6／D.7：內容來源、加注尺度與翻後 fallback，如實揭露 */
 function ContentCard({ meta }: { meta: StrategyMetaView }) {
   return (
     <section style={cardStyle}>
       <SectionTitle>內容現況</SectionTitle>
-      <Row label="基準" value={`${meta.baselineName}`} />
-      <Row label="版本" value={meta.baselineVersion} />
-      <Row label="顧問簽核" value={meta.consultantApproved ? '已簽核' : '未簽核'} />
+      <Row label="預設組合表" value={meta.chartSource} />
+      <Row label="表版本" value={meta.chartVersion} />
+      <Row label="表格數" value={`${meta.chartCellCount.toLocaleString()} 格`} />
+      <Row label="表涵蓋節點" value={`${pct(meta.chartCoverageMyriad)}`} />
+      <Row label="參數基準" value={`${meta.baselineName}`} />
+      <Row label="參數版本" value={meta.baselineVersion} />
+      <Row label="參數簽核" value={meta.consultantApproved ? '已簽核' : '未簽核'} />
       <Row label="翻前節點" value={`${meta.preflopNodeCount.toLocaleString()} 個`} />
       <Row label="翻前格數" value={`${meta.preflopCellCount.toLocaleString()} 格`} />
       <Row label="開牌尺度" value={`${(meta.openSizeCentiBb / 100).toFixed(2)} BB`} />
@@ -488,6 +642,7 @@ function ContentCard({ meta }: { meta: StrategyMetaView }) {
           color: 'var(--text-secondary)',
         }}
       >
+        <div style={{ marginBottom: 4 }}>{meta.chartNote}</div>
         <div style={{ marginBottom: 4 }}>{meta.rankingNote}</div>
         <div style={{ marginBottom: 4 }}>
           翻後一律 fallback（

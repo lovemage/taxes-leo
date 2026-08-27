@@ -175,6 +175,12 @@ fn list_bot_presets() -> Vec<poker_ipc::BotSeatConfig> {
     poker_ipc::bots::demo_presets()
 }
 
+/// 執行環境現況，供 status bar 顯示（V.1）
+#[tauri::command(async)]
+fn runtime_status() -> poker_ipc::RuntimeStatusView {
+    poker_ipc::runtime::status()
+}
+
 // ── 策略（面板 D）───────────────────────────────────────────────────
 
 /// 基準內容的來源與現況。UI 據此揭露「未經顧問簽核」與翻後 fallback
@@ -314,6 +320,7 @@ fn main() {
             preview_power,
             list_bot_params,
             list_bot_presets,
+            runtime_status,
             strategy_meta,
             strategy_nodes,
             strategy_matrix,

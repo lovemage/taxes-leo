@@ -1,8 +1,10 @@
 // 應用程式外殼。
 //
-// UI 規格 V.1 的三欄式版面：
+// UI 規格 V.1 的版面：
 //
+//   [ ────────── Header 48px ────────── ]
 //   [ 圖示欄 56px ][ 參數欄 300px ][ 主內容 ]
+//   [ ────────── Status bar 24px ────────── ]
 //
 // 參數欄只放**輸入**，主內容只放**輸出**。這個分工讓「調參數 → 看結果」
 // 不必來回切換畫面，也讓執行期間的鎖定範圍剛好等於參數欄。
@@ -20,7 +22,9 @@ import {
   type RunRequest,
 } from './api';
 import type { CellOverrideView } from '../../../packages/poker-types/src/index';
+import { AppHeader, type ReplayHeadline, type RunMode } from './components/AppHeader';
 import { IconRail, type RailItem } from './components/IconRail';
+import { StatusBar } from './components/StatusBar';
 import { BotParams } from './panels/BotParams';
 import { BotSeats } from './panels/BotSeats';
 import { Replay } from './panels/Replay';
@@ -60,6 +64,10 @@ export function App() {
   const [running, setRunning] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  /** E.1 的兩種模式。互動對打尚未實做，因此只會停在 batch */
+  const [mode, setMode] = useState<RunMode>('batch');
+  /** 頂部列的手數／底池。重播掛載時回報，換面板時清掉 */
+  const [replayHeadline, setReplayHeadline] = useState<ReplayHeadline | null>(null);
   const desktop = isDesktop();
   const invalid = validateRequest(request);
 
@@ -150,78 +158,100 @@ export function App() {
   }, []);
 
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-      <IconRail items={RAIL} active={panel} onSelect={setPanel} />
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+      <AppHeader
+        mode={mode}
+        onModeChange={setMode}
+        desktop={desktop}
+        running={running}
+        invalid={invalid}
+        failure={failure}
+        progress={progress}
+        replay={replayHeadline}
+        onStart={handleStart}
+        onPause={handlePause}
+        onCancel={handleCancel}
+      />
 
-      {/* 中：參數欄。只放**輸入**——面板 A 的設定、面板 B 的座位列表、
-          面板 D 的情境導航。輸出一律在右側主內容 */}
-      <aside
-        style={{
-          width: 300,
-          flexShrink: 0,
-          borderRight: '1px solid var(--border)',
-          background: 'var(--bg-surface)',
-          overflowY: 'auto',
-          padding: 16,
-        }}
-      >
-        <h2 style={{ fontSize: 13, margin: '0 0 16px' }}>
-          {PANEL_TITLE[panel] ?? '牌桌設定'}
-        </h2>
-        {panel === 'bots' && (
-          <BotSeats
-            request={request}
-            onChange={setRequest}
-            locked={running}
-            selected={botSeat}
-            onSelect={setBotSeat}
-          />
-        )}
-        {panel === 'strategy' && (
-          <StrategyNav
-            selection={node}
-            onChange={setNode}
-            overrideCount={request.heroOverrides.length}
-          />
-        )}
-        {panel !== 'bots' && panel !== 'strategy' && (
-          <TableSetup request={request} onChange={setRequest} locked={running} />
-        )}
-      </aside>
+      {/* 三欄工作區。minHeight 0 讓各欄自行捲動，而不是把捲軸推到最外層 */}
+      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+        <IconRail items={RAIL} active={panel} onSelect={setPanel} />
 
-      {/* 右：主內容 */}
-      <main style={{ flex: 1, overflow: 'auto', background: 'var(--bg-base)' }}>
-        {panel === 'bots' && (
-          <BotParams
-            request={request}
-            onChange={setRequest}
-            locked={running}
-            selected={botSeat}
+        {/* 中：參數欄。只放**輸入**——面板 A 的設定、面板 B 的座位列表、
+            面板 D 的情境導航。輸出一律在右側主內容 */}
+        <aside
+          style={{
+            width: 300,
+            flexShrink: 0,
+            borderRight: '1px solid var(--border)',
+            background: 'var(--bg-surface)',
+            overflowY: 'auto',
+            padding: 16,
+          }}
+        >
+          <h2 style={{ fontSize: 13, margin: '0 0 16px' }}>
+            {PANEL_TITLE[panel] ?? '牌桌設定'}
+          </h2>
+          {panel === 'bots' && (
+            <BotSeats
+              request={request}
+              onChange={setRequest}
+              locked={running}
+              selected={botSeat}
+              onSelect={setBotSeat}
+            />
+          )}
+          {panel === 'strategy' && (
+            <StrategyNav
+              selection={node}
+              onChange={setNode}
+              overrideCount={request.heroOverrides.length}
+            />
+          )}
+          {panel !== 'bots' && panel !== 'strategy' && (
+            <TableSetup request={request} onChange={setRequest} locked={running} />
+          )}
+        </aside>
+
+        {/* 右：主內容 */}
+        <main style={{ flex: 1, overflow: 'auto', background: 'var(--bg-base)' }}>
+          {panel === 'bots' && (
+            <BotParams
+              request={request}
+              onChange={setRequest}
+              locked={running}
+              selected={botSeat}
+            />
+          )}
+          {panel === 'strategy' && (
+            <Strategy
+              selection={node}
+              overrides={request.heroOverrides}
+              onOverridesChange={setOverrides}
+              locked={running}
+            />
+          )}
+          {panel === 'run' && (
+            <RunControl
+              request={request}
+              progress={progress}
+              running={running}
+              desktop={desktop}
+              invalid={invalid}
+              failure={failure}
+                  />
+          )}
+          {panel === 'replay' && (
+          <Replay
+            reloadToken={reloadToken}
+            bigBlind={request.bigBlind}
+            onHeadline={setReplayHeadline}
           />
         )}
-        {panel === 'strategy' && (
-          <Strategy
-            selection={node}
-            overrides={request.heroOverrides}
-            onOverridesChange={setOverrides}
-            locked={running}
-          />
-        )}
-        {panel === 'run' && (
-          <RunControl
-            request={request}
-            progress={progress}
-            running={running}
-            desktop={desktop}
-            invalid={invalid}
-            failure={failure}
-            onStart={handleStart}
-            onPause={handlePause}
-            onCancel={handleCancel}
-          />
-        )}
-        {panel === 'replay' && <Replay reloadToken={reloadToken} bigBlind={request.bigBlind} />}
-      </main>
+        </main>
+      </div>
+
+      <StatusBar mode={mode} />
     </div>
   );
 }

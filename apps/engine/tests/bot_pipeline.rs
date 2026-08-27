@@ -306,10 +306,45 @@ fn 噪音把分佈拉向均勻() {
     let before = trace.at(PipelineStage::LegalMaskAndCap).expect("有階段");
     let after = trace.at(PipelineStage::Noise).expect("有階段");
 
-    // 最小權重的行動應被拉高，最大權重的應被拉低
-    let min_before = before.entries().iter().map(|(_, w)| *w).min().expect("非空");
-    let min_after = after.entries().iter().map(|(_, w)| *w).min().expect("非空");
-    assert!(min_after > min_before, "噪音應拉高最低權重");
+    // 基準本來就有的行動之中，權重最低的那個應被拉高
+    let (weakest, min_before) = before
+        .entries()
+        .iter()
+        .min_by_key(|(_, w)| *w)
+        .copied()
+        .expect("非空");
+    assert!(
+        after.weight_of(weakest) > min_before,
+        "噪音應拉高基準中權重最低的行動"
+    );
+    // 最大權重的應被拉低
+    let (strongest, max_before) = before
+        .entries()
+        .iter()
+        .max_by_key(|(_, w)| *w)
+        .copied()
+        .expect("非空");
+    assert!(after.weight_of(strongest) < max_before, "噪音應拉低最高權重");
+}
+
+/// 噪音必須能打出基準之外的行動。
+///
+/// 只在既有支撐上重配權重的話，純策略的格子完全動不了——顧問的預設
+/// 組合表逐格只有一個動作，那支滑桿就整個失效。
+#[test]
+fn 噪音會打出基準之外的合法行動() {
+    let mut config = BotConfig::defaults("高噪音");
+    config
+        .set_behavior("decisionNoisePp", ParamValue::Myriad(3_000))
+        .expect("設定");
+
+    // 純策略：只有一個動作
+    let pure = ActionDistribution::new(vec![(raise(6), FULL)]).expect("建立純策略");
+    let trace = run(&pure, &config, all_legal, 0).expect("管線執行");
+    let after = trace.at(PipelineStage::Noise).expect("有階段");
+
+    assert!(after.weight_of(raise(6)) < FULL, "純策略也要被噪音拉開");
+    assert!(after.weight_of(Action::Fold) > 0, "噪音應能打出基準之外的行動");
 }
 
 // ── 步驟 7：取樣與可重現性 ─────────────────────────────────────────────

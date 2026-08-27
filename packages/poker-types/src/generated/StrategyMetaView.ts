@@ -48,4 +48,28 @@ rankingContentGrade: boolean,
 /**
  * 給使用者看的一句話說明排序來源
  */
-rankingNote: string, };
+rankingNote: string, 
+/**
+ * 預設組合表的來源檔名（顧問給的那份 Excel）
+ */
+chartSource: string, 
+/**
+ * 預設組合表的內容版本
+ */
+chartVersion: string, 
+/**
+ * 表是否成功載入。false 時 `chart_note` 帶著失敗原因
+ */
+chartLoaded: boolean, 
+/**
+ * 表上的格數（深度 × 位置 × 情境）
+ */
+chartCellCount: number, 
+/**
+ * 引擎的翻前節點之中，由表提供內容的比例（萬分比）
+ */
+chartCoverageMyriad: number, 
+/**
+ * 給使用者看的一句話說明：表涵蓋什麼、沒涵蓋什麼
+ */
+chartNote: string, };

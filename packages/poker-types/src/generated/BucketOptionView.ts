@@ -9,6 +9,16 @@ export type BucketOptionView = { key: string, label: string,
  */
 pushFold: boolean, 
 /**
- * 該檔對範圍寬度的乘數（萬分比，10000 = 不變）
+ * 該檔對範圍寬度的乘數（萬分比，10000 = 不變）。
+ *
+ * 這是**參數產生器**的欄位。走預設組合表的節點不看它——表的內容
+ * 直接就是那一檔的手牌清單
  */
-multiplier: number, };
+multiplier: number, 
+/**
+ * 這一檔對應到預設組合表的哪一欄深度。
+ *
+ * 引擎分九檔、表只有四檔，對應關係必須說出來：否則使用者選了
+ * 40–70BB，看到的其實是表上 35–50BB 那一欄，而畫面上毫無跡象
+ */
+chartDepth: string, };
