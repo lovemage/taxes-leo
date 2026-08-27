@@ -1,6 +1,30 @@
 # 9-max 德州撲克模擬平台
 
+*中文（預設）· [English](README.en.md)*
+
 單機 Windows 桌面應用（開發中）。規格文件見下方「現行文件」。
+
+## 下載測試版
+
+測試人員**不需要安裝任何開發工具**，到
+[Releases](https://github.com/lovemage/taxes-leo/releases) 抓最新版即可。
+每版提供三種，擇一：
+
+| 檔案 | 說明 |
+|---|---|
+| `9max-sim-<版本>-setup.exe` | NSIS 安裝檔（建議） |
+| `9max-sim-<版本>.msi` | MSI 安裝檔，適合用群組原則派送 |
+| `9max-sim-<版本>-portable.exe` | 免安裝，下載直接執行 |
+
+> **程式未做簽章，首次執行時 SmartScreen 會攔下來**，點「其他資訊」→
+> 「仍要執行」。這一步請先跟測試人員講——多數人看到攔截畫面會直接關掉，
+> 然後回報「程式打不開」。
+>
+> 若視窗開得起來但畫面空白，是缺
+> [WebView2 執行階段](https://developer.microsoft.com/microsoft-edge/webview2/)。
+> Win10／11 通常已內建。
+
+版本更新說明在程式內：右上角「更新說明」。
 
 ## 現行文件（僅此四份具規範力）
 
@@ -200,12 +224,15 @@ pnpm build
 > 前端不需要 emit。`generate_handler!` 註冊的自訂 command（`start_run` 等）
 > 不受 ACL 管轄，因此不必逐一列出。
 
-**打包產出**（2026-08-21 於 Windows 實測）：
+**打包產出**（2026-08-27 於 GitHub Actions 的 windows-latest 實測）：
 
 | 目標 | 結果 |
 |---|---|
-| NSIS installer | 2.82 MB |
-| MSI installer | 4.06 MB |
+| NSIS installer | 2.89 MB |
+| MSI installer | 4.18 MB |
+| 免安裝執行檔 | 11.03 MB |
+
+免安裝版比較大是因為它沒有 installer 的壓縮；三者的程式內容相同。
 
 > **MSI 必須指定 `wix.language: "zh-TW"`**。WiX 預設走 `en-US`／code page 1252，
 > 而產品名稱 `9max 模擬平台` 含中文字元，在該 code page 下無法編碼，MSI 打包會失敗
@@ -217,6 +244,42 @@ pnpm build
 **前端如何分辨環境**：`apps/ui/src/api.ts` 偵測 `window.__TAURI__` 是否存在，
 有就走 Tauri command，沒有就打 devserver 的 HTTP 端點。兩邊的 command 名稱與參數
 形狀一致，因此切換只發生在該檔，其餘前端程式碼不需要知道自己跑在哪裡。
+
+## 建置與發佈（CI）
+
+兩支 workflow，刻意分開：完整 installer 打包要編 Tauri 與 SQLite 的
+C 原始碼，代價太高，不適合每個 PR 跑一次。
+
+| Workflow | 觸發 | 內容 |
+|---|---|---|
+| [`pr-checks.yml`](.github/workflows/pr-checks.yml) | PR、推 `main` | Linux：`cargo test`、`clippy -D warnings`、前端打包、產生型別一致性；Windows：`cargo check apps/desktop` |
+| [`desktop-build.yml`](.github/workflows/desktop-build.yml) | 手動、推 `v*` tag | 完整 installer 打包；tag 另開 Release |
+
+**發版**：
+
+1. 更新 [`apps/ui/src/releaseNotes.ts`](apps/ui/src/releaseNotes.ts)（新版本往陣列
+   **前面**加）與 [`apps/desktop/tauri.conf.json`](apps/desktop/tauri.conf.json)
+   的 `version`。頂部列顯示的版本號由 vite 從 `tauri.conf.json` 注入，
+   前端不另抄一份。
+2. 推 tag：
+
+```bash
+git tag -a v0.1.1 -m "..." && git push origin v0.1.1
+```
+
+tag 推上去之後，Release 會自動建立並掛上三個產物。repo 是 public，
+測試人員不必登入 GitHub 就能下載。
+
+不打 tag 只想拿一份來測時，用手動觸發，產物在 Actions 的 artifacts
+（需登入 GitHub、必為 zip、留 30 天）。
+
+> **Windows job 不是可有可無的。** `apps/desktop` 在 Linux 編不了
+> （Tauri 需要 webkit2gtk），本機只能做語法解析驗證。沒有那個 job 的話，
+> Tauri command 的型別錯誤要等到手動打包才會被發現。
+>
+> **產物檔名在 CI 改成 ASCII**。`productName` 是「9max 模擬平台」含中文，
+> Tauri 產出的檔名跟著含中文，下載時 URL 會被百分號編碼，部分瀏覽器
+> 會存成亂碼檔名。
 
 ## 牌手顧問校準流程
 
@@ -252,15 +315,15 @@ cargo run --release --example attribute_feedback
 
 ## 目前進度
 
-`cargo test --workspace` 全綠，共 372 個測試。
+`cargo test --workspace` 全綠，共 411 個測試（另有 1 個預設略過的資產重算驗證）。
 
 | 里程碑 | 狀態 |
 |---|---|
 | M0 垂直切片 | 全鏈路可跑通；兩道硬閘門未過（見下） |
 | M1 規則層 | 完成 |
-| M2 策略與 Bot 層 | 翻前參數化 baseline 已接進執行層，翻後無內容一律 fallback |
-| M3 桌面應用 UI | App shell 與面板 A／B／C／E／G 可用；D 只做翻前，F 未做 |
-| M4 收尾與發佈 | 未開始 |
+| M2 策略與 Bot 層 | 翻前已換成顧問的預設組合表，翻後無內容一律 fallback |
+| M3 桌面應用 UI | V.1 App shell 完整（頂部列與狀態列）、面板 A／B／C／E／G 可用；D 只做翻前，F 未做 |
+| M4 收尾與發佈 | Windows 安裝檔已可由 CI 建置並發 Release；其餘未開始 |
 
 **已完成**
 
@@ -286,8 +349,9 @@ cargo run --release --example attribute_feedback
 
 - 情境導航（桌型 × 位置 × 情境 × 有效籌碼 bucket）與 13×13 範圍矩陣可用，
   頻率、範圍寬度與加注尺度全部由引擎算，UI 只負責畫。
-- 編輯路徑是**逐格覆寫**（`CellOverrides`）：改過的格會蓋掉參數產生的結果，
-  只裝在使用者座位上，並隨 run 寫進 `RunManifest` 的內容快照。
+- 編輯路徑是**逐格覆寫**（`CellOverrides`）：內容優先序為逐格覆寫 →
+  預設組合表 → 參數產生器，改過的格蓋掉其餘兩者。覆寫只裝在使用者座位上，
+  並隨 run 寫進 `RunManifest` 的內容快照。
 - **翻後規則清單（UI 規格 D.5）沒做**，因為翻後沒有內容可編輯——顧問的規則表
   還沒進來，一律走 `checkFold/v0` fallback。畫一個空的規則編輯器只會讓人以為
   那裡有策略。
@@ -298,8 +362,8 @@ cargo run --release --example attribute_feedback
 
 > **翻後目前一律走 fallback**（`checkFold/v0`）。顧問的翻後規則表還沒進來，
 > 寫成別的樣子只會是我們自己編的內容，而編出來的內容會混進統計裡，
-> 讓人以為那是校準過的結果。翻前走的是參數化 baseline，位置、籌碼 bucket
-> 與情境都真的會影響分佈，因此面板 C 的參數調整看得到效果。
+> 讓人以為那是校準過的結果。翻前走的是顧問簽核過的預設組合表（見上方
+> 「翻前預設組合表」），表沒涵蓋的「面對跛入」才退回參數化 baseline。
 >
 > **21 個 Bot 參數目前只有 6 個會改變決策。** 其餘的已依核心規格 4.3 宣告，
 > 但決策路徑尚未讀到，因此 `ParamSpec::implemented` 標為 false，UI 列在
