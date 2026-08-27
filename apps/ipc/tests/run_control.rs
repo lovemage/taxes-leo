@@ -319,18 +319,27 @@ fn 總時長扣掉暫停時間() {
         control_for_thread.paused.store(false, Ordering::Relaxed);
     });
 
+    let started = std::time::Instant::now();
     let (updates, _) = run_with(Arc::clone(&control), 1_000);
+    let wall = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
     let last = updates.last().expect("至少一次進度");
+    let paused = control.paused_millis.load(Ordering::Relaxed);
 
     assert!(
-        control.paused_millis.load(Ordering::Relaxed) >= PAUSE_MS - 50,
-        "暫停時間必須被累計，實際 {} ms",
-        control.paused_millis.load(Ordering::Relaxed)
+        paused >= PAUSE_MS - 50,
+        "暫停時間必須被累計，實際 {paused} ms"
     );
-    // 一千手本身遠短於暫停的 300 ms；沒扣掉的話這裡一定超過
+
+    // 守的是不變量「總時長 == 牆鐘 − 暫停」，不是「這個 run 很快」。
+    // 拿絕對毫秒數當門檻的話，機器一慢測試就假性失敗——CI 上一千手實測
+    // 要 334 ms，遠超過原本用的 300 ms 門檻。
+    //
+    // 容差來源：暫停迴圈每 50 ms 輪詢一次（累計值可能多算一輪），加上
+    // 最後一個進度事件到測試取牆鐘之間還有收尾工作。
+    let expected = wall.saturating_sub(paused);
     assert!(
-        last.elapsed_ms < PAUSE_MS,
-        "總時長應扣掉暫停，實際 {} ms",
+        last.elapsed_ms.abs_diff(expected) <= 150,
+        "總時長應為牆鐘 {wall} ms 扣掉暫停 {paused} ms（約 {expected} ms），實際 {} ms",
         last.elapsed_ms
     );
 }
