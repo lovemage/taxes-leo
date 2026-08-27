@@ -190,6 +190,12 @@ pub struct RunProgress {
     pub cancelled: bool,
     /// 目前階段。前端據此顯示「準備內容中」而不是一條不動的 0%
     pub phase: RunPhase,
+    /// 實際計算耗時（毫秒），**已扣掉暫停**。
+    ///
+    /// UI 規格 E.6 要求完成時顯示總時長。扣掉暫停是因為這個數字會被當成
+    /// 效能訊號讀：把使用者去泡咖啡的五分鐘算進去，講的就不是引擎的速度。
+    #[ts(type = "number")]
+    pub elapsed_ms: u64,
 }
 
 /// 背景執行的控制握把。
@@ -203,6 +209,9 @@ pub struct RunControl {
     /// 下一次啟動會被誤判為「已有 run 正在執行」而永久拒絕
     pub finished: AtomicBool,
     pub hands_done: AtomicU64,
+    /// 暫停累計的毫秒數。由 [`RunControl::checkpoint`] 累加，
+    /// 從總時長扣掉之後才是實際計算耗時
+    pub paused_millis: AtomicU64,
 }
 
 impl RunControl {
@@ -220,14 +229,33 @@ impl RunControl {
     /// 回傳 `false` 代表應中止。暫停時在此自旋等待，
     /// **不介入任何一手的內部狀態**，因此續跑不改變結果。
     pub fn checkpoint(&self) -> bool {
+        // 沒暫停是絕大多數的情形，先擋掉才不會每手都取一次時間
+        if !self.paused.load(Ordering::Relaxed) {
+            return !self.cancelled.load(Ordering::Relaxed);
+        }
+
+        let paused_at = std::time::Instant::now();
         while self.paused.load(Ordering::Relaxed) {
             if self.cancelled.load(Ordering::Relaxed) {
+                self.accumulate_paused(paused_at);
                 return false;
             }
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
+        self.accumulate_paused(paused_at);
         !self.cancelled.load(Ordering::Relaxed)
     }
+
+    fn accumulate_paused(&self, since: std::time::Instant) {
+        let millis = u64::try_from(since.elapsed().as_millis()).unwrap_or(u64::MAX);
+        self.paused_millis.fetch_add(millis, Ordering::Relaxed);
+    }
+}
+
+/// 實際計算耗時：牆鐘時間扣掉暫停。
+fn compute_ms(started: std::time::Instant, control: &RunControl) -> u64 {
+    let wall = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+    wall.saturating_sub(control.paused_millis.load(Ordering::Relaxed))
 }
 
 /// 執行一個 run 並落 log。
@@ -257,6 +285,7 @@ pub fn execute(
     // 都不再代表「進行中的 run」。用 guard 而非在每個 return 前手動標記，
     // 是因為漏掉任何一條路徑的後果都是「之後再也開不了新的 run」
     let _guard = FinishGuard(control);
+    let started = std::time::Instant::now();
 
     // 在做任何事之前先讓畫面有東西看。這一行的成本是一個事件，
     // 換掉的是「按下開始之後什麼都沒發生」那段沉默
@@ -269,6 +298,7 @@ pub fn execute(
         finished: false,
         cancelled: false,
         phase: RunPhase::PreparingStrategy,
+        elapsed_ms: compute_ms(started, control),
     });
 
     let rules = BaselineRules::engineering_placeholder();
@@ -356,6 +386,7 @@ pub fn execute(
                 finished: false,
                 cancelled: false,
                 phase: RunPhase::Running,
+                elapsed_ms: compute_ms(started, control),
             });
         }
     });
@@ -410,6 +441,7 @@ pub fn execute(
         } else {
             RunPhase::Finished
         },
+        elapsed_ms: compute_ms(started, control),
     });
 
     Ok(run_id)

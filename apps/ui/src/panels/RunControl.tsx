@@ -4,6 +4,7 @@
 // 因此這個面板只負責「發指令 ＋ 顯示進度」，不阻擋其他面板。
 
 import type { RunProgress, RunRequest } from '../api';
+import { formatDuration, useCountUp } from '../motion';
 
 export function RunControl({
   request,
@@ -12,14 +13,23 @@ export function RunControl({
   desktop,
   invalid,
   failure,
+  onViewReplay,
 }: {
   request: RunRequest;
   progress: RunProgress | null;
+  /**
+   * 畫面上是否算在執行中。
+   *
+   * 這不完全等於引擎的狀態：一萬手在 release 約 100 毫秒跑完，App shell
+   * 讓它至少維持一段最短可見時間（見 `useMinimumVisible`），否則進度條
+   * 閃一下就沒了。真實耗時照實顯示在完成區，不受影響。
+   */
   running: boolean;
   desktop: boolean;
   /** 設定不合法時的原因，合法為 null */
   invalid: string | null;
   failure: string | null;
+  onViewReplay: () => void;
 }) {
   const done = progress?.handsDone ?? 0;
   const total = progress?.handsTotal ?? request.handLimit;
@@ -27,6 +37,14 @@ export function RunControl({
   // 「準備內容」與「剛按下開始、事件還沒到」都沒有可量化的百分比。
   // 兩者都畫成不定量進度，否則畫面與當掉長得一模一樣
   const preparing = running && (progress === null || progress.phase === 'preparingStrategy');
+
+  // E.6 完成區。最短可見時間結束後才揭曉，數字才有得滾——最終進度事件
+  // 是在那之前到的，先跳到終值的話揭曉就沒有東西可以動了
+  const reveal = !running && (progress?.finished ?? false) && !progress?.cancelled;
+  const shownHands = useCountUp(reveal ? done : 0);
+  const shownInstances = useCountUp(reveal ? (progress?.instances ?? 0) : 0);
+  const shownBb = useCountUp(reveal ? (progress?.bbPer100 ?? 0) : 0);
+  const shownElapsed = useCountUp(reveal ? (progress?.elapsedMs ?? 0) : 0);
 
   return (
     <div style={{ padding: 20, maxWidth: 720 }}>
@@ -166,6 +184,80 @@ export function RunControl({
           {statusText(progress, running)}
         </div>
       </section>
+
+      {/* E.6 完成。核心規格要求跑完顯示總手數、桌次數、總時長與最終 bb/100 */}
+      {reveal && (
+        <section
+          style={{
+            border: '1px solid var(--accent)',
+            borderRadius: 'var(--radius-panel)',
+            background: 'var(--bg-surface)',
+            padding: 16,
+            marginBottom: 16,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 600,
+              marginBottom: 10,
+              color: 'var(--accent)',
+            }}
+          >
+            完成
+          </div>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, 1fr)',
+              gap: 16,
+            }}
+          >
+            <Metric label="總手數" value={Math.round(shownHands).toLocaleString()} />
+            <Metric label="桌次" value={String(Math.round(shownInstances))} />
+            <Metric label="總時長" value={formatDuration(shownElapsed)} />
+            <Metric
+              label="使用者 bb/100"
+              value={shownBb.toFixed(2)}
+              tone={
+                (progress?.bbPer100 ?? 0) === 0
+                  ? undefined
+                  : (progress?.bbPer100 ?? 0) > 0
+                    ? 'positive'
+                    : 'negative'
+              }
+            />
+          </div>
+
+          {/* 核心規格 5.3／E.6 要求 bb/100 附區間與可判定狀態，面板 F 還沒做。
+              在那之前只給點估計，並且明講它不足以判定——標成結論會讓人拿
+              一個沒有區間的數字下判斷 */}
+          <p className="dim" style={{ fontSize: 11, margin: '10px 0 0' }}>
+            bb/100 是點估計，尚未附信賴區間，不足以判定勝負；正式判定要等面板 F。
+            總時長是實際計算時間，已扣掉暫停。
+          </p>
+
+          <button
+            type="button"
+            onClick={onViewReplay}
+            style={{
+              marginTop: 12,
+              padding: '8px 18px',
+              borderRadius: 'var(--radius-control)',
+              border: '1px solid var(--accent)',
+              background: 'var(--accent)',
+              color: 'var(--bg-base)',
+              fontFamily: 'inherit',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            看逐手 Log
+          </button>
+        </section>
+      )}
 
       {/* E.4 的控制在頂部列。放在這裡的話，執行期間切到別的面板就按不到了 */}
       <p className="dim" style={{ fontSize: 11, marginTop: 4 }}>

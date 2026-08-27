@@ -302,6 +302,39 @@ fn 暫停續跑不改變最終結果() {
     );
 }
 
+/// E.6 的總時長要扣掉暫停。
+///
+/// 這個數字在畫面上會被當成效能訊號讀（「10,000 手 · 0.3 秒」）。把使用者
+/// 暫停去做別的事那段算進去，講的就不是引擎的速度而是他離開了多久。
+#[test]
+fn 總時長扣掉暫停時間() {
+    const PAUSE_MS: u64 = 300;
+
+    let control = Arc::new(RunControl::default());
+    let control_for_thread = Arc::clone(&control);
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        control_for_thread.paused.store(true, Ordering::Relaxed);
+        std::thread::sleep(std::time::Duration::from_millis(PAUSE_MS));
+        control_for_thread.paused.store(false, Ordering::Relaxed);
+    });
+
+    let (updates, _) = run_with(Arc::clone(&control), 1_000);
+    let last = updates.last().expect("至少一次進度");
+
+    assert!(
+        control.paused_millis.load(Ordering::Relaxed) >= PAUSE_MS - 50,
+        "暫停時間必須被累計，實際 {} ms",
+        control.paused_millis.load(Ordering::Relaxed)
+    );
+    // 一千手本身遠短於暫停的 300 ms；沒扣掉的話這裡一定超過
+    assert!(
+        last.elapsed_ms < PAUSE_MS,
+        "總時長應扣掉暫停，實際 {} ms",
+        last.elapsed_ms
+    );
+}
+
 #[test]
 fn 取消可解除暫停的等待() {
     // 暫停中直接取消，執行緒不得卡在等待迴圈

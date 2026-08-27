@@ -12,4 +12,11 @@ bbPer100: number, paused: boolean, finished: boolean, cancelled: boolean,
 /**
  * 目前階段。前端據此顯示「準備內容中」而不是一條不動的 0%
  */
-phase: RunPhase, };
+phase: RunPhase, 
+/**
+ * 實際計算耗時（毫秒），**已扣掉暫停**。
+ *
+ * UI 規格 E.6 要求完成時顯示總時長。扣掉暫停是因為這個數字會被當成
+ * 效能訊號讀：把使用者去泡咖啡的五分鐘算進去，講的就不是引擎的速度。
+ */
+elapsedMs: number, };

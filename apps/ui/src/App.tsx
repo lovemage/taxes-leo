@@ -23,6 +23,7 @@ import {
 } from './api';
 import type { CellOverrideView } from '../../../packages/poker-types/src/index';
 import { AppHeader, type ReplayHeadline, type RunMode } from './components/AppHeader';
+import { useMinimumVisible } from './motion';
 import { IconRail, type RailItem } from './components/IconRail';
 import { StatusBar } from './components/StatusBar';
 import { BotParams } from './panels/BotParams';
@@ -44,6 +45,9 @@ const RAIL: readonly RailItem[] = [
   { key: 'strategy', glyph: '▦', label: '策略', enabled: true },
   { key: 'report', glyph: '◫', label: '報表', enabled: false },
 ];
+
+/** 執行狀態的最短可見時間。短到看不見的回饋等於沒有回饋 */
+const RUN_MIN_VISIBLE_MS = 700;
 
 /** 中欄的標題。面板換了但標題沒換，使用者會以為自己還在上一頁 */
 const PANEL_TITLE: Record<string, string> = {
@@ -69,6 +73,10 @@ export function App() {
   /** 頂部列的手數／底池。重播掛載時回報，換面板時清掉 */
   const [replayHeadline, setReplayHeadline] = useState<ReplayHeadline | null>(null);
   const desktop = isDesktop();
+  // 一萬手在 release 約 100 毫秒跑完，進度條閃一下就消失，看起來像沒跑。
+  // 這裡延長的是狀態的**可見時間**，不是計算時間——真實耗時由引擎給，
+  // 完成區照實顯示，因此沒有人會被誤導成引擎比較慢
+  const busy = useMinimumVisible(running, RUN_MIN_VISIBLE_MS);
   const invalid = validateRequest(request);
 
   // 進度事件在背景執行緒推送，因此訂閱一次即可，不隨 state 重掛
@@ -105,8 +113,9 @@ export function App() {
         setRunning(false);
         // run 寫完才換資料來源，否則重播會讀到半成品
         setReloadToken((token) => token + 1);
-        // 跑完就是要看結果，停在進度條上等使用者自己點一下沒有意義
-        setPanel('replay');
+        // 不自動跳到重播：跑完先讓面板 E 揭曉 E.6 的完成摘要（總手數、
+        // 桌次、總時長、bb/100），跳走的話那塊等於沒人看得到。要看逐手
+        // Log 由完成區的按鈕帶過去
       }),
     );
     track(
@@ -163,7 +172,7 @@ export function App() {
         mode={mode}
         onModeChange={setMode}
         desktop={desktop}
-        running={running}
+        running={busy}
         invalid={invalid}
         failure={failure}
         progress={progress}
@@ -196,7 +205,7 @@ export function App() {
             <BotSeats
               request={request}
               onChange={setRequest}
-              locked={running}
+              locked={busy}
               selected={botSeat}
               onSelect={setBotSeat}
             />
@@ -209,7 +218,7 @@ export function App() {
             />
           )}
           {panel !== 'bots' && panel !== 'strategy' && (
-            <TableSetup request={request} onChange={setRequest} locked={running} />
+            <TableSetup request={request} onChange={setRequest} locked={busy} />
           )}
         </aside>
 
@@ -219,7 +228,7 @@ export function App() {
             <BotParams
               request={request}
               onChange={setRequest}
-              locked={running}
+              locked={busy}
               selected={botSeat}
             />
           )}
@@ -228,18 +237,19 @@ export function App() {
               selection={node}
               overrides={request.heroOverrides}
               onOverridesChange={setOverrides}
-              locked={running}
+              locked={busy}
             />
           )}
           {panel === 'run' && (
             <RunControl
               request={request}
               progress={progress}
-              running={running}
+              running={busy}
               desktop={desktop}
               invalid={invalid}
               failure={failure}
-                  />
+              onViewReplay={() => setPanel('replay')}
+            />
           )}
           {panel === 'replay' && (
           <Replay
