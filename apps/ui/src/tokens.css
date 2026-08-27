@@ -205,3 +205,77 @@ input[type='range']::-moz-range-track {
     width: 50%;
   }
 }
+
+/* ── 重播動畫（UI 規格 G.4）──────────────────────────────────────────
+   只在重播播放。批次模擬不播動畫（E.1），而且核心規格 3.1 明訂動畫
+   不得成為重播正確性的資料來源——每一幀都是引擎算好的完整狀態，這裡
+   做的只是把「狀態換了」演出來，不參與任何計算。 */
+
+/* 發牌：由小放大並淡入，逐座延遲，看起來像一張一張發出去 */
+@keyframes deal-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.deal-in {
+  animation: deal-in 260ms ease-out both;
+}
+
+/* 籌碼滑進底池。起點由 --from-left／--from-top 給，因此同一段
+   keyframes 可以服務每一個座位 */
+@keyframes chip-to-pot {
+  from {
+    left: var(--from-left);
+    top: var(--from-top);
+    opacity: 0.95;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  to {
+    left: 50%;
+    top: 50%;
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.6);
+  }
+}
+
+/* 不帶文字的籌碼記號。金額刻意不印在上面，理由見 TableView 的註解 */
+.chip-fly {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--bg-base);
+  animation: chip-to-pot 520ms ease-in both;
+}
+
+/* 底池吃到籌碼時輕輕一頂。沒有這個，數字換了但畫面毫無事件感 */
+@keyframes pot-bump {
+  50% {
+    transform: scale(1.14);
+  }
+}
+
+.pot-bump {
+  animation: pot-bump 320ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .deal-in,
+  .chip-fly,
+  .pot-bump {
+    animation: none;
+  }
+  /* 籌碼動畫是純裝飾，關掉動態時直接不顯示，免得停在起點擋住座位 */
+  .chip-fly {
+    display: none;
+  }
+}

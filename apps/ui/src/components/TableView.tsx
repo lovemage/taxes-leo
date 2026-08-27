@@ -3,8 +3,12 @@
 // 使用者座位以醒目底色標示；未公開的底牌畫成佔位方塊，
 // 資料本身就沒有送到前端（遮蔽發生在 IPC 邊界）。
 
+import { useEffect, useRef, useState } from 'react';
 import type { FrameView, HandView } from '../../../../packages/poker-types/src/index';
 import { Card, HiddenCard } from './Card';
+
+/** 這些幀代表有籌碼進池，籌碼動畫只在它們上面播 */
+const CHIP_KINDS = new Set(['ante', 'smallBlind', 'bigBlind', 'straddle', 'call', 'raiseTo', 'allIn']);
 
 /** 依座位數把座位平均分佈在橢圓上，起點在正下方（使用者側）。 */
 function seatPosition(index: number, total: number) {
@@ -18,15 +22,35 @@ function seatPosition(index: number, total: number) {
 export function TableView({
   hand,
   frame,
+  frameIndex,
   heroSeat,
   bigBlind,
 }: {
   hand: HandView;
   /** 目前播放到的一幀。公共牌、底池與各座籌碼一律取自這裡（UI 規格 G.4） */
   frame: FrameView;
+  /** 第幾幀。籌碼動畫靠它換 key 重播，內容本身仍只看 `frame` */
+  frameIndex: number;
   heroSeat: number;
   bigBlind: number;
 }) {
+  // 底池變動時頂一下。數字換了卻毫無事件感，看起來像畫面沒反應
+  const [bumping, setBumping] = useState(false);
+  const lastPot = useRef(frame.pot);
+  useEffect(() => {
+    if (frame.pot === lastPot.current) return;
+    lastPot.current = frame.pot;
+    setBumping(true);
+    const timer = window.setTimeout(() => setBumping(false), 320);
+    return () => window.clearTimeout(timer);
+  }, [frame.pot]);
+
+  // 這一幀是誰把籌碼推進去的。發牌與收池為 null，因此不會誤放
+  const chipSeat =
+    CHIP_KINDS.has(frame.kind) && frame.seat !== null
+      ? hand.seats.findIndex((seat) => seat.seat === frame.seat)
+      : -1;
+
   return (
     <div
       style={{
@@ -69,7 +93,7 @@ export function TableView({
           )}
         </div>
         <div
-          className="num"
+          className={`num${bumping ? ' pot-bump' : ''}`}
           style={{ fontSize: 18, color: 'var(--text-primary)', textAlign: 'center' }}
         >
           {(frame.pot / bigBlind).toFixed(1)}
@@ -130,11 +154,31 @@ export function TableView({
             <div style={{ display: 'flex', gap: 3, justifyContent: 'center' }}>
               {seat.occupied ? (
                 seat.holeCards ? (
-                  seat.holeCards.map((code, i) => <Card key={i} code={code} />)
+                  seat.holeCards.map((code, i) => (
+                    <span
+                      key={`${hand.handIndex}-${i}`}
+                      className="deal-in"
+                      style={{ animationDelay: `${index * 45 + i * 90}ms` }}
+                    >
+                      <Card code={code} />
+                    </span>
+                  ))
                 ) : (
                   <>
-                    <HiddenCard />
-                    <HiddenCard />
+                    <span
+                      key={`${hand.handIndex}-h0`}
+                      className="deal-in"
+                      style={{ animationDelay: `${index * 45}ms` }}
+                    >
+                      <HiddenCard />
+                    </span>
+                    <span
+                      key={`${hand.handIndex}-h1`}
+                      className="deal-in"
+                      style={{ animationDelay: `${index * 45 + 90}ms` }}
+                    >
+                      <HiddenCard />
+                    </span>
                   </>
                 )
               ) : (
@@ -168,6 +212,26 @@ export function TableView({
           </div>
         );
       })}
+
+      {/* 籌碼滑進底池。key 帶幀序，因此每一幀重播一次。
+          刻意**不標金額**：`frame.to` 是「跟到／加注到」的本街累計額，
+          與底池這一幀實際增加的量不同（前面已投入的不會再進去一次）。
+          把它印在飛向底池的籌碼上會被讀成進池金額，而正確的差額 UI
+          不得自己算（G.4：底池與各座籌碼不得由 UI 重算）。金額看座位的
+          「投入」與行動列，那兩處都是引擎給的。 */}
+      {chipSeat >= 0 && frame.to !== null && (
+        <span
+          key={frameIndex}
+          className="chip-fly"
+          aria-hidden
+          style={
+            {
+              '--from-left': seatPosition(chipSeat, hand.seats.length).left,
+              '--from-top': seatPosition(chipSeat, hand.seats.length).top,
+            } as React.CSSProperties
+          }
+        />
+      )}
 
       {/* dead button／dead small blind 標示（規則細則 8.4） */}
       {(hand.deadButton || hand.deadSmallBlind) && (

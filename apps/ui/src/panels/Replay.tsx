@@ -218,6 +218,7 @@ export function Replay({
             <TableView
               hand={hand}
               frame={frame}
+              frameIndex={player.index}
               heroSeat={run?.heroSeat ?? 0}
               bigBlind={bigBlind}
             />
