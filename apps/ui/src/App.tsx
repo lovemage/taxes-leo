@@ -29,6 +29,7 @@ import { StatusBar } from './components/StatusBar';
 import { BotParams } from './panels/BotParams';
 import { BotSeats } from './panels/BotSeats';
 import { Replay } from './panels/Replay';
+import { Quiz } from './panels/Quiz';
 import { RunControl } from './panels/RunControl';
 import { Strategy } from './panels/Strategy';
 import {
@@ -43,6 +44,7 @@ const RAIL: readonly RailItem[] = [
   { key: 'replay', glyph: '⏱', label: '重播', enabled: true },
   { key: 'bots', glyph: '◍', label: 'Bot', enabled: true },
   { key: 'strategy', glyph: '▦', label: '策略', enabled: true },
+  { key: 'quiz', glyph: '◈', label: '測驗', enabled: true },
   { key: 'report', glyph: '◫', label: '報表', enabled: false },
 ];
 
@@ -55,6 +57,7 @@ const PANEL_TITLE: Record<string, string> = {
   bots: 'Bot 設定',
   strategy: '策略節點',
   replay: '牌桌設定',
+  quiz: '牌桌設定',
 };
 
 export function App() {
@@ -251,6 +254,7 @@ export function App() {
               onViewReplay={() => setPanel('replay')}
             />
           )}
+          {panel === 'quiz' && <Quiz seated={request.players} />}
           {panel === 'replay' && (
           <Replay
             reloadToken={reloadToken}
