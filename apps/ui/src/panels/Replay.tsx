@@ -7,6 +7,7 @@ import type {
   RunView,
 } from '../../../../packages/poker-types/src/index';
 import { getHand, getRun } from '../api';
+import type { ReplayHeadline } from '../components/AppHeader';
 import { ActionChip } from '../components/ActionChip';
 import { HandList } from '../components/HandList';
 import { frameCaption, ReplayControls, useReplayPlayer } from '../components/ReplayPlayer';
@@ -20,7 +21,16 @@ const NO_FRAMES: never[] = [];
  *   讓列表換成新 run 的資料——查詢 command 一律看應用程式狀態裡的
  *   current_run，前端不需要（也拿不到）run id。
  */
-export function Replay({ reloadToken, bigBlind }: { reloadToken: number; bigBlind: number }) {
+export function Replay({
+  reloadToken,
+  bigBlind,
+  onHeadline,
+}: {
+  reloadToken: number;
+  bigBlind: number;
+  /** 回報頂部列要顯示的手數／底池（V.1）。身分必須穩定，否則每次 render 重跑 */
+  onHeadline: (headline: ReplayHeadline | null) => void;
+}) {
   const [run, setRun] = useState<RunView | null>(null);
   const [selected, setSelected] = useState(0);
   const [hand, setHand] = useState<HandView | null>(null);
@@ -62,6 +72,18 @@ export function Replay({ reloadToken, bigBlind }: { reloadToken: number; bigBlin
     onAdvance: advance,
   });
 
+  const frame = hand && hand.frames.length > 0
+    ? hand.frames[Math.min(player.index, hand.frames.length - 1)]
+    : null;
+
+  // 手數編號與面板內的 header 用同一個基準，兩處對不上會讓人以為看的不是同一手
+  useEffect(() => {
+    onHeadline(frame && total > 0 ? { hand: selected, total, potBb: frame.pot / bigBlind } : null);
+  }, [frame, selected, total, bigBlind, onHeadline]);
+
+  // 切走面板時清掉，否則頂部列會停在上一次看到的數字
+  useEffect(() => () => onHeadline(null), [onHeadline]);
+
   if (error) {
     return (
       <div style={{ padding: 24 }}>
@@ -71,10 +93,6 @@ export function Replay({ reloadToken, bigBlind }: { reloadToken: number; bigBlin
       </div>
     );
   }
-
-  const frame = hand && hand.frames.length > 0
-    ? hand.frames[Math.min(player.index, hand.frames.length - 1)]
-    : null;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>

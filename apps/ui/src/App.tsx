@@ -21,7 +21,7 @@ import {
   type RunRequest,
 } from './api';
 import type { CellOverrideView } from '../../../packages/poker-types/src/index';
-import { AppHeader } from './components/AppHeader';
+import { AppHeader, type ReplayHeadline, type RunMode } from './components/AppHeader';
 import { IconRail, type RailItem } from './components/IconRail';
 import { BotParams } from './panels/BotParams';
 import { BotSeats } from './panels/BotSeats';
@@ -62,6 +62,10 @@ export function App() {
   const [running, setRunning] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  /** E.1 的兩種模式。互動對打尚未實做，因此只會停在 batch */
+  const [mode, setMode] = useState<RunMode>('batch');
+  /** 頂部列的手數／底池。重播掛載時回報，換面板時清掉 */
+  const [replayHeadline, setReplayHeadline] = useState<ReplayHeadline | null>(null);
   const desktop = isDesktop();
   const invalid = validateRequest(request);
 
@@ -153,7 +157,19 @@ export function App() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
-      <AppHeader />
+      <AppHeader
+        mode={mode}
+        onModeChange={setMode}
+        desktop={desktop}
+        running={running}
+        invalid={invalid}
+        failure={failure}
+        progress={progress}
+        replay={replayHeadline}
+        onStart={handleStart}
+        onPause={handlePause}
+        onCancel={handleCancel}
+      />
 
       {/* 三欄工作區。minHeight 0 讓各欄自行捲動，而不是把捲軸推到最外層 */}
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
@@ -221,12 +237,15 @@ export function App() {
               desktop={desktop}
               invalid={invalid}
               failure={failure}
-              onStart={handleStart}
-              onPause={handlePause}
-              onCancel={handleCancel}
-            />
+                  />
           )}
-          {panel === 'replay' && <Replay reloadToken={reloadToken} bigBlind={request.bigBlind} />}
+          {panel === 'replay' && (
+          <Replay
+            reloadToken={reloadToken}
+            bigBlind={request.bigBlind}
+            onHeadline={setReplayHeadline}
+          />
+        )}
         </main>
       </div>
     </div>
