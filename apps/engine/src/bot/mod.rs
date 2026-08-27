@@ -7,5 +7,7 @@ pub mod params;
 pub mod pipeline;
 
 pub use params::{ParamError, ParamSpec, ParamValue, BEHAVIOR_SPECS, PERSONA_SPECS};
-pub use agent::{scenario_of, BotAgent, MAX_EXPECTED_OPPONENTS, POSTFLOP_FALLBACK_VERSION};
+pub use agent::{
+    rules_for_bot, scenario_of, BotAgent, MAX_EXPECTED_OPPONENTS, POSTFLOP_FALLBACK_VERSION,
+};
 pub use pipeline::{BotConfig, DecisionTrace, PipelineStage};

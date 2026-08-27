@@ -70,6 +70,32 @@ pub struct BotAgent {
     decisions: u64,
 }
 
+/// 由 Bot 設定推導出該座位實際生效的基準規則。
+///
+/// [`BotAgent::new`] 與面板 C 的範圍預覽共用這一支。各寫一份的話，預覽
+/// 畫出來的就不是 Bot 實際會打的東西——而「看出 Bot 會怎麼打」正是那個
+/// 預覽存在的唯一理由，畫錯比不畫更糟。
+#[must_use]
+pub fn rules_for_bot(rules: &BaselineRules, config: &BotConfig) -> BaselineRules {
+    let myriad = |key: &str| {
+        config
+            .effective(key)
+            .and_then(ParamValue::as_myriad)
+            .and_then(|v| Myriad::try_from(v).ok())
+            .unwrap_or(FULL)
+    };
+    let mut scaled = rules.scaled(myriad("rangeWidth"));
+    // 預設組合表是純策略，管線的權重縮放對它是空操作；這三個人格參數
+    // 必須在內容層作用，否則走表的節點上三支滑桿全是裝飾品（見 `ChartShift`）
+    scaled.chart_shift = ChartShift {
+        range_width: myriad("rangeWidth"),
+        aggression: myriad("preflopAggression"),
+        call_persistence: myriad("callPersistence"),
+        fold_discipline: myriad("foldDiscipline"),
+    };
+    scaled
+}
+
 impl BotAgent {
     #[must_use]
     pub fn new(
@@ -79,29 +105,7 @@ impl BotAgent {
         master_seed: u64,
     ) -> Self {
         let reference = rules.clone();
-        let rules = seats
-            .iter()
-            .map(|config| {
-                let myriad = |key: &str| {
-                    config
-                        .effective(key)
-                        .and_then(ParamValue::as_myriad)
-                        .and_then(|v| Myriad::try_from(v).ok())
-                        .unwrap_or(FULL)
-                };
-                let mut scaled = rules.scaled(myriad("rangeWidth"));
-                // 預設組合表是純策略，管線的權重縮放對它是空操作；
-                // 這三個人格參數必須在內容層作用，否則走表的節點上
-                // 三支滑桿全是裝飾品（見 `ChartShift`）
-                scaled.chart_shift = ChartShift {
-                    range_width: myriad("rangeWidth"),
-                    aggression: myriad("preflopAggression"),
-                    call_persistence: myriad("callPersistence"),
-                    fold_discipline: myriad("foldDiscipline"),
-                };
-                scaled
-            })
-            .collect();
+        let rules = seats.iter().map(|config| rules_for_bot(&rules, config)).collect();
         Self {
             reference: vec![reference; seats.len()],
             rules,

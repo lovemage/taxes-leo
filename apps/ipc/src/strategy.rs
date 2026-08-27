@@ -336,11 +336,38 @@ pub fn matrix(
     let node = parse_node(seated, hero, bucket, scenario)?;
     let mut rules = BaselineRules::engineering_placeholder();
     rules.overrides = to_cell_overrides(overrides)?;
+    build_matrix_view(node, &rules)
+}
 
+/// 某個 Bot 設定在指定節點會打出的範圍。
+///
+/// 面板 C 的即時預覽用。四支人格滑桿在走表的節點上是靠 `ChartShift`
+/// 在內容層作用，光看參數數字看不出它們到底把哪幾手牌搬去哪裡。
+///
+/// 規則推導走引擎的 [`poker_engine::bot::rules_for_bot`]，與 `BotAgent`
+/// 實際決策時同一支。這裡自己算一份的話，預覽畫的就不是 Bot 會打的東西。
+///
+/// # Errors
+/// 節點欄位無法解析、情境在此桌型下不可能到達，或 Bot 參數越界時回傳說明。
+pub fn bot_matrix(
+    seated: u8,
+    hero: &str,
+    bucket: &str,
+    scenario: &str,
+    bot: &crate::bots::BotSeatConfig,
+) -> Result<RangeMatrixView, String> {
+    let node = parse_node(seated, hero, bucket, scenario)?;
+    let config = bot.to_bot_config()?;
+    let rules = poker_engine::bot::rules_for_bot(&BaselineRules::engineering_placeholder(), &config);
+    build_matrix_view(node, &rules)
+}
+
+/// 節點 ＋ 生效規則 → 矩陣。`matrix` 與 `bot_matrix` 只差在規則怎麼來。
+fn build_matrix_view(node: PreflopNode, rules: &BaselineRules) -> Result<RangeMatrixView, String> {
     let opponents = baseline::expected_opponents(&node);
     let ranking = crate::rankings::for_opponents(opponents)
         .map_err(|reason| format!("equity 排序內容不可用：{reason}"))?;
-    let built = RangeMatrix::build(node, &rules, ranking);
+    let built = RangeMatrix::build(node, rules, ranking);
 
     // 這個節點的內容是表給的還是參數產生的。面板必須畫得出來：兩者
     // 一個是顧問寫的清單、一個是 equity 排序的啟發式，長相一樣但意義
@@ -380,7 +407,7 @@ pub fn matrix(
         override_count: u32::try_from(cells.iter().filter(|c| c.overridden).count()).unwrap_or(0),
         mixed_count: u32::try_from(built.mixed_cells().len()).unwrap_or(0),
         width_myriad: built.width_myriad(),
-        aggressive_action: aggressive_action(&node, &rules),
+        aggressive_action: aggressive_action(&node, rules),
         expected_opponents: u8::try_from(opponents).unwrap_or(1),
         source: if entry.is_some() { "chart" } else { "baseline" }.to_owned(),
         chart_depth: entry.map(|_| ChartDepth::from_bucket(node.bucket).label().to_owned()),
@@ -569,6 +596,79 @@ fn chart_rows(entry: &ChartEntry) -> Vec<ChartRowView> {
 
 #[cfg(test)]
 mod tests {
+    use crate::bots::BotSeatConfig;
+    use std::collections::BTreeMap;
+
+    fn 節點() -> (u8, &'static str, &'static str, &'static str) {
+        (9, "BTN", "160-240", "unopened")
+    }
+
+    /// 參數全預設時，Bot 預覽必須與自身策略的矩陣逐格相同。
+    ///
+    /// 不同的話代表 `rules_for_bot` 在中性參數下不是空操作——那會讓
+    /// 「沒調任何東西」的 Bot 打得跟表不一樣，而畫面上看不出來。
+    #[test]
+    fn 中性參數的_bot_預覽等於照表() {
+        let (seated, hero, bucket, scenario) = 節點();
+        let plain = matrix(seated, hero, bucket, scenario, &[]).expect("矩陣");
+        let bot = bot_matrix(
+            seated,
+            hero,
+            bucket,
+            scenario,
+            &BotSeatConfig {
+                name: "標準".to_owned(),
+                params: BTreeMap::new(),
+            },
+        )
+        .expect("bot 矩陣");
+
+        assert_eq!(plain.width_myriad, bot.width_myriad);
+        for (a, b) in plain.cells.iter().zip(bot.cells.iter()) {
+            assert_eq!(
+                (a.class.as_str(), a.aggressive, a.call, a.check, a.fold),
+                (b.class.as_str(), b.aggressive, b.call, b.check, b.fold),
+                "{} 在中性參數下不該與照表不同",
+                a.class
+            );
+        }
+    }
+
+    /// 收窄 rangeWidth 必須讓範圍變窄。滑桿拉了卻沒有變化，預覽就是裝飾品。
+    #[test]
+    fn 收窄範圍寬度會讓預覽變窄() {
+        let (seated, hero, bucket, scenario) = 節點();
+        let wide = bot_matrix(
+            seated,
+            hero,
+            bucket,
+            scenario,
+            &BotSeatConfig {
+                name: "寬".to_owned(),
+                params: [("rangeWidth".to_owned(), 14_000)].into_iter().collect(),
+            },
+        )
+        .expect("寬");
+        let tight = bot_matrix(
+            seated,
+            hero,
+            bucket,
+            scenario,
+            &BotSeatConfig {
+                name: "緊".to_owned(),
+                params: [("rangeWidth".to_owned(), 6_000)].into_iter().collect(),
+            },
+        )
+        .expect("緊");
+
+        assert!(
+            tight.width_myriad < wide.width_myriad,
+            "收窄後應更窄：緊 {} vs 寬 {}",
+            tight.width_myriad,
+            wide.width_myriad
+        );
+    }
+
     use super::*;
     use poker_engine::strategy::distribution::FULL;
 

@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react';
 import type { ParamSpecView } from '../../../../packages/poker-types/src/index';
 import { listBotParams, type RunRequest } from '../api';
+import { BotRangePreview } from '../components/BotRangePreview';
 import { NumberInput, TextInput, Toggle } from '../components/Field';
 
 export function BotParams({
@@ -139,6 +140,18 @@ export function BotParams({
         onChange={setParam}
         locked={locked}
       />
+      {/* 四支人格滑桿在走表的節點上是靠內容層位移作用，光看數字看不出
+          它們把哪幾手牌搬去哪裡。把「照表打」與目前這組參數疊起來比 */}
+      <section style={{ ...cardStyle, marginBottom: 16 }}>
+        <SectionTitle>範圍預覽</SectionTitle>
+        <div className="dim" style={{ fontSize: 11, marginBottom: 10, lineHeight: 1.6 }}>
+          這個座位在選定節點會打出的範圍。外框標出的是被這組參數改掉的格子，
+          底色仍代表現在打什麼。範圍由引擎算，走的是 Bot 實際決策時的同一支推導，
+          因此這裡畫的就是它會打的東西。
+        </div>
+        <BotRangePreview seated={request.players} bot={current} />
+      </section>
+
       <ParamGroup
         title="行為層"
         specs={behavior}

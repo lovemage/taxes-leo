@@ -227,6 +227,29 @@ fn serve(mut stream: TcpStream, handler: &IpcHandler, run_id: i64) -> std::io::R
                 .ok()
                 .and_then(|view| serde_json::to_string(&view).ok())
         }
+        // 面板 C 的即時範圍預覽。開發鷹架只吃查詢字串，因此參數壓成
+        // `鍵:值,鍵:值`；Tauri 端送的是結構化物件
+        "/api/strategy/bot-matrix" => {
+            let seated = u8::try_from(param(query, "seated").unwrap_or(9)).unwrap_or(9);
+            let hero = text_param(query, "hero").unwrap_or_else(|| "BTN".to_owned());
+            let bucket = text_param(query, "bucket").unwrap_or_else(|| "160-240".to_owned());
+            let scenario = text_param(query, "scenario").unwrap_or_else(|| "unopened".to_owned());
+            let bot = poker_ipc::bots::BotSeatConfig {
+                name: text_param(query, "name").unwrap_or_else(|| "預覽".to_owned()),
+                params: text_param(query, "p")
+                    .unwrap_or_default()
+                    .split(',')
+                    .filter(|part| !part.is_empty())
+                    .filter_map(|part| {
+                        let (key, value) = part.split_once(':')?;
+                        Some((key.to_owned(), value.parse::<i64>().ok()?))
+                    })
+                    .collect(),
+            };
+            poker_ipc::strategy::bot_matrix(seated, &hero, &bucket, &scenario, &bot)
+                .ok()
+                .and_then(|view| serde_json::to_string(&view).ok())
+        }
         _ => None,
     };
 

@@ -241,6 +241,42 @@ export function strategyMatrix(
   return http<RangeMatrixView>(`/api/strategy/matrix?${query}`);
 }
 
+/**
+ * 某個 Bot 設定在指定節點會打出的範圍。
+ *
+ * 面板 C 的即時預覽：四支人格滑桿在走表的節點上是靠內容層位移作用，
+ * 光看數字看不出它們把哪幾手牌搬去哪裡。規則推導與 Bot 實際決策共用
+ * 引擎的同一支函式，畫出來的就是它會打的東西。
+ */
+export function botStrategyMatrix(
+  seated: number,
+  hero: string,
+  bucket: string,
+  scenario: string,
+  bot: BotSeatConfig,
+): Promise<RangeMatrixView> {
+  const bridge = tauri();
+  if (bridge) {
+    return bridge.core.invoke<RangeMatrixView>('bot_strategy_matrix', {
+      seated,
+      hero,
+      bucket,
+      scenario,
+      bot,
+    });
+  }
+  // dev server 只吃查詢字串，參數壓成 `鍵:值`。這個編碼只存在於開發鷹架
+  const packed = Object.entries(bot.params)
+    .map(([key, value]) => `${key}:${value}`)
+    .join(',');
+  return http<RangeMatrixView>(
+    `/api/strategy/bot-matrix?seated=${seated}&hero=${encodeURIComponent(hero)}` +
+      `&bucket=${encodeURIComponent(bucket)}&scenario=${encodeURIComponent(scenario)}` +
+      `&name=${encodeURIComponent(bot.name)}` +
+      (packed ? `&p=${encodeURIComponent(packed)}` : ''),
+  );
+}
+
 // ── 資料查詢（面板 F／G）─────────────────────────────────────────────
 
 export function getRun(): Promise<RunView> {

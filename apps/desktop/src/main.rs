@@ -175,6 +175,18 @@ fn list_bot_presets() -> Vec<poker_ipc::BotSeatConfig> {
     poker_ipc::bots::demo_presets()
 }
 
+/// 某個 Bot 設定在指定節點會打出的範圍（面板 C 的即時預覽）
+#[tauri::command(async)]
+fn bot_strategy_matrix(
+    seated: u8,
+    hero: String,
+    bucket: String,
+    scenario: String,
+    bot: poker_ipc::bots::BotSeatConfig,
+) -> Result<RangeMatrixView, String> {
+    poker_ipc::strategy::bot_matrix(seated, &hero, &bucket, &scenario, &bot)
+}
+
 /// 執行環境現況，供 status bar 顯示（V.1）
 #[tauri::command(async)]
 fn runtime_status() -> poker_ipc::RuntimeStatusView {
@@ -324,6 +336,7 @@ fn main() {
             strategy_meta,
             strategy_nodes,
             strategy_matrix,
+            bot_strategy_matrix,
             get_run,
             list_hands,
             get_hand

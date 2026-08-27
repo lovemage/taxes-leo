@@ -25,10 +25,9 @@ import type {
   StrategyMetaView,
 } from '../../../../packages/poker-types/src/index';
 import { strategyMatrix, strategyMeta } from '../api';
+import { cellTone, FULL } from '../components/matrixTone';
 import type { StrategySelection } from './StrategyNav';
 
-/** 頻率的滿值。跨 IPC 一律萬分比整數 */
-const FULL = 10_000;
 
 export function Strategy({
   selection,
@@ -344,20 +343,6 @@ function Cell({
   );
 }
 
-function cellTone(cell: MatrixCellView): React.CSSProperties {
-  if (cell.aggressive >= FULL) {
-    return { background: 'var(--matrix-aggressive)', color: 'var(--text-primary)' };
-  }
-  if (cell.aggressive > 0) {
-    const ratio = ((cell.aggressive / FULL) * 0.77).toFixed(2);
-    return { background: `rgba(var(--matrix-mix-rgb), ${ratio})`, color: 'var(--bg-base)' };
-  }
-  if (cell.call > 0) return { background: 'var(--matrix-call)', color: 'var(--text-primary)' };
-  // 過牌不是棄牌。大盲無人加注時整張表都是過牌看翻牌，畫成棄牌色
-  // 會讓使用者以為那一格「什麼牌都丟」
-  if (cell.check > 0) return { background: 'var(--matrix-check)', color: 'var(--text-primary)' };
-  return { background: 'var(--matrix-empty)', color: 'var(--text-tertiary)' };
-}
 
 /** 表上的動作鍵 → 中文。與引擎的 `ChartAction::label` 同一組字 */
 function chartActionLabel(action: string): string {
