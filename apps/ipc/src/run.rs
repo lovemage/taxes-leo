@@ -232,6 +232,16 @@ impl RunControl {
 
 /// 執行一個 run 並落 log。
 ///
+/// 批次執行每幾手推一次進度事件。
+///
+/// UI 規格 E.3：「進度更新頻率上限為每秒數次。逐手更新會讓 UI 執行緒被
+/// 寫入與重繪吃滿。」狀態列會顯示這個值，因此不寫成字面量——兩邊各寫
+/// 一份的話，改了一邊就等於在狀態列上對使用者說謊。
+pub const PROGRESS_EVERY_HANDS: u64 = 250;
+
+/// 逐手 log 每幾手 commit 一次（核心規格 3.2：批次交易，避免 UI 餓死）。
+pub const WRITE_BATCH_HANDS: usize = 500;
+
 /// `on_progress` 由呼叫端節流後推送給前端；核心規格要求進度更新
 /// 不得逐手觸發，否則 UI 執行緒會被重繪吃滿。
 pub fn execute(
@@ -324,15 +334,15 @@ pub fn execute(
         let done = control.hands_done.fetch_add(1, Ordering::Relaxed) + 1;
 
         // 批次交易寫入（核心規格 3.2：避免逐手 commit 讓 UI 餓死）
-        if pending.len() >= 500 {
+        if pending.len() >= WRITE_BATCH_HANDS {
             if let Ok(mut guard) = store.lock() {
                 let _ = guard.write_hands(run_id, &pending);
             }
             pending.clear();
         }
 
-        // 進度節流：每 250 手一次，而非逐手
-        if done % 250 == 0 {
+        // 進度節流：每 PROGRESS_EVERY_HANDS 手一次，而非逐手
+        if done % PROGRESS_EVERY_HANDS == 0 {
             on_progress(RunProgress {
                 hands_done: done,
                 hands_total: config.hand_limit,

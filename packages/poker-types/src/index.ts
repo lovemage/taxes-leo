@@ -22,6 +22,7 @@ export type { RangeMatrixView } from './generated/RangeMatrixView';
 export type { RunPhase } from './generated/RunPhase';
 export type { RunProgress } from './generated/RunProgress';
 export type { RunView } from './generated/RunView';
+export type { RuntimeStatusView } from './generated/RuntimeStatusView';
 export type { ScenarioOptionView } from './generated/ScenarioOptionView';
 export type { SeatView } from './generated/SeatView';
 export type { StrategyMetaView } from './generated/StrategyMetaView';

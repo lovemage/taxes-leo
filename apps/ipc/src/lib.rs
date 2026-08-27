@@ -18,6 +18,7 @@ pub mod handler;
 pub mod log;
 pub mod rankings;
 pub mod run;
+pub mod runtime;
 pub mod snapshot;
 pub mod strategy;
 pub mod view;
@@ -25,6 +26,7 @@ pub mod views;
 
 pub use handler::{IpcError, IpcHandler};
 pub use run::{execute, RunControl, RunPhase, RunProgress, RunRequest};
+pub use runtime::RuntimeStatusView;
 pub use bots::{all_specs, BotSeatConfig, ParamSpecView};
 pub use strategy::{
     BucketOptionView, CellOverrideView, MatrixCellView, RangeMatrixView, ScenarioOptionView,

@@ -4,6 +4,7 @@
 //
 //   [ ────────── Header 48px ────────── ]
 //   [ 圖示欄 56px ][ 參數欄 300px ][ 主內容 ]
+//   [ ────────── Status bar 24px ────────── ]
 //
 // 參數欄只放**輸入**，主內容只放**輸出**。這個分工讓「調參數 → 看結果」
 // 不必來回切換畫面，也讓執行期間的鎖定範圍剛好等於參數欄。
@@ -23,6 +24,7 @@ import {
 import type { CellOverrideView } from '../../../packages/poker-types/src/index';
 import { AppHeader, type ReplayHeadline, type RunMode } from './components/AppHeader';
 import { IconRail, type RailItem } from './components/IconRail';
+import { StatusBar } from './components/StatusBar';
 import { BotParams } from './panels/BotParams';
 import { BotSeats } from './panels/BotSeats';
 import { Replay } from './panels/Replay';
@@ -248,6 +250,8 @@ export function App() {
         )}
         </main>
       </div>
+
+      <StatusBar mode={mode} />
     </div>
   );
 }
