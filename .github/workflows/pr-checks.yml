@@ -1,0 +1,92 @@
+# PR 檢查。
+#
+# 與 desktop-build.yml 分開：那支跑完整的 installer 打包（要編 Tauri 與
+# SQLite 的 C 原始碼），代價太高，不適合每個 PR 跑一次。這支只做
+# 「會不會編不過、測試過不過」。
+#
+# Windows job 存在的理由：apps/desktop 在 Linux 編不了（Tauri 需要
+# webkit2gtk，開發機沒有），因此桌面殼的程式碼在本機只能做語法解析驗證。
+# 沒有這個 job 的話，Tauri command 的型別錯誤要等到手動打包才會被發現。
+name: PR 檢查
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: pr-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    name: 引擎與前端（Linux）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: 安裝 node 相依
+        run: pnpm install --frozen-lockfile
+
+      # 根 workspace 不含 apps/desktop（根 Cargo.toml 的 exclude）
+      - name: cargo test
+        run: cargo test --workspace
+
+      - name: clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # tsc -b 與 vite build 都在這支裡
+      - name: 前端打包
+        run: pnpm --filter @taxes-leo/ui build
+
+      # 型別由 Rust 產生（ts-rs）。產生結果與 commit 進去的不一致，代表
+      # 有人改了 DTO 卻沒重新產生，前端會對著過期的型別寫程式
+      - name: 產生的型別與版控一致
+        run: git diff --exit-code -- packages/poker-types/src/generated/
+
+  desktop:
+    name: 桌面殼可編譯（Windows）
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop -> target
+
+      - name: 安裝 node 相依
+        run: pnpm install --frozen-lockfile
+
+      # generate_context! 在編譯期把 frontendDist 的內容編進二進位檔，
+      # 因此 UI 必須先建好，否則 cargo check 直接失敗
+      - name: 先建前端
+        run: pnpm --filter @taxes-leo/ui build
+
+      - name: cargo check（不打包 installer）
+        run: cargo check --manifest-path apps/desktop/Cargo.toml

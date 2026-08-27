@@ -42,7 +42,10 @@ pub struct RuntimeStatusView {
 }
 
 pub fn status() -> RuntimeStatusView {
-    let rankings = crate::rankings::status();
+    // 用 peek_status 而不是 status：狀態列在開機畫面就會讀這支，屬於啟動
+    // 路徑。status() 會就地載入，資產壞掉的 debug 建置因此會現算一份低樣本
+    // 替代品——那正是 rankings 模組註解要求別放進啟動路徑的工作
+    let rankings = crate::rankings::peek_status();
     RuntimeStatusView {
         engine_version: env!("CARGO_PKG_VERSION").to_owned(),
         rng_algorithm: RNG_VERSION.to_owned(),

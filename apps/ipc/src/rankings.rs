@@ -142,29 +142,37 @@ pub fn for_opponents(opponents: usize) -> Result<&'static EquityRanking, &'stati
 #[must_use]
 pub fn status() -> Status {
     match load() {
-        Ok(rankings) => Status {
-            samples: rankings.samples(),
-            content_grade: rankings.is_content_grade(),
-            source: rankings.source().key(),
-            note: match rankings.source() {
-                Source::Asset { format } => format!(
-                    "離線產製的排序資產 v{format}，{} 取樣",
-                    rankings.samples()
-                ),
-                Source::DebugFallback => format!(
-                    "debug 建置的低樣本替代品（{} 取樣）。**非正式內容**，不得作為統計依據",
-                    rankings.samples()
-                ),
-            },
-            error: None,
+        Ok(rankings) => loaded_status(rankings),
+        Err(reason) => unavailable_status(reason.to_owned()),
+    }
+}
+
+fn loaded_status(rankings: &Rankings) -> Status {
+    Status {
+        samples: rankings.samples(),
+        content_grade: rankings.is_content_grade(),
+        source: rankings.source().key(),
+        note: match rankings.source() {
+            Source::Asset { format } => format!(
+                "離線產製的排序資產 v{format}，{} 取樣",
+                rankings.samples()
+            ),
+            Source::DebugFallback => format!(
+                "debug 建置的低樣本替代品（{} 取樣）。**非正式內容**，不得作為統計依據",
+                rankings.samples()
+            ),
         },
-        Err(reason) => Status {
-            samples: 0,
-            content_grade: false,
-            source: "unavailable".to_owned(),
-            note: "equity 排序內容載入失敗，策略與執行都不可用".to_owned(),
-            error: Some(reason.to_owned()),
-        },
+        error: None,
+    }
+}
+
+fn unavailable_status(reason: String) -> Status {
+    Status {
+        samples: 0,
+        content_grade: false,
+        source: "unavailable".to_owned(),
+        note: "equity 排序內容載入失敗，策略與執行都不可用".to_owned(),
+        error: Some(reason),
     }
 }
 
@@ -187,12 +195,72 @@ pub fn probe() -> Result<(u32, u64), String> {
         })
 }
 
+/// 資產缺哪幾檔對手數。`init` 與 [`peek_status`] 共用同一套判定——
+/// 兩邊各寫一份的話，狀態列會說「正式內容」而執行層實際上退了路。
+fn missing_tiers(asset: &ranking_asset::RankingAsset) -> Vec<usize> {
+    (1..=MAX_EXPECTED_OPPONENTS)
+        .filter(|opponents| !asset.rankings.contains_key(opponents))
+        .collect()
+}
+
+/// 共用表是否已經初始化。
+///
+/// 存在的理由是可測性：[`peek_status`] 的關鍵性質是「呼叫它不會載入」，
+/// 而那件事從外部只能靠這支觀察。
+#[must_use]
+pub fn is_loaded() -> bool {
+    RANKINGS.get().is_some()
+}
+
+/// 排序現況，**不初始化共用表、不觸發任何退路**。
+///
+/// [`status`] 會就地呼叫 [`load`]：資產壞掉的 debug 建置因此會現算一份
+/// 低樣本替代品，而那是幾秒鐘的 Monte Carlo。狀態列在開機畫面就要顯示
+/// 排序來源，屬於啟動路徑，用 [`status`] 等於把預熱換個名字裝回去
+/// （理由同 [`probe`]）。
+///
+/// 已經載入時照實回報載入結果；尚未載入時只解析內建資產，回報「它載進來
+/// 會是什麼」。後者標示為尚未載入，避免與執行層真正在用的東西混為一談。
+#[must_use]
+pub fn peek_status() -> Status {
+    if let Some(loaded) = RANKINGS.get() {
+        return match loaded {
+            Ok(rankings) => loaded_status(rankings),
+            Err(reason) => unavailable_status(reason.clone()),
+        };
+    }
+
+    match ranking_asset::embedded() {
+        Ok(asset) if missing_tiers(&asset).is_empty() => Status {
+            samples: asset.samples,
+            content_grade: asset.samples >= CONTENT_GRADE_SAMPLES,
+            source: Source::Asset {
+                format: asset.format,
+            }
+            .key(),
+            note: format!(
+                "離線產製的排序資產 v{}，{} 取樣（尚未載入）",
+                asset.format, asset.samples
+            ),
+            error: None,
+        },
+        // 缺檔與解析失敗都會讓 `load` 走退路。這裡不預告退路會產出什麼，
+        // 只說資產不可用——debug 的低樣本替代品要等真的載了才存在
+        Ok(asset) => unavailable_status(format!(
+            "排序資產缺少 {:?} 名對手的檔位（需要 1–{MAX_EXPECTED_OPPONENTS}）",
+            missing_tiers(&asset)
+        )),
+        Err(error) => unavailable_status(format!(
+            "排序資產（{}）解析失敗：{error}",
+            ranking_asset::ASSET_PATH
+        )),
+    }
+}
+
 fn init() -> Result<Rankings, String> {
     match ranking_asset::embedded() {
         Ok(asset) => {
-            let missing: Vec<usize> = (1..=MAX_EXPECTED_OPPONENTS)
-                .filter(|opponents| !asset.rankings.contains_key(opponents))
-                .collect();
+            let missing = missing_tiers(&asset);
             // 缺檔不是可以將就的狀況：那些節點在執行層會退回別的人數，
             // 範圍系統性偏掉而且完全不報錯（見 `bot::agent::preflop_baseline`）
             if !missing.is_empty() {
