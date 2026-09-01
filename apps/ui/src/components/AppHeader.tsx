@@ -102,7 +102,7 @@ export function AppHeader({
         {/* 執行控制（E.4） */}
         <div style={{ display: 'flex', gap: 6 }}>
           <Control
-            label="開始"
+            label="計算"
             primary
             disabled={!desktop || running || invalid !== null}
             title={invalid ?? (desktop ? undefined : '執行模擬需要桌面版')}

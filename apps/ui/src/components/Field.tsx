@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 export function Field({
+  dense = false,
   label,
   unit,
   range,
@@ -13,6 +14,8 @@ export function Field({
   error,
   children,
 }: {
+  /** 緊湊工作區用，縮短欄位之間的垂直距離 */
+  dense?: boolean;
   label: string;
   unit?: string;
   range?: string;
@@ -21,7 +24,7 @@ export function Field({
   children: ReactNode;
 }) {
   return (
-    <div style={{ marginBottom: 12 }}>
+    <div style={{ marginBottom: dense ? 8 : 12 }}>
       <div
         style={{
           display: 'flex',
@@ -30,24 +33,29 @@ export function Field({
           marginBottom: 4,
         }}
       >
-        <label style={{ fontSize: 12, color: 'var(--text-primary)' }}>
+        <label style={{ fontSize: dense ? 11 : 12, color: 'var(--text-primary)' }}>
           {label}
           {unit && <span className="dim" style={{ marginLeft: 4 }}>（{unit}）</span>}
         </label>
         {range && (
-          <span className="dim" style={{ fontSize: 11, fontFamily: 'var(--font-mono)' }}>
+          <span
+            className="dim"
+            style={{ fontSize: dense ? 10 : 11, fontFamily: 'var(--font-mono)' }}
+          >
             {range}
           </span>
         )}
       </div>
       {children}
       {hint && !error && (
-        <div className="dim" style={{ fontSize: 11, marginTop: 3 }}>
+        <div className="dim" style={{ fontSize: dense ? 10 : 11, marginTop: 3 }}>
           {hint}
         </div>
       )}
       {error && (
-        <div style={{ fontSize: 11, marginTop: 3, color: 'var(--negative)' }}>{error}</div>
+        <div style={{ fontSize: dense ? 10 : 11, marginTop: 3, color: 'var(--negative)' }}>
+          {error}
+        </div>
       )}
     </div>
   );

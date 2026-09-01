@@ -73,15 +73,18 @@ export function validateRequest(request: RunRequest): string | null {
 }
 
 export function TableSetup({
+  layout = 'sidebar',
   request,
   onChange,
   locked,
 }: {
+  layout?: 'sidebar' | 'workspace';
   request: RunRequest;
   onChange: (request: RunRequest) => void;
   locked: boolean;
 }) {
   const [previews, setPreviews] = useState<PowerPreviewView[]>([]);
+  const dense = layout === 'workspace';
 
   // A.3：手數旁必須即時顯示效力預覽。算式由引擎提供，前端不重寫
   useEffect(() => {
@@ -103,12 +106,13 @@ export function TableSetup({
     request.smallBlind >= request.bigBlind ? '小盲必須小於大盲' : undefined;
 
   return (
-    <>
+    <div className={dense ? 'table-setup table-setup--workspace' : 'table-setup'}>
       {locked && (
         <div
+          className={dense ? 'table-setup__lock' : undefined}
           style={{
             padding: '8px 10px',
-            marginBottom: 12,
+            marginBottom: dense ? 0 : 12,
             borderRadius: 'var(--radius-control)',
             border: '1px solid var(--warning)',
             color: 'var(--warning)',
@@ -119,8 +123,8 @@ export function TableSetup({
         </div>
       )}
 
-      <Group title="桌型">
-        <Field label="座位數" range="6–9">
+      <Group title="桌型" compact={dense}>
+        <Field dense={dense} label="座位數" range="6–9">
           <Segmented
             value={request.players}
             options={[6, 7, 8, 9]}
@@ -135,7 +139,7 @@ export function TableSetup({
             }}
           />
         </Field>
-        <Field label="自動補位" hint="關閉時人數降到 6 以下即結束桌次">
+        <Field dense={dense} label="自動補位" hint="關閉時人數降到 6 以下即結束桌次">
           <Toggle
             checked={request.autoRefillEnabled}
             disabled={locked}
@@ -144,7 +148,7 @@ export function TableSetup({
           />
         </Field>
         {request.autoRefillEnabled && (
-          <Field label="補位目標人數" range={`6–${request.players}`}>
+          <Field dense={dense} label="補位目標人數" range={`6–${request.players}`}>
             <Segmented
               value={request.autoRefillTarget}
               options={[6, 7, 8, 9].filter((n) => n <= request.players)}
@@ -155,8 +159,8 @@ export function TableSetup({
         )}
       </Group>
 
-      <Group title="籌碼">
-        <Field label="起始深度" unit="BB" range="整數">
+      <Group title="籌碼" compact={dense}>
+        <Field dense={dense} label="起始深度" unit="BB" range="整數">
           <NumberInput
             value={request.startingStackBb}
             min={1}
@@ -164,13 +168,13 @@ export function TableSetup({
             onChange={(v) => set('startingStackBb', v)}
           />
         </Field>
-        <Field label="籌碼政策" hint="v1 只有一種政策，因此為唯讀顯示">
+        <Field dense={dense} label="籌碼政策" hint="v1 只有一種政策，因此為唯讀顯示">
           <ReadOnlyValue value="bustOut" note="破產離桌、籌碼跨手結轉" />
         </Field>
       </Group>
 
-      <Group title="強制下注">
-        <Field label="小盲／大盲" error={blindError}>
+      <Group title="強制下注" compact={dense}>
+        <Field dense={dense} label="小盲／大盲" error={blindError}>
           <div style={{ display: 'flex', gap: 8 }}>
             <NumberInput
               value={request.smallBlind}
@@ -187,6 +191,7 @@ export function TableSetup({
           </div>
         </Field>
         <Field
+          dense={dense}
           label="Ante 模式"
           hint={
             request.anteMode === 'bbAnte' || request.anteMode === 'btnAnte'
@@ -209,7 +214,7 @@ export function TableSetup({
           />
         </Field>
         {request.anteMode !== 'none' && (
-          <Field label="Ante 金額" unit="最小籌碼單位">
+          <Field dense={dense} label="Ante 金額" unit="最小籌碼單位">
             <NumberInput
               value={request.anteAmount}
               min={0}
@@ -219,6 +224,7 @@ export function TableSetup({
           </Field>
         )}
         <Field
+          dense={dense}
           label="Straddle"
           hint="金額由引擎自動計算：首段 2×BB，後段為前段 2 倍"
         >
@@ -235,8 +241,9 @@ export function TableSetup({
         </Field>
       </Group>
 
-      <Group title="抽水">
+      <Group title="抽水" compact={dense}>
         <Field
+          dense={dense}
           label="抽水比例"
           unit="%"
           range="0–100"
@@ -252,7 +259,7 @@ export function TableSetup({
             onChange={(v) => set('rakeBasisPoints', Math.round(v * 100))}
           />
         </Field>
-        <Field label="每手上限" unit="BB">
+        <Field dense={dense} label="每手上限" unit="BB">
           <NumberInput
             value={request.rakeCapBb}
             min={0}
@@ -260,7 +267,7 @@ export function TableSetup({
             onChange={(v) => set('rakeCapBb', v)}
           />
         </Field>
-        <Field label="未發 flop 不抽水">
+        <Field dense={dense} label="未發 flop 不抽水">
           <Toggle
             checked={request.rakeNoFlopNoDrop}
             disabled={locked}
@@ -270,8 +277,9 @@ export function TableSetup({
         </Field>
       </Group>
 
-      <Group title="執行">
+      <Group title="計算" compact={dense}>
         <Field
+          dense={dense}
           label="手數"
           range={`${HAND_MIN / 1000}K–${HAND_MAX / 1000}K，以 1K 為單位`}
         >
@@ -293,9 +301,13 @@ export function TableSetup({
           </div>
         </Field>
 
-        <PowerPreview previews={previews} />
+        <PowerPreview previews={previews} compact={dense} />
 
-        <Field label="亂數種子" hint="相同 seed 與設定可完整重現同一個 run">
+        <Field
+          dense={dense}
+          label="亂數種子"
+          hint="相同 seed 與設定可完整重現同一個 run"
+        >
           <div style={{ display: 'flex', gap: 8 }}>
             <TextInput
               value={request.masterSeed}
@@ -322,7 +334,7 @@ export function TableSetup({
           </div>
         </Field>
       </Group>
-    </>
+    </div>
   );
 }
 
@@ -336,21 +348,27 @@ export function TableSetup({
  * 資訊——「這個手數下只能分辨 ±30 bb/100」本身就是結論；蓋掉它使用者
  * 什麼都不知道。達不到建議精度的列改為提示要跑到多少手。
  */
-function PowerPreview({ previews }: { previews: PowerPreviewView[] }) {
+function PowerPreview({
+  previews,
+  compact = false,
+}: {
+  previews: PowerPreviewView[];
+  compact?: boolean;
+}) {
   if (previews.length === 0) return null;
   const target = previews[0].targetHalfWidthBb100;
 
   return (
     <div
       style={{
-        padding: '8px 10px',
-        marginBottom: 12,
+        padding: compact ? '6px 8px' : '8px 10px',
+        marginBottom: compact ? 8 : 12,
         borderRadius: 'var(--radius-control)',
         border: '1px solid var(--border)',
         background: 'var(--bg-base)',
       }}
     >
-      <div className="dim" style={{ fontSize: 11, marginBottom: 6 }}>
+      <div className="dim" style={{ fontSize: compact ? 10 : 11, marginBottom: 6 }}>
         此手數的 95% 區間半寬（估計值，實際通常更寬）
       </div>
       {previews.map((preview) => (
@@ -362,7 +380,7 @@ function PowerPreview({ previews }: { previews: PowerPreviewView[] }) {
             alignItems: 'baseline',
             gap: 8,
             fontSize: 11,
-            padding: '3px 0',
+            padding: compact ? '2px 0' : '3px 0',
           }}
         >
           <span style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
@@ -389,7 +407,10 @@ function PowerPreview({ previews }: { previews: PowerPreviewView[] }) {
           </span>
         </div>
       ))}
-      <div className="dim" style={{ fontSize: 10, marginTop: 6, lineHeight: 1.5 }}>
+      <div
+        className="dim"
+        style={{ fontSize: 10, marginTop: compact ? 4 : 6, lineHeight: compact ? 1.35 : 1.5 }}
+      >
         建議手數是把區間收到 ±{target} bb/100 所需的量。沒達到不代表不能跑——
         區間照樣會算出來，只是結論的說服力較弱。
       </div>
@@ -404,9 +425,20 @@ function formatHands(hands: number): string {
   return `${hands} 手`;
 }
 
-function Group({ title, children }: { title: string; children: React.ReactNode }) {
+function Group({
+  title,
+  compact = false,
+  children,
+}: {
+  title: string;
+  compact?: boolean;
+  children: React.ReactNode;
+}) {
   return (
-    <section style={{ marginBottom: 24 }}>
+    <section
+      className={compact ? 'table-setup__group' : undefined}
+      style={{ marginBottom: compact ? 0 : 24 }}
+    >
       <h3
         style={{
           fontSize: 11,

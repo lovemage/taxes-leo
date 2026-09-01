@@ -7,6 +7,7 @@ import type { RunProgress, RunRequest } from '../api';
 import { formatDuration, useCountUp } from '../motion';
 
 export function RunControl({
+  compact = false,
   request,
   progress,
   running,
@@ -15,6 +16,8 @@ export function RunControl({
   failure,
   onViewReplay,
 }: {
+  /** 計算頁的橫向摘要版，供上方三分之一工作區使用 */
+  compact?: boolean;
   request: RunRequest;
   progress: RunProgress | null;
   /**
@@ -45,6 +48,109 @@ export function RunControl({
   const shownInstances = useCountUp(reveal ? (progress?.instances ?? 0) : 0);
   const shownBb = useCountUp(reveal ? (progress?.bbPer100 ?? 0) : 0);
   const shownElapsed = useCountUp(reveal ? (progress?.elapsedMs ?? 0) : 0);
+
+  if (compact) {
+    return (
+      <div className="run-control-compact">
+        <div className="run-control-compact__heading">
+          <div>
+            <h2>計算狀態</h2>
+            <p>{statusText(progress, running)}</p>
+          </div>
+          <span className="run-control-compact__count num">
+            {preparing ? '準備中' : `${done.toLocaleString()} / ${total.toLocaleString()} 手`}
+          </span>
+        </div>
+
+        {!desktop && (
+          <Banner compact tone="warning">
+            目前在瀏覽器模式，只能檢視 dev server 既有資料。要執行模擬請開桌面版。
+          </Banner>
+        )}
+        {invalid && <Banner compact tone="warning">設定不完整：{invalid}</Banner>}
+        {failure && <Banner compact tone="negative">{failure}</Banner>}
+
+        <div className="run-control-compact__body">
+          <section className="run-control-compact__panel">
+            <div className="run-control-compact__panel-title">
+              <span>即時進度</span>
+              <span className="num">{preparing ? '等待資料' : `${(ratio * 100).toFixed(1)}%`}</span>
+            </div>
+            <div className="run-control-compact__progress-track">
+              {preparing ? (
+                <div className="progress-indeterminate" />
+              ) : (
+                <div
+                  style={{
+                    width: `${ratio * 100}%`,
+                    height: '100%',
+                    background: progress?.paused ? 'var(--warning)' : 'var(--accent)',
+                    transition: 'width 120ms linear',
+                  }}
+                />
+              )}
+            </div>
+            <div className="run-control-compact__metrics">
+              <Metric compact label="完成度" value={preparing ? '—' : `${(ratio * 100).toFixed(1)}%`} />
+              <Metric compact label="已完成手數" value={done.toLocaleString()} />
+              <Metric compact label="桌次" value={String(progress?.instances ?? 0)} />
+              <Metric
+                compact
+                label="使用者 bb/100"
+                value={progress ? progress.bbPer100.toFixed(2) : '—'}
+                tone={
+                  progress === null || progress.bbPer100 === 0
+                    ? undefined
+                    : progress.bbPer100 > 0
+                      ? 'positive'
+                      : 'negative'
+                }
+              />
+            </div>
+          </section>
+
+          <section className="run-control-compact__panel">
+            <div className="run-control-compact__panel-title">
+              <span>{reveal ? '計算結果' : '本次計算'}</span>
+              {reveal && (
+                <button type="button" onClick={onViewReplay} className="run-control-compact__replay">
+                  看逐手 Log
+                </button>
+              )}
+            </div>
+            <div className="run-control-compact__metrics run-control-compact__metrics--result">
+              {reveal ? (
+                <>
+                  <Metric compact label="總手數" value={Math.round(shownHands).toLocaleString()} />
+                  <Metric compact label="桌次" value={String(Math.round(shownInstances))} />
+                  <Metric compact label="總時長" value={formatDuration(shownElapsed)} />
+                  <Metric
+                    compact
+                    label="使用者 bb/100"
+                    value={shownBb.toFixed(2)}
+                    tone={
+                      (progress?.bbPer100 ?? 0) === 0
+                        ? undefined
+                        : (progress?.bbPer100 ?? 0) > 0
+                          ? 'positive'
+                          : 'negative'
+                    }
+                  />
+                </>
+              ) : (
+                <>
+                  <Metric compact label="目標手數" value={request.handLimit.toLocaleString()} />
+                  <Metric compact label="桌型" value={`${request.players} 人`} />
+                  <Metric compact label="Bot" value={botSummary(request)} />
+                  <Metric compact label="Seed" value={request.masterSeed} />
+                </>
+              )}
+            </div>
+          </section>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ padding: 20, maxWidth: 720 }}>
@@ -303,7 +409,7 @@ function botSummary(request: RunRequest): string {
  */
 function statusText(progress: RunProgress | null, running: boolean): string {
   if (progress === null) {
-    return running ? '啟動中…' : '尚未執行。設定完成後按「開始執行」。';
+    return running ? '啟動中…' : '尚未計算。設定完成後按「計算」。';
   }
   if (progress.cancelled) return '已取消。已完成的手數仍保留。';
   if (progress.finished) return '已完成。可到逐手 Log 檢視結果。';
@@ -326,10 +432,12 @@ function Summary({ label, value }: { label: string; value: string }) {
 }
 
 function Metric({
+  compact = false,
   label,
   value,
   tone,
 }: {
+  compact?: boolean;
   label: string;
   value: string;
   tone?: 'positive' | 'negative';
@@ -341,7 +449,16 @@ function Metric({
       </div>
       <div
         className={`num ${tone ?? ''}`}
-        style={{ fontSize: 18, textAlign: 'left', marginTop: 2 }}
+        title={compact ? value : undefined}
+        style={{
+          fontSize: compact ? 15 : 18,
+          textAlign: 'left',
+          marginTop: 2,
+          minWidth: 0,
+          overflow: compact ? 'hidden' : undefined,
+          textOverflow: compact ? 'ellipsis' : undefined,
+          whiteSpace: compact ? 'nowrap' : undefined,
+        }}
       >
         {value}
       </div>
@@ -349,17 +466,25 @@ function Metric({
   );
 }
 
-function Banner({ tone, children }: { tone: 'warning' | 'negative'; children: React.ReactNode }) {
+function Banner({
+  compact = false,
+  tone,
+  children,
+}: {
+  compact?: boolean;
+  tone: 'warning' | 'negative';
+  children: React.ReactNode;
+}) {
   const color = tone === 'warning' ? 'var(--warning)' : 'var(--negative)';
   return (
     <div
       style={{
-        padding: '8px 12px',
-        marginBottom: 16,
+        padding: compact ? '5px 8px' : '8px 12px',
+        marginBottom: compact ? 8 : 16,
         border: `1px solid ${color}`,
         borderRadius: 'var(--radius-control)',
         color,
-        fontSize: 12,
+        fontSize: compact ? 11 : 12,
       }}
     >
       {children}

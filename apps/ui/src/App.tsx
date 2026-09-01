@@ -3,11 +3,10 @@
 // UI 規格 V.1 的版面：
 //
 //   [ ────────── Header 48px ────────── ]
-//   [ 圖示欄 56px ][ 參數欄 300px ][ 主內容 ]
+//   [ 圖示欄 56px ][ 工作內容 ]
 //   [ ────────── Status bar 24px ────────── ]
 //
-// 參數欄只放**輸入**，主內容只放**輸出**。這個分工讓「調參數 → 看結果」
-// 不必來回切換畫面，也讓執行期間的鎖定範圍剛好等於參數欄。
+// 計算頁把輸出放在上方、設定放在下方，其他頁面仍維持參數欄與主內容分工。
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -40,7 +39,7 @@ import {
 import { DEFAULT_REQUEST, TableSetup, validateRequest } from './panels/TableSetup';
 
 const RAIL: readonly RailItem[] = [
-  { key: 'run', glyph: '▶', label: '執行', enabled: true },
+  { key: 'run', glyph: '▶', label: '計算', enabled: true },
   { key: 'replay', glyph: '⏱', label: '重播', enabled: true },
   { key: 'bots', glyph: '◍', label: 'Bot', enabled: true },
   { key: 'strategy', glyph: '▦', label: '策略', enabled: true },
@@ -53,7 +52,6 @@ const RUN_MIN_VISIBLE_MS = 700;
 
 /** 中欄的標題。面板換了但標題沒換，使用者會以為自己還在上一頁 */
 const PANEL_TITLE: Record<string, string> = {
-  run: '牌桌設定',
   bots: 'Bot 設定',
   strategy: '策略節點',
   replay: '牌桌設定',
@@ -185,84 +183,103 @@ export function App() {
         onCancel={handleCancel}
       />
 
-      {/* 三欄工作區。minHeight 0 讓各欄自行捲動，而不是把捲軸推到最外層 */}
+      {/* 工作區。minHeight 0 讓內容在應用程式視窗內自行配置 */}
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
         <IconRail items={RAIL} active={panel} onSelect={setPanel} />
 
-        {/* 中：參數欄。只放**輸入**——面板 A 的設定、面板 B 的座位列表、
-            面板 D 的情境導航。輸出一律在右側主內容 */}
-        <aside
-          style={{
-            width: 300,
-            flexShrink: 0,
-            borderRight: '1px solid var(--border)',
-            background: 'var(--bg-surface)',
-            overflowY: 'auto',
-            padding: 16,
-          }}
-        >
-          <h2 style={{ fontSize: 13, margin: '0 0 16px' }}>
-            {PANEL_TITLE[panel] ?? '牌桌設定'}
-          </h2>
-          {panel === 'bots' && (
-            <BotSeats
-              request={request}
-              onChange={setRequest}
-              locked={busy}
-              selected={botSeat}
-              onSelect={setBotSeat}
-            />
-          )}
-          {panel === 'strategy' && (
-            <StrategyNav
-              selection={node}
-              onChange={setNode}
-              overrideCount={request.heroOverrides.length}
-            />
-          )}
-          {panel !== 'bots' && panel !== 'strategy' && (
-            <TableSetup request={request} onChange={setRequest} locked={busy} />
-          )}
-        </aside>
+        {panel === 'run' ? (
+          <main className="run-workspace">
+            <section className="run-workspace__status" aria-label="計算狀態">
+              <RunControl
+                compact
+                request={request}
+                progress={progress}
+                running={busy}
+                desktop={desktop}
+                invalid={invalid}
+                failure={failure}
+                onViewReplay={() => setPanel('replay')}
+              />
+            </section>
 
-        {/* 右：主內容 */}
-        <main style={{ flex: 1, overflow: 'auto', background: 'var(--bg-base)' }}>
-          {panel === 'bots' && (
-            <BotParams
-              request={request}
-              onChange={setRequest}
-              locked={busy}
-              selected={botSeat}
-            />
-          )}
-          {panel === 'strategy' && (
-            <Strategy
-              selection={node}
-              overrides={request.heroOverrides}
-              onOverridesChange={setOverrides}
-              locked={busy}
-            />
-          )}
-          {panel === 'run' && (
-            <RunControl
-              request={request}
-              progress={progress}
-              running={busy}
-              desktop={desktop}
-              invalid={invalid}
-              failure={failure}
-              onViewReplay={() => setPanel('replay')}
-            />
-          )}
-          {panel === 'quiz' && <Quiz seated={request.players} />}
-          {panel === 'replay' && (
-          <Replay
-            reloadToken={reloadToken}
-            bigBlind={request.bigBlind}
-            onHeadline={setReplayHeadline}
-          />
+            <section className="run-workspace__setup" aria-labelledby="table-setup-title">
+              <div className="run-workspace__setup-heading">
+                <h2 id="table-setup-title">牌桌設定</h2>
+                <span>所有參數依類別展開，可直接逐項檢查與調整</span>
+              </div>
+              <TableSetup
+                layout="workspace"
+                request={request}
+                onChange={setRequest}
+                locked={busy}
+              />
+            </section>
+          </main>
+        ) : (
+          <>
+            {/* 其他面板保留左側輸入、右側內容的既有工作方式 */}
+            <aside
+              style={{
+                width: 300,
+                flexShrink: 0,
+                borderRight: '1px solid var(--border)',
+                background: 'var(--bg-surface)',
+                overflowY: 'auto',
+                padding: 16,
+              }}
+            >
+              <h2 style={{ fontSize: 13, margin: '0 0 16px' }}>
+                {PANEL_TITLE[panel] ?? '牌桌設定'}
+              </h2>
+              {panel === 'bots' && (
+                <BotSeats
+                  request={request}
+                  onChange={setRequest}
+                  locked={busy}
+                  selected={botSeat}
+                  onSelect={setBotSeat}
+                />
+              )}
+              {panel === 'strategy' && (
+                <StrategyNav
+                  selection={node}
+                  onChange={setNode}
+                  overrideCount={request.heroOverrides.length}
+                />
+              )}
+              {panel !== 'bots' && panel !== 'strategy' && (
+                <TableSetup request={request} onChange={setRequest} locked={busy} />
+              )}
+            </aside>
+
+            <main style={{ flex: 1, overflow: 'auto', background: 'var(--bg-base)' }}>
+              {panel === 'bots' && (
+                <BotParams
+                  request={request}
+                  onChange={setRequest}
+                  locked={busy}
+                  selected={botSeat}
+                />
+              )}
+              {panel === 'strategy' && (
+                <Strategy
+                  selection={node}
+                  overrides={request.heroOverrides}
+                  onOverridesChange={setOverrides}
+                  locked={busy}
+                />
+              )}
+              {panel === 'quiz' && <Quiz seated={request.players} />}
+              {panel === 'replay' && (
+                <Replay
+                  reloadToken={reloadToken}
+                  bigBlind={request.bigBlind}
+                  onHeadline={setReplayHeadline}
+                />
+              )}
+            </main>
+          </>
         )}
-        </main>
       </div>
 
       <StatusBar mode={mode} />
