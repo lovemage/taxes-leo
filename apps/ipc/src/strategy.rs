@@ -49,7 +49,9 @@ pub struct StrategyMetaView {
     pub open_size_centi_bb: u32,
     pub three_bet_size_centi_bb: u32,
     pub four_bet_size_centi_bb: u32,
-    /// 翻後 fallback 的版本字串（核心規格 4.2 要求明示）
+    /// 翻後工程基準的版本字串；是否簽核另見 `consultant_approved`
+    pub postflop_baseline: String,
+    /// 翻後基準無法產生合法分佈時的最後 fallback（核心規格 4.2）
     pub postflop_fallback: String,
     /// 翻前節點總數（桌型 × 位置 × bucket × 情境）
     #[ts(type = "number")]
@@ -270,6 +272,7 @@ pub fn meta() -> StrategyMetaView {
         open_size_centi_bb: rules.open_size_centi_bb,
         three_bet_size_centi_bb: rules.three_bet_size_centi_bb,
         four_bet_size_centi_bb: rules.four_bet_size_centi_bb,
+        postflop_baseline: poker_engine::bot::POSTFLOP_BASELINE_VERSION.to_owned(),
         postflop_fallback: poker_engine::bot::POSTFLOP_FALLBACK_VERSION.to_owned(),
         preflop_node_count: nodes,
         preflop_cell_count: nodes * 169,
@@ -863,6 +866,7 @@ mod tests {
         let view = meta();
         assert!(!view.consultant_approved, "工程佔位內容不得標成已簽核");
         assert_eq!(view.preflop_cell_count, view.preflop_node_count * 169);
+        assert_eq!(view.postflop_baseline, "equityHeuristic/v1-unapproved");
         assert_eq!(view.postflop_fallback, "checkFold/v0");
     }
 

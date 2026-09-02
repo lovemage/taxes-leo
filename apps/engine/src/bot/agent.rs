@@ -4,18 +4,17 @@
 //! 策略，所以人格與行為參數調了也不會改變任何結果。這個模組是缺的
 //! 那一段接線：節點識別 → 基準分佈 → [`pipeline::run`] → 行動。
 //!
-//! # 內容層仍是空的
-//!
-//! 翻前走的是 [`BaselineRules`] 的參數化產生器，因此位置、籌碼 bucket
-//! 與情境都真的會影響分佈。**翻後沒有內容**——顧問的規則表還沒進來，
-//! 因此一律走 fallback。fallback 的版本字串寫進 log（核心規格 4.2），
-//! 不假裝那是策略。
+//! 翻前走 [`BaselineRules`]；翻後先走具版本的 equity heuristic baseline。
+//! 後者依英雄可見牌、公共牌、存活對手數與底池賠率產生分佈，不讀取任何
+//! 隱藏資訊。它是可實際下注的工程基準，不冒充尚未交付的顧問規則表。
 
 use std::collections::BTreeMap;
 
 use crate::betting::{Action, LegalActions};
 use crate::bot::params::ParamValue;
 use crate::bot::pipeline::{self, BotConfig, PipelineError};
+use crate::chips::Chips;
+use crate::equity::monte_carlo_vs_random;
 use crate::hand::{ActionProvider, Street};
 use crate::position::PositionLabel;
 use crate::rng::{Rng, RngDomain};
@@ -27,11 +26,17 @@ use crate::strategy::preflop::{PreflopNode, PreflopScenario};
 use crate::strategy::ranking::EquityRanking;
 use crate::strategy::DecisionView;
 
-/// 翻後 fallback 的版本字串。
-///
-/// 核心規格 4.2 要求走 fallback 時明確標示版本與原因，
-/// 因此這是個具名常數而不是散在程式碼裡的預設行為。
+/// 翻後工程基準的版本字串。
+pub const POSTFLOP_BASELINE_VERSION: &str = "equityHeuristic/v1-unapproved";
+
+/// 工程基準也無法產生合法分佈時使用的最後 fallback。
 pub const POSTFLOP_FALLBACK_VERSION: &str = "checkFold/v0";
+
+/// 每個翻後決策的批次 equity 樣本數。
+///
+/// 這是工程 heuristic 的固定內容之一，因此版本升級時必須一併檢視。
+/// 現有 release benchmark 即使 8 名對手也低於每決策 1 ms 的預算。
+pub const POSTFLOP_EQUITY_SAMPLES: u64 = 64;
 
 /// `baseline::expected_opponents` 可能回傳的最大值。
 ///
@@ -174,12 +179,20 @@ impl ActionProvider for BotAgent {
         let fit = |d: ActionDistribution| {
             drop_free_fold(&fit_raise_sizes(&d, &view.legal), &view.legal)
         };
-        let (baseline, reference) = match view.street {
+        let (baseline, reference, aggression_key) = match view.street {
             Street::Preflop => (
                 preflop_baseline(view, self.rules_for(view.seat), &self.rankings).map(fit),
                 preflop_baseline(view, self.reference_for(view.seat), &self.rankings).map(fit),
+                "preflopAggression",
             ),
-            _ => (None, None),
+            _ => {
+                // Equity 與策略混頻使用不同 RNG domain；調整 equity 樣本數不會
+                // 改變相同節點用來抽 action distribution 的亂數。
+                let mut equity_rng =
+                    Rng::derive(self.master_seed, self.decisions, RngDomain::Equity);
+                let baseline = postflop_baseline(view, &mut equity_rng).map(fit);
+                (baseline.clone(), baseline, "postflopAggression")
+            }
         };
 
         let Some(baseline) = baseline else {
@@ -187,10 +200,11 @@ impl ActionProvider for BotAgent {
         };
         let reference = reference.unwrap_or_else(|| baseline.clone());
 
-        match pipeline::run_with_reference(
+        match pipeline::run_with_reference_and_aggression(
             &reference,
             &baseline,
             config,
+            aggression_key,
             legality(&view.legal),
             roll,
         ) {
@@ -202,6 +216,105 @@ impl ActionProvider for BotAgent {
             }
         }
     }
+}
+
+/// 翻後工程基準。
+///
+/// 以對隨機合法手牌的 Monte Carlo equity 做粗粒度分桶，再用底池賠率決定
+/// 面對下注時的跟注門檻。這不是 solver/GTO 輸出，但至少是可重現、可版本化、
+/// 會依牌力與牌局狀態改變的策略，不再讓所有玩家一路 check 到攤牌。
+fn postflop_baseline(view: &DecisionView, rng: &mut Rng) -> Option<ActionDistribution> {
+    if !(3..=5).contains(&view.board.len()) {
+        return None;
+    }
+
+    let opponents = view.active_opponents().max(1);
+    let equity = u32::try_from(monte_carlo_vs_random(
+        view.hole_cards,
+        opponents,
+        &view.board,
+        POSTFLOP_EQUITY_SAMPLES,
+        rng,
+    )
+    .as_myriad())
+    .unwrap_or(FULL)
+    .min(FULL);
+    let opponents = u32::try_from(opponents).unwrap_or(8);
+    let fair_share = FULL / opponents.saturating_add(1);
+    let aggressive = Action::RaiseTo(postflop_raise_to(view, equity));
+
+    let weights = if view.legal.can_check {
+        if equity >= fair_share.saturating_add(2_500) {
+            // 明顯領先：以價值下注為主，保留少量過牌設陷。
+            vec![(aggressive, 8_000), (Action::Check, 2_000)]
+        } else if equity >= fair_share.saturating_add(1_000) {
+            vec![(aggressive, 6_000), (Action::Check, 4_000)]
+        } else if equity >= fair_share.saturating_sub(300) {
+            // 接近平均勝率：小比例下注、以控池為主。
+            vec![(aggressive, 2_500), (Action::Check, 7_500)]
+        } else {
+            // 弱牌保留少量詐唬；多人底池再收緊。
+            let bluff = if opponents == 1 { 800 } else { 300 };
+            vec![(aggressive, bluff), (Action::Check, 10_000 - bluff)]
+        }
+    } else {
+        let pot_odds = postflop_pot_odds(view);
+        if equity >= fair_share.saturating_add(2_500)
+            && equity >= pot_odds.saturating_add(1_500)
+        {
+            // 強牌面對下注：價值加注與跟注設陷混合。
+            vec![(aggressive, 4_500), (Action::Call, 5_500)]
+        } else if equity >= fair_share.saturating_add(700)
+            && equity >= pot_odds.saturating_add(700)
+        {
+            vec![(aggressive, 1_500), (Action::Call, 7_500), (Action::Fold, 1_000)]
+        } else if equity >= pot_odds.saturating_add(300) {
+            vec![(Action::Call, 7_000), (Action::Fold, 3_000)]
+        } else if equity.saturating_add(400) >= pot_odds {
+            vec![(Action::Call, 3_500), (Action::Fold, 6_500)]
+        } else {
+            // 明顯低於底池賠率時大多棄牌，但不是永遠 fold 的機器。
+            vec![(aggressive, 300), (Action::Call, 400), (Action::Fold, 9_300)]
+        }
+    };
+
+    ActionDistribution::from_weights(weights).ok()
+}
+
+/// 依底池與 equity 選擇一個 50%／66%／75% pot 的下注意圖。
+/// 最終仍由 [`fit_raise_sizes`] 夾進引擎提供的合法區間。
+fn postflop_raise_to(view: &DecisionView, equity: Myriad) -> Chips {
+    let own_committed = view
+        .history
+        .iter()
+        .rev()
+        .find(|action| action.street == view.street && action.seat == view.seat)
+        .map_or(Chips::ZERO, |action| action.committed_to);
+    let base = view.legal.call_to.unwrap_or(own_committed);
+    let pot_after_call = view.pot + view.to_call;
+    let percent = if equity >= 7_500 {
+        75
+    } else if equity >= 5_000 || view.street == Street::River {
+        66
+    } else {
+        50
+    };
+    Chips::new(
+        base.units()
+            .saturating_add(pot_after_call.units().saturating_mul(percent) / 100),
+    )
+}
+
+/// 跟注所需 equity（萬分比）：call ÷（目前底池 + call）。
+fn postflop_pot_odds(view: &DecisionView) -> Myriad {
+    let call = view.to_call.units();
+    let final_pot = view.pot.units().saturating_add(call);
+    if call == 0 || final_pot == 0 {
+        return 0;
+    }
+    u32::try_from(call.saturating_mul(u64::from(FULL)) / final_pot)
+        .unwrap_or(FULL)
+        .min(FULL)
 }
 
 /// 翻前基準分佈。
@@ -366,11 +479,7 @@ fn legality(legal: &LegalActions) -> impl Fn(Action) -> bool + '_ {
     }
 }
 
-/// 沒有內容可用時的保底行動。
-///
-/// 翻後目前一律走這裡。**這不是策略**：能過牌就過牌，面對下注就棄牌。
-/// 顧問的翻後規則表進來之前，寫成別的樣子只會是我們自己編的內容，
-/// 而編出來的內容會混進統計裡，讓人以為那是校準過的結果。
+/// 策略產生失敗或 legal mask 後無行動時的最後保底。
 fn fallback(legal: &LegalActions) -> Action {
     if legal.can_check {
         Action::Check
@@ -388,6 +497,6 @@ fn fallback(legal: &LegalActions) -> Action {
 pub fn fallback_note() -> (&'static str, &'static str) {
     (
         POSTFLOP_FALLBACK_VERSION,
-        "翻後無內容表，一律 check／fold",
+        "僅在策略產生失敗時使用 check／fold 保底",
     )
 }

@@ -630,12 +630,12 @@ function ContentCard({ meta }: { meta: StrategyMetaView }) {
         <div style={{ marginBottom: 4 }}>{meta.chartNote}</div>
         <div style={{ marginBottom: 4 }}>{meta.rankingNote}</div>
         <div style={{ marginBottom: 4 }}>
-          翻後一律 fallback（
-          <span style={{ fontFamily: 'var(--font-mono)' }}>{meta.postflopFallback}</span>）。
+          翻後工程基準（
+          <span style={{ fontFamily: 'var(--font-mono)' }}>{meta.postflopBaseline}</span>）。
         </div>
         <span className="dim">
-          顧問的翻後規則表尚未進來。翻後完整度 0%，UI 規格 D.5 的規則清單
-          要等有內容才畫得出來。
+          已依牌力、存活對手數與底池賠率產生下注／跟注／加注分佈；顧問規則表
+          尚未進來，因此這版仍屬未簽核工程內容。異常時保底：{meta.postflopFallback}。
         </span>
       </div>
     </section>

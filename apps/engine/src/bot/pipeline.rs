@@ -238,6 +238,28 @@ pub fn run_with_reference(
     is_legal: impl Fn(Action) -> bool,
     roll: Myriad,
 ) -> Result<DecisionTrace, PipelineError> {
+    run_with_reference_and_aggression(
+        reference,
+        baseline,
+        config,
+        "preflopAggression",
+        is_legal,
+        roll,
+    )
+}
+
+/// 與 [`run_with_reference`] 相同，但由呼叫端指定當街的侵略性參數。
+///
+/// 翻前與翻後有獨立滑桿；若管線固定讀 `preflopAggression`，翻後即使有
+/// baseline，面板上的 `postflopAggression` 仍會是沒有作用的假設定。
+pub(crate) fn run_with_reference_and_aggression(
+    reference: &ActionDistribution,
+    baseline: &ActionDistribution,
+    config: &BotConfig,
+    aggression_key: &'static str,
+    is_legal: impl Fn(Action) -> bool,
+    roll: Myriad,
+) -> Result<DecisionTrace, PipelineError> {
     let mut stages = Vec::with_capacity(7);
     let mut applied_offsets = Vec::new();
 
@@ -247,7 +269,7 @@ pub fn run_with_reference(
     // ── 步驟 2：Persona 偏移 ─────────────────────────────────────
     // 偏移是具名且受上下限約束的（schema 的 min/max 已保證），
     // 這裡只依欄位語意決定作用在哪些行動上
-    let aggression = config.myriad("preflopAggression");
+    let aggression = config.myriad(aggression_key);
     let call_persistence = config.myriad("callPersistence");
     let fold_discipline = config.myriad("foldDiscipline");
 
@@ -258,7 +280,7 @@ pub fn run_with_reference(
         Action::Check => FULL,
     })?;
     if aggression != FULL {
-        applied_offsets.push(("preflopAggression", aggression));
+        applied_offsets.push((aggression_key, aggression));
     }
     if call_persistence != FULL {
         applied_offsets.push(("callPersistence", call_persistence));

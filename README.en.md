@@ -366,7 +366,7 @@ check that is skipped by default).
 |---|---|
 | M0 vertical slice | Full chain runs end to end; two hard gates unmet (see below) |
 | M1 rules layer | Complete |
-| M2 strategy and bot layer | Preflop now uses the consultant's default chart; postflop has no content and always falls back |
+| M2 strategy and bot layer | Preflop uses the default chart; postflop uses a versioned equity-heuristic engineering baseline pending consultant rules |
 | M3 desktop UI | V.1 app shell complete (header and status bar); panels A/B/C/E/G usable; D covers preflop only; F not built |
 | M4 wrap-up and release | Windows installers can be built and released by CI; everything else not started |
 
@@ -407,25 +407,23 @@ as "no M1 until these pass")
   per-cell override → default chart → parametric generator, and an edited cell
   overrides the other two. Overrides are attached only to the user's seat and are
   written into the `RunManifest` content snapshot along with the run.
-- **The postflop rule list (UI spec D.5) is not built**, because there is no postflop
-  content to edit — the consultant's rule table has not arrived and everything falls
-  back to `checkFold/v0`. Drawing an empty rule editor would only suggest that a
-  strategy exists there.
+- **The postflop rule list (UI spec D.5) is not built**, because the consultant's editable
+  rule table has not arrived. Simulations currently use the
+  `equityHeuristic/v1-unapproved` engineering baseline, which produces bet/call/raise/fold
+  distributions from visible cards, active opponents, pot odds, and legal actions.
 - **The strategy library (D.9) is not built**: saving, naming, switching, and export do
   not exist yet, and overrides currently live only in the current configuration (they
   are stored in the run snapshot, but not as a separately reusable strategy file).
 
-**Remaining M2 work**: postflop strategy table (consultant content), 7 official
-personas, multiway equity, analytics and reporting.
+**Remaining M2 work**: the formal postflop strategy table (consultant content), 7 official
+personas, multiway range equity, and calibration.
 
-> **Postflop currently always falls back** (`checkFold/v0`). The consultant's postflop
-> rule table has not arrived, and writing something else would just be content we
-> invented — content that would then mix into the statistics and let people believe it
-> was calibrated. Preflop uses the consultant-approved default chart (see "Preflop
-> default chart" above); only "facing limpers", which the chart does not cover, falls
-> back to the parametric baseline.
+> **Postflop currently uses a versioned engineering baseline, not consultant-approved
+> content.** `equityHeuristic/v1-unapproved` runs fixed-sample Monte Carlo equity against
+> random legal opponent hands and buckets decisions by fair share and pot odds. It closes
+> the “everyone checks to showdown” execution gap, but reports must still label it uncalibrated.
 >
-> **Only 6 of the 21 bot parameters currently change decisions.** The rest are declared
+> **7 of the 21 bot parameters currently change decisions.** The rest are declared
 > per core spec §4.3 but the decision path does not read them yet, so
 > `ParamSpec::implemented` is false and the UI lists them under "not yet in effect"
 > and disables them. Tests guard both directions: marked false yet having an effect,

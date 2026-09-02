@@ -506,8 +506,16 @@ fn build_manifest(
             hero_rules.version.clone(),
             serde_json::json!({
                 "preflop": crate::snapshot::baseline(hero_rules),
+                "postflopBaseline": {
+                    "version": poker_engine::bot::POSTFLOP_BASELINE_VERSION,
+                    "consultantApproved": false,
+                    "equitySamples": poker_engine::bot::POSTFLOP_EQUITY_SAMPLES,
+                    "opponentRange": "uniformRandomLegalHands",
+                    "decisionBuckets": "fairShare+potOdds/v1",
+                    "betSizesPercent": [50, 66, 75],
+                },
                 "postflopFallback": poker_engine::bot::POSTFLOP_FALLBACK_VERSION,
-                "postflopNote": "翻後無內容表，一律 check／fold；顧問規則進來前不得當成校準結果",
+                "postflopNote": "翻後採 equity heuristic 工程基準，會依牌力、對手數與底池賠率行動；未經顧問簽核",
                 "equityRankingSamples": rankings.samples(),
                 "equityRankingSource": rankings.source().key(),
                 "equityRankingContentGrade": rankings.is_content_grade(),
@@ -533,5 +541,3 @@ fn build_manifest(
         checkpoint_version: 1,
     }
 }
-
-

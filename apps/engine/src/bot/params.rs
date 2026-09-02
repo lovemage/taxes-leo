@@ -201,7 +201,7 @@ pub const PERSONA_SPECS: [ParamSpec; 11] = [
         default: ParamValue::Myriad(10_000),
         min: 5_000,
         max: 18_000,
-        implemented: false,
+        implemented: true,
     },
     ParamSpec {
         key: "callPersistence",

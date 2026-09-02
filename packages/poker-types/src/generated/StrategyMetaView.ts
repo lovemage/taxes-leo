@@ -18,7 +18,11 @@ pushFoldBelow: string,
  */
 openSizeCentiBb: number, threeBetSizeCentiBb: number, fourBetSizeCentiBb: number, 
 /**
- * 翻後 fallback 的版本字串（核心規格 4.2 要求明示）
+ * 翻後工程基準的版本字串；是否簽核另見 `consultant_approved`
+ */
+postflopBaseline: string,
+/**
+ * 翻後基準無法產生合法分佈時的最後 fallback（核心規格 4.2）
  */
 postflopFallback: string, 
 /**

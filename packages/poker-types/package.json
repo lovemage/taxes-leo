@@ -1,6 +1,6 @@
 {
   "name": "@taxes-leo/poker-types",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "由 Rust structs 產生的前端型別（單一來源，請勿手改）",
   "type": "module",

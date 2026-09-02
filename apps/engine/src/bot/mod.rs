@@ -8,6 +8,7 @@ pub mod pipeline;
 
 pub use params::{ParamError, ParamSpec, ParamValue, BEHAVIOR_SPECS, PERSONA_SPECS};
 pub use agent::{
-    rules_for_bot, scenario_of, BotAgent, MAX_EXPECTED_OPPONENTS, POSTFLOP_FALLBACK_VERSION,
+    rules_for_bot, scenario_of, BotAgent, MAX_EXPECTED_OPPONENTS, POSTFLOP_BASELINE_VERSION,
+    POSTFLOP_EQUITY_SAMPLES, POSTFLOP_FALLBACK_VERSION,
 };
 pub use pipeline::{BotConfig, DecisionTrace, PipelineStage};

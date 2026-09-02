@@ -183,6 +183,8 @@ struct Tally {
     folds: u32,
     raises: u32,
     total: u32,
+    postflop_raises: u32,
+    postflop_total: u32,
 }
 
 impl Tally {
@@ -195,6 +197,12 @@ impl ActionProvider for Tally {
     fn choose(&mut self, view: &DecisionView) -> Action {
         let action = self.agent.choose(view);
         self.total += 1;
+        if view.street != Street::Preflop {
+            self.postflop_total += 1;
+            if matches!(action, Action::RaiseTo(_) | Action::AllIn) {
+                self.postflop_raises += 1;
+            }
+        }
         match action {
             Action::Fold => self.folds += 1,
             Action::RaiseTo(_) | Action::AllIn => self.raises += 1,
@@ -224,6 +232,8 @@ fn play(seats: Vec<BotConfig>, rankings: &BTreeMap<usize, poker_engine::strategy
         folds: 0,
         raises: 0,
         total: 0,
+        postflop_raises: 0,
+        postflop_total: 0,
     };
     run_session(&config, &mut tally, |_| {});
     tally
@@ -341,9 +351,9 @@ fn 不同座位可以用不同設定() {
     );
 }
 
-/// 翻後沒有內容表，一律走 fallback：能過牌就過牌，不自行編造策略。
+/// 翻後強牌必須會主動下注，不能再一路 check 到攤牌。
 #[test]
-fn 翻後一律走_fallback_不自行編造策略() {
+fn 翻後強牌會主動下注() {
     let rankings = BotAgent::rankings(FAST_SAMPLES);
     let mut agent = BotAgent::new(
         BaselineRules::engineering_placeholder(),
@@ -355,15 +365,71 @@ fn 翻後一律走_fallback_不自行編造策略() {
     let mut view = view_with(Vec::new(), 3);
     view.street = Street::Flop;
     view.board = vec![
-        Card::new(Rank::Two, Suit::Clubs),
-        Card::new(Rank::Seven, Suit::Hearts),
-        Card::new(Rank::Nine, Suit::Diamonds),
+        Card::new(Rank::Queen, Suit::Spades),
+        Card::new(Rank::Jack, Suit::Spades),
+        Card::new(Rank::Ten, Suit::Spades),
     ];
+    view.pot = Chips::new(20);
+    view.to_call = Chips::ZERO;
     view.legal.can_check = true;
-    assert_eq!(agent.choose(&view), Action::Check, "能過牌就過牌");
+    view.legal.call_to = None;
+    view.legal.raise = Some(RaiseRange {
+        min_to: Chips::new(2),
+        max_to: Chips::new(400),
+    });
 
+    let actions: Vec<Action> = (0..20).map(|_| agent.choose(&view)).collect();
+    assert!(
+        actions
+            .iter()
+            .any(|action| matches!(action, Action::RaiseTo(_))),
+        "皇家同花順在 20 次相同翻後節點中至少應主動下注一次：{actions:?}"
+    );
+}
+
+/// 面對下注時也必須依牌力繼續，而不是固定棄牌。
+#[test]
+fn 翻後強牌面對下注不會固定棄牌() {
+    let rankings = BotAgent::rankings(FAST_SAMPLES);
+    let mut agent = BotAgent::new(
+        BaselineRules::engineering_placeholder(),
+        rankings,
+        vec![BotConfig::defaults("測試"); 9],
+        2,
+    );
+
+    let mut view = view_with(Vec::new(), 3);
+    view.street = Street::River;
+    view.board = vec![
+        Card::new(Rank::Queen, Suit::Spades),
+        Card::new(Rank::Jack, Suit::Spades),
+        Card::new(Rank::Ten, Suit::Spades),
+        Card::new(Rank::Two, Suit::Clubs),
+        Card::new(Rank::Three, Suit::Diamonds),
+    ];
+    view.pot = Chips::new(30);
+    view.to_call = Chips::new(10);
     view.legal.can_check = false;
-    assert_eq!(agent.choose(&view), Action::Fold, "面對下注就棄牌");
+    view.legal.call_to = Some(Chips::new(10));
+
+    for _ in 0..20 {
+        assert_ne!(agent.choose(&view), Action::Fold, "堅果牌面對下注不得棄牌");
+    }
+}
+
+/// 真實 session 層也必須看得到翻後主動行動，避免只在孤立函式測試通過、
+/// 接回牌局時又因 legal mask 或下注尺度錯誤全部退回 check。
+#[test]
+fn 完整牌局會出現翻後下注() {
+    let rankings = BotAgent::rankings(FAST_SAMPLES);
+    let tally = play(vec![BotConfig::defaults("測試"); 9], &rankings);
+
+    assert!(tally.postflop_total > 0, "測試 run 必須進入翻後");
+    assert!(
+        tally.postflop_raises > 0,
+        "{} 次翻後決策中至少應出現一次下注或加注",
+        tally.postflop_total
+    );
 }
 
 /// 範圍寬度必須真的改變進池範圍。
