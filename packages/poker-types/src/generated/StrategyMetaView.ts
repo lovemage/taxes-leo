@@ -20,7 +20,7 @@ openSizeCentiBb: number, threeBetSizeCentiBb: number, fourBetSizeCentiBb: number
 /**
  * 翻後工程基準的版本字串；是否簽核另見 `consultant_approved`
  */
-postflopBaseline: string,
+postflopBaseline: string, 
 /**
  * 翻後基準無法產生合法分佈時的最後 fallback（核心規格 4.2）
  */

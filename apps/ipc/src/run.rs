@@ -325,7 +325,14 @@ pub fn execute(
         ));
     }
 
-    let manifest = build_manifest(config, &rules, &hero_rules, &bot_configs, rankings, created_at);
+    let manifest = build_manifest(
+        config,
+        &rules,
+        &hero_rules,
+        &bot_configs,
+        rankings,
+        created_at,
+    );
     let run_id = {
         let mut guard = store.lock().map_err(|_| "資料庫鎖已毀損")?;
         guard
@@ -397,8 +404,14 @@ pub fn execute(
         }
     }
 
-    let mut final_manifest =
-        build_manifest(config, &rules, &hero_rules, &bot_configs, rankings, created_at);
+    let mut final_manifest = build_manifest(
+        config,
+        &rules,
+        &hero_rules,
+        &bot_configs,
+        rankings,
+        created_at,
+    );
     final_manifest.instances = summary
         .instances
         .iter()
@@ -511,11 +524,19 @@ fn build_manifest(
                     "consultantApproved": false,
                     "equitySamples": poker_engine::bot::POSTFLOP_EQUITY_SAMPLES,
                     "opponentRange": "uniformRandomLegalHands",
-                    "decisionBuckets": "fairShare+potOdds/v1",
-                    "betSizesPercent": [50, 66, 75],
+                    "decisionBuckets": "fairShare+potOdds+boardTexture/v2",
+                    "boardTextures": [
+                        "flush", "flush-draw", "rainbow", "rainbow-paired",
+                        "flush-draw-paired", "trips", "dry", "wet"
+                    ],
+                    "betSizes": [
+                        {"numerator": 1, "denominator": 3},
+                        {"numerator": 2, "denominator": 3},
+                        {"numerator": 1, "denominator": 1}
+                    ],
                 },
                 "postflopFallback": poker_engine::bot::POSTFLOP_FALLBACK_VERSION,
-                "postflopNote": "翻後採 equity heuristic 工程基準，會依牌力、對手數與底池賠率行動；未經顧問簽核",
+                "postflopNote": "翻後三街依牌力、對手數、底池賠率與牌面質地行動；使用 1/3、2/3、1 倍底池尺度，未經顧問簽核",
                 "equityRankingSamples": rankings.samples(),
                 "equityRankingSource": rankings.source().key(),
                 "equityRankingContentGrade": rankings.is_content_grade(),

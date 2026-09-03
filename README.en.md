@@ -407,10 +407,11 @@ as "no M1 until these pass")
   per-cell override → default chart → parametric generator, and an edited cell
   overrides the other two. Overrides are attached only to the user's seat and are
   written into the `RunManifest` content snapshot along with the run.
-- **The postflop rule list (UI spec D.5) is not built**, because the consultant's editable
-  rule table has not arrived. Simulations currently use the
-  `equityHeuristic/v1-unapproved` engineering baseline, which produces bet/call/raise/fold
-  distributions from visible cards, active opponents, pot odds, and legal actions.
+- **The first postflop rule-node phase (UI spec D.5) is built**: flop, turn, and river each
+  distinguish no-bet from facing-bet nodes and expose check, call, 1/3-pot, 2/3-pot,
+  pot-sized, and fold columns. Inapplicable actions stay visible with an explanation.
+  Boards use flush, flush-draw, rainbow, rainbow-paired, flush-draw-paired, trips, and the
+  overlapping dry/wet tags. Consultant frequencies have not arrived, so this view is read-only.
 - **The strategy library (D.9) is not built**: saving, naming, switching, and export do
   not exist yet, and overrides currently live only in the current configuration (they
   are stored in the run snapshot, but not as a separately reusable strategy file).
@@ -419,11 +420,13 @@ as "no M1 until these pass")
 personas, multiway range equity, and calibration.
 
 > **Postflop currently uses a versioned engineering baseline, not consultant-approved
-> content.** `equityHeuristic/v1-unapproved` runs fixed-sample Monte Carlo equity against
-> random legal opponent hands and buckets decisions by fair share and pot odds. It closes
+> content.** `equityTexture/v2-unapproved` runs fixed-sample Monte Carlo equity against
+> random legal opponent hands and buckets decisions by fair share, pot odds, and board texture.
+> Active actions use exact 1/3-pot, 2/3-pot, and pot-sized options; dry boards prefer the smaller
+> size while wet boards shift weight toward larger sizes. It closes
 > the “everyone checks to showdown” execution gap, but reports must still label it uncalibrated.
 >
-> **7 of the 21 bot parameters currently change decisions.** The rest are declared
+> **8 of the 21 bot parameters currently change decisions.** The rest are declared
 > per core spec §4.3 but the decision path does not read them yet, so
 > `ParamSpec::implemented` is false and the UI lists them under "not yet in effect"
 > and disables them. Tests guard both directions: marked false yet having an effect,

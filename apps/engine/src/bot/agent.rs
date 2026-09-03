@@ -19,15 +19,18 @@ use crate::hand::{ActionProvider, Street};
 use crate::position::PositionLabel;
 use crate::rng::{Rng, RngDomain};
 use crate::strategy::baseline::{self, BaselineRules};
-use crate::strategy::default_chart::ChartShift;
 use crate::strategy::cell_override::CellOverrides;
+use crate::strategy::default_chart::ChartShift;
 use crate::strategy::distribution::{ActionDistribution, Myriad, FULL};
+use crate::strategy::postflop::{
+    classify_board, BoardTexture, BoardTextures, PostflopActionKind, PostflopSituation,
+};
 use crate::strategy::preflop::{PreflopNode, PreflopScenario};
 use crate::strategy::ranking::EquityRanking;
 use crate::strategy::DecisionView;
 
 /// 翻後工程基準的版本字串。
-pub const POSTFLOP_BASELINE_VERSION: &str = "equityHeuristic/v1-unapproved";
+pub const POSTFLOP_BASELINE_VERSION: &str = "equityTexture/v2-unapproved";
 
 /// 工程基準也無法產生合法分佈時使用的最後 fallback。
 pub const POSTFLOP_FALLBACK_VERSION: &str = "checkFold/v0";
@@ -110,7 +113,10 @@ impl BotAgent {
         master_seed: u64,
     ) -> Self {
         let reference = rules.clone();
-        let rules = seats.iter().map(|config| rules_for_bot(&rules, config)).collect();
+        let rules = seats
+            .iter()
+            .map(|config| rules_for_bot(&rules, config))
+            .collect();
         Self {
             reference: vec![reference; seats.len()],
             rules,
@@ -176,9 +182,8 @@ impl ActionProvider for BotAgent {
         let roll = Myriad::try_from(rng.below(u64::from(FULL))).unwrap_or(0);
 
         let config = self.config_for(view.seat);
-        let fit = |d: ActionDistribution| {
-            drop_free_fold(&fit_raise_sizes(&d, &view.legal), &view.legal)
-        };
+        let fit =
+            |d: ActionDistribution| drop_free_fold(&fit_raise_sizes(&d, &view.legal), &view.legal);
         let (baseline, reference, aggression_key) = match view.street {
             Street::Preflop => (
                 preflop_baseline(view, self.rules_for(view.seat), &self.rankings).map(fit),
@@ -224,66 +229,105 @@ impl ActionProvider for BotAgent {
 /// 面對下注時的跟注門檻。這不是 solver/GTO 輸出，但至少是可重現、可版本化、
 /// 會依牌力與牌局狀態改變的策略，不再讓所有玩家一路 check 到攤牌。
 fn postflop_baseline(view: &DecisionView, rng: &mut Rng) -> Option<ActionDistribution> {
-    if !(3..=5).contains(&view.board.len()) {
-        return None;
-    }
+    let textures = classify_board(&view.board)?;
 
     let opponents = view.active_opponents().max(1);
-    let equity = u32::try_from(monte_carlo_vs_random(
-        view.hole_cards,
-        opponents,
-        &view.board,
-        POSTFLOP_EQUITY_SAMPLES,
-        rng,
+    let equity = u32::try_from(
+        monte_carlo_vs_random(
+            view.hole_cards,
+            opponents,
+            &view.board,
+            POSTFLOP_EQUITY_SAMPLES,
+            rng,
+        )
+        .as_myriad(),
     )
-    .as_myriad())
     .unwrap_or(FULL)
     .min(FULL);
     let opponents = u32::try_from(opponents).unwrap_or(8);
     let fair_share = FULL / opponents.saturating_add(1);
-    let aggressive = Action::RaiseTo(postflop_raise_to(view, equity));
+    let situation = if view.legal.can_check {
+        PostflopSituation::NoBet
+    } else {
+        PostflopSituation::FacingBet
+    };
 
-    let weights = if view.legal.can_check {
+    let (aggressive_weight, mut weights) = if situation == PostflopSituation::NoBet {
         if equity >= fair_share.saturating_add(2_500) {
             // 明顯領先：以價值下注為主，保留少量過牌設陷。
-            vec![(aggressive, 8_000), (Action::Check, 2_000)]
+            (8_000, vec![(Action::Check, 2_000)])
         } else if equity >= fair_share.saturating_add(1_000) {
-            vec![(aggressive, 6_000), (Action::Check, 4_000)]
+            (6_000, vec![(Action::Check, 4_000)])
         } else if equity >= fair_share.saturating_sub(300) {
             // 接近平均勝率：小比例下注、以控池為主。
-            vec![(aggressive, 2_500), (Action::Check, 7_500)]
+            (2_500, vec![(Action::Check, 7_500)])
         } else {
             // 弱牌保留少量詐唬；多人底池再收緊。
             let bluff = if opponents == 1 { 800 } else { 300 };
-            vec![(aggressive, bluff), (Action::Check, 10_000 - bluff)]
+            (bluff, vec![(Action::Check, 10_000 - bluff)])
         }
     } else {
         let pot_odds = postflop_pot_odds(view);
-        if equity >= fair_share.saturating_add(2_500)
-            && equity >= pot_odds.saturating_add(1_500)
-        {
+        if equity >= fair_share.saturating_add(2_500) && equity >= pot_odds.saturating_add(1_500) {
             // 強牌面對下注：價值加注與跟注設陷混合。
-            vec![(aggressive, 4_500), (Action::Call, 5_500)]
-        } else if equity >= fair_share.saturating_add(700)
-            && equity >= pot_odds.saturating_add(700)
+            (4_500, vec![(Action::Call, 5_500)])
+        } else if equity >= fair_share.saturating_add(700) && equity >= pot_odds.saturating_add(700)
         {
-            vec![(aggressive, 1_500), (Action::Call, 7_500), (Action::Fold, 1_000)]
+            (1_500, vec![(Action::Call, 7_500), (Action::Fold, 1_000)])
         } else if equity >= pot_odds.saturating_add(300) {
-            vec![(Action::Call, 7_000), (Action::Fold, 3_000)]
+            (0, vec![(Action::Call, 7_000), (Action::Fold, 3_000)])
         } else if equity.saturating_add(400) >= pot_odds {
-            vec![(Action::Call, 3_500), (Action::Fold, 6_500)]
+            (0, vec![(Action::Call, 3_500), (Action::Fold, 6_500)])
         } else {
             // 明顯低於底池賠率時大多棄牌，但不是永遠 fold 的機器。
-            vec![(aggressive, 300), (Action::Call, 400), (Action::Fold, 9_300)]
+            (300, vec![(Action::Call, 400), (Action::Fold, 9_300)])
         }
     };
+
+    weights.extend(postflop_raise_weights(view, textures, aggressive_weight));
 
     ActionDistribution::from_weights(weights).ok()
 }
 
-/// 依底池與 equity 選擇一個 50%／66%／75% pot 的下注意圖。
-/// 最終仍由 [`fit_raise_sizes`] 夾進引擎提供的合法區間。
-fn postflop_raise_to(view: &DecisionView, equity: Myriad) -> Chips {
+/// 把主動權重分配到業主指定的 1/3、2/3、1 倍底池三種尺度。
+///
+/// 乾燥面偏向小注，濕潤面提高 2/3 與滿池權重；三種尺度最後仍由
+/// [`fit_raise_sizes`] 夾進引擎提供的合法區間。
+fn postflop_raise_weights(
+    view: &DecisionView,
+    textures: BoardTextures,
+    total: u64,
+) -> Vec<(Action, u64)> {
+    if total == 0 {
+        return Vec::new();
+    }
+    let shares = if textures.contains(BoardTexture::Wet) {
+        [1_000u64, 5_500, 3_500]
+    } else {
+        [6_000u64, 3_000, 1_000]
+    };
+    let kinds = [
+        PostflopActionKind::ThirdPot,
+        PostflopActionKind::TwoThirdsPot,
+        PostflopActionKind::Pot,
+    ];
+    let mut remaining = total;
+    kinds
+        .into_iter()
+        .enumerate()
+        .map(|(index, kind)| {
+            let weight = if index == kinds.len() - 1 {
+                remaining
+            } else {
+                total.saturating_mul(shares[index]) / u64::from(FULL)
+            };
+            remaining = remaining.saturating_sub(weight);
+            (Action::RaiseTo(postflop_raise_to(view, kind)), weight)
+        })
+        .collect()
+}
+
+fn postflop_raise_to(view: &DecisionView, kind: PostflopActionKind) -> Chips {
     let own_committed = view
         .history
         .iter()
@@ -292,16 +336,10 @@ fn postflop_raise_to(view: &DecisionView, equity: Myriad) -> Chips {
         .map_or(Chips::ZERO, |action| action.committed_to);
     let base = view.legal.call_to.unwrap_or(own_committed);
     let pot_after_call = view.pot + view.to_call;
-    let percent = if equity >= 7_500 {
-        75
-    } else if equity >= 5_000 || view.street == Street::River {
-        66
-    } else {
-        50
-    };
+    let (numerator, denominator) = kind.pot_fraction().expect("只有底池尺度動作會換算加注額");
     Chips::new(
         base.units()
-            .saturating_add(pot_after_call.units().saturating_mul(percent) / 100),
+            .saturating_add(pot_after_call.units().saturating_mul(numerator) / denominator),
     )
 }
 
@@ -380,9 +418,7 @@ pub fn scenario_of(view: &DecisionView) -> PreflopScenario {
                 PreflopScenario::VsLimp { limpers }
             }
         }
-        1 => PreflopScenario::VsOpen {
-            opener: raisers[0],
-        },
+        1 => PreflopScenario::VsOpen { opener: raisers[0] },
         2 => {
             let by = raisers[1];
             // 英雄自己沒下過注 → 前方是「開牌＋再加注」，這是冷 4-bet 的
@@ -415,18 +451,19 @@ fn fit_raise_sizes(distribution: &ActionDistribution, legal: &LegalActions) -> A
     let Some(range) = legal.raise else {
         return distribution.clone();
     };
-    let entries: Vec<(Action, Myriad)> = distribution
-        .entries()
-        .iter()
-        .map(|&(action, weight)| match action {
-            Action::RaiseTo(to) => (
-                Action::RaiseTo(to.clamp(range.min_to, range.max_to)),
-                weight,
-            ),
-            other => (other, weight),
-        })
-        .collect();
-    ActionDistribution::new(entries).unwrap_or_else(|_| distribution.clone())
+    let mut entries: Vec<(Action, u64)> = Vec::new();
+    for &(action, weight) in distribution.entries() {
+        let fitted = match action {
+            Action::RaiseTo(to) => Action::RaiseTo(to.clamp(range.min_to, range.max_to)),
+            other => other,
+        };
+        if let Some((_, accumulated)) = entries.iter_mut().find(|(item, _)| *item == fitted) {
+            *accumulated = accumulated.saturating_add(u64::from(weight));
+        } else {
+            entries.push((fitted, u64::from(weight)));
+        }
+    }
+    ActionDistribution::from_weights(entries).unwrap_or_else(|_| distribution.clone())
 }
 
 /// 可以免費過牌時移除棄牌權重。
@@ -450,19 +487,18 @@ fn drop_free_fold(distribution: &ActionDistribution, legal: &LegalActions) -> Ac
             other => (other, weight),
         })
         .collect();
-    ActionDistribution::from_weights(
-        entries
-            .into_iter()
-            .fold(Vec::new(), |mut acc: Vec<(Action, u64)>, (action, weight)| {
-                // 原本就有 Check 的話要合併，否則分佈會有重複鍵
-                if let Some(slot) = acc.iter_mut().find(|(a, _)| *a == action) {
-                    slot.1 += u64::from(weight);
-                } else {
-                    acc.push((action, u64::from(weight)));
-                }
-                acc
-            }),
-    )
+    ActionDistribution::from_weights(entries.into_iter().fold(
+        Vec::new(),
+        |mut acc: Vec<(Action, u64)>, (action, weight)| {
+            // 原本就有 Check 的話要合併，否則分佈會有重複鍵
+            if let Some(slot) = acc.iter_mut().find(|(a, _)| *a == action) {
+                slot.1 += u64::from(weight);
+            } else {
+                acc.push((action, u64::from(weight)));
+            }
+            acc
+        },
+    ))
     .unwrap_or_else(|_| distribution.clone())
 }
 

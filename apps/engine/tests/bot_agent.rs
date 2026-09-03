@@ -89,7 +89,10 @@ fn 無人進池為_unopened() {
         acted(1, PositionLabel::Utg, Action::Fold),
         acted(2, PositionLabel::Utg1, Action::Fold),
     ];
-    assert_eq!(scenario_of(&view_with(history, 8)), PreflopScenario::Unopened);
+    assert_eq!(
+        scenario_of(&view_with(history, 8)),
+        PreflopScenario::Unopened
+    );
 }
 
 #[test]
@@ -212,7 +215,10 @@ impl ActionProvider for Tally {
     }
 }
 
-fn play(seats: Vec<BotConfig>, rankings: &BTreeMap<usize, poker_engine::strategy::ranking::EquityRanking>) -> Tally {
+fn play(
+    seats: Vec<BotConfig>,
+    rankings: &BTreeMap<usize, poker_engine::strategy::ranking::EquityRanking>,
+) -> Tally {
     let config = SessionConfig {
         table: TableConfig::simple(1, 2),
         players: 9,
@@ -384,6 +390,47 @@ fn 翻後強牌會主動下注() {
             .iter()
             .any(|action| matches!(action, Action::RaiseTo(_))),
         "皇家同花順在 20 次相同翻後節點中至少應主動下注一次：{actions:?}"
+    );
+}
+
+#[test]
+fn 翻後使用三分之一三分之二與滿池三種尺度() {
+    let rankings = BotAgent::rankings(FAST_SAMPLES);
+    let mut agent = BotAgent::new(
+        BaselineRules::engineering_placeholder(),
+        rankings,
+        vec![BotConfig::defaults("測試"); 9],
+        31,
+    );
+
+    let mut view = view_with(Vec::new(), 3);
+    view.street = Street::Flop;
+    view.board = vec![
+        Card::new(Rank::Ace, Suit::Hearts),
+        Card::new(Rank::Seven, Suit::Diamonds),
+        Card::new(Rank::Two, Suit::Clubs),
+    ];
+    view.pot = Chips::new(90);
+    view.to_call = Chips::ZERO;
+    view.legal.can_check = true;
+    view.legal.call_to = None;
+    view.legal.raise = Some(RaiseRange {
+        min_to: Chips::new(2),
+        max_to: Chips::new(400),
+    });
+
+    let actions: Vec<Action> = (0..400).map(|_| agent.choose(&view)).collect();
+    for expected in [30, 60, 90] {
+        assert!(
+            actions.contains(&Action::RaiseTo(Chips::new(expected))),
+            "90 籌碼底池應能產生 {expected} 籌碼的指定尺度：{actions:?}"
+        );
+    }
+    assert!(
+        actions
+            .iter()
+            .all(|action| !matches!(action, Action::Call | Action::Fold)),
+        "無人下注時跟注與蓋牌都不成立"
     );
 }
 

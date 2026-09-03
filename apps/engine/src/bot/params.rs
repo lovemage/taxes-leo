@@ -332,12 +332,12 @@ pub const BEHAVIOR_SPECS: [ParamSpec; 10] = [
         key: "allowedBetSizes",
         display: "可用尺度數",
         unit: NONE,
-        description: "從尺度樹取用的尺度數量上限",
+        description: "從 1/3、2/3、1 倍底池尺度中取用的數量上限",
         level: OverrideLevel::BehaviorThenSeat,
         default: ParamValue::Count(4),
         min: 1,
         max: 10,
-        implemented: false,
+        implemented: true,
     },
     ParamSpec {
         key: "bluffComplexity",
@@ -484,6 +484,9 @@ mod tests {
 
     #[test]
     fn 未登錄的欄位查不到() {
-        assert!(spec_of("notARealParameter").is_none(), "未登錄參數不得被接受");
+        assert!(
+            spec_of("notARealParameter").is_none(),
+            "未登錄參數不得被接受"
+        );
     }
 }

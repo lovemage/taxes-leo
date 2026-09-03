@@ -23,20 +23,285 @@
 use std::ops::RangeInclusive;
 
 use crate::betting::Action;
+use crate::card::{Card, Rank};
 use crate::hand::Street;
 use crate::position::PositionLabel;
 use crate::strategy::distribution::{ActionDistribution, DistributionError};
 
 /// 公共牌面質地（UI 規格 D.5）。
+///
+/// 前六項是互斥的牌面外觀；`Dry`／`Wet` 是另一個維度。同一個牌面會同時
+/// 命中一個外觀與一個順子結構，例如 `Rainbow + Wet`。若把八項硬做成單選，
+/// 彩虹但有順子結構的牌面就一定會失真。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum BoardTexture {
+    /// 已有至少三張同花色公共牌，牌面可形成同花
+    Flush,
+    /// 尚未形成同花，但有兩張同花色公共牌
+    FlushDraw,
+    /// 無公對且沒有同花結構
+    Rainbow,
+    /// 有公對且沒有同花結構
+    RainbowPaired,
+    /// 有公對且有兩張同花色公共牌
+    FlushDrawPaired,
+    /// 公共牌本身有三張同點數
+    Trips,
+    /// 任一五點數視窗內少於三種公共牌點數
     Dry,
+    /// 任一五點數視窗內至少有三種公共牌點數
     Wet,
-    Paired,
-    Monotone,
-    TwoTone,
-    Connected,
-    HighCard,
+}
+
+impl BoardTexture {
+    pub const ALL: [Self; 8] = [
+        Self::Flush,
+        Self::FlushDraw,
+        Self::Rainbow,
+        Self::RainbowPaired,
+        Self::FlushDrawPaired,
+        Self::Trips,
+        Self::Dry,
+        Self::Wet,
+    ];
+
+    #[must_use]
+    pub const fn key(self) -> &'static str {
+        match self {
+            Self::Flush => "flush",
+            Self::FlushDraw => "flush-draw",
+            Self::Rainbow => "rainbow",
+            Self::RainbowPaired => "rainbow-paired",
+            Self::FlushDrawPaired => "flush-draw-paired",
+            Self::Trips => "trips",
+            Self::Dry => "dry",
+            Self::Wet => "wet",
+        }
+    }
+
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Flush => "花面",
+            Self::FlushDraw => "聽花面",
+            Self::Rainbow => "彩虹面",
+            Self::RainbowPaired => "彩虹公對面",
+            Self::FlushDrawPaired => "聽花公對面",
+            Self::Trips => "三條面",
+            Self::Dry => "乾燥面",
+            Self::Wet => "濕潤面",
+        }
+    }
+
+    #[must_use]
+    pub const fn description(self) -> &'static str {
+        match self {
+            Self::Flush => "公共牌已有至少三張同花色",
+            Self::FlushDraw => "公共牌有兩張同花色，且沒有公對",
+            Self::Rainbow => "公共牌沒有同花結構，也沒有公對",
+            Self::RainbowPaired => "公共牌有公對，且沒有同花結構",
+            Self::FlushDrawPaired => "公共牌同時有公對與兩張同花色",
+            Self::Trips => "公共牌已有三張同點數",
+            Self::Dry => "沒有明顯順子結構",
+            Self::Wet => "有順子或聽順結構",
+        }
+    }
+
+    #[must_use]
+    pub const fn dimension(self) -> &'static str {
+        match self {
+            Self::Dry | Self::Wet => "順子結構",
+            _ => "花色／公對",
+        }
+    }
+
+    const fn is_connectivity(self) -> bool {
+        matches!(self, Self::Dry | Self::Wet)
+    }
+}
+
+/// 一個牌面同時具有的「花色／公對」與「順子結構」標籤。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct BoardTextures {
+    surface: BoardTexture,
+    connectivity: BoardTexture,
+}
+
+impl BoardTextures {
+    #[must_use]
+    pub const fn surface(self) -> BoardTexture {
+        self.surface
+    }
+
+    #[must_use]
+    pub const fn connectivity(self) -> BoardTexture {
+        self.connectivity
+    }
+
+    #[must_use]
+    pub fn contains(self, texture: BoardTexture) -> bool {
+        self.surface == texture || self.connectivity == texture
+    }
+}
+
+/// 由當下已公開的 3～5 張公共牌判定牌面質地。
+///
+/// 外觀採優先序：三條面 → 花面 → 公對複合面 → 聽花面 → 彩虹面。
+/// 使用優先序是因為需求沒有「花面公對」這個獨立類別；一旦牌面已有三張
+/// 同花色，同花威脅比兩張同花色的公對類別更具辨識力。
+#[must_use]
+pub fn classify_board(board: &[Card]) -> Option<BoardTextures> {
+    if !(3..=5).contains(&board.len()) {
+        return None;
+    }
+
+    let mut suits = [0u8; 4];
+    let mut ranks = [0u8; 15];
+    for card in board {
+        suits[card.suit.index()] = suits[card.suit.index()].saturating_add(1);
+        let rank = usize::from(card.rank.value());
+        ranks[rank] = ranks[rank].saturating_add(1);
+    }
+
+    let max_suit = suits.into_iter().max().unwrap_or(0);
+    let max_rank = ranks.into_iter().max().unwrap_or(0);
+    let paired = max_rank >= 2;
+    let surface = if max_rank >= 3 {
+        BoardTexture::Trips
+    } else if max_suit >= 3 {
+        BoardTexture::Flush
+    } else if paired && max_suit >= 2 {
+        BoardTexture::FlushDrawPaired
+    } else if paired {
+        BoardTexture::RainbowPaired
+    } else if max_suit >= 2 {
+        BoardTexture::FlushDraw
+    } else {
+        BoardTexture::Rainbow
+    };
+    let connectivity = if has_straight_structure(board) {
+        BoardTexture::Wet
+    } else {
+        BoardTexture::Dry
+    };
+
+    Some(BoardTextures {
+        surface,
+        connectivity,
+    })
+}
+
+fn has_straight_structure(board: &[Card]) -> bool {
+    let mut present = [false; 15];
+    for card in board {
+        let rank = usize::from(card.rank.value());
+        present[rank] = true;
+        if card.rank == Rank::Ace {
+            present[1] = true;
+        }
+    }
+
+    (1usize..=10).any(|low| (low..=low + 4).filter(|rank| present[*rank]).count() >= 3)
+}
+
+/// 當前節點有沒有需要跟注的下注。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PostflopSituation {
+    NoBet,
+    FacingBet,
+}
+
+impl PostflopSituation {
+    pub const ALL: [Self; 2] = [Self::NoBet, Self::FacingBet];
+
+    #[must_use]
+    pub const fn key(self) -> &'static str {
+        match self {
+            Self::NoBet => "no-bet",
+            Self::FacingBet => "facing-bet",
+        }
+    }
+
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::NoBet => "無人下注",
+            Self::FacingBet => "面對下注",
+        }
+    }
+}
+
+/// 業主指定的六個翻後動作欄位。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PostflopActionKind {
+    Check,
+    Call,
+    ThirdPot,
+    TwoThirdsPot,
+    Pot,
+    Fold,
+}
+
+impl PostflopActionKind {
+    pub const ALL: [Self; 6] = [
+        Self::Check,
+        Self::Call,
+        Self::ThirdPot,
+        Self::TwoThirdsPot,
+        Self::Pot,
+        Self::Fold,
+    ];
+
+    #[must_use]
+    pub const fn key(self) -> &'static str {
+        match self {
+            Self::Check => "check",
+            Self::Call => "call",
+            Self::ThirdPot => "third-pot",
+            Self::TwoThirdsPot => "two-thirds-pot",
+            Self::Pot => "pot",
+            Self::Fold => "fold",
+        }
+    }
+
+    #[must_use]
+    pub const fn label(self, situation: PostflopSituation) -> &'static str {
+        match self {
+            Self::Check => "過牌",
+            Self::Call => "跟注",
+            Self::ThirdPot => match situation {
+                PostflopSituation::NoBet => "下注 1/3 底池",
+                PostflopSituation::FacingBet => "加注 1/3 底池",
+            },
+            Self::TwoThirdsPot => match situation {
+                PostflopSituation::NoBet => "下注 2/3 底池",
+                PostflopSituation::FacingBet => "加注 2/3 底池",
+            },
+            Self::Pot => match situation {
+                PostflopSituation::NoBet => "下注 1 個底池",
+                PostflopSituation::FacingBet => "加注 1 個底池",
+            },
+            Self::Fold => "蓋牌",
+        }
+    }
+
+    #[must_use]
+    pub const fn is_available(self, situation: PostflopSituation) -> bool {
+        match situation {
+            PostflopSituation::NoBet => !matches!(self, Self::Call | Self::Fold),
+            PostflopSituation::FacingBet => !matches!(self, Self::Check),
+        }
+    }
+
+    #[must_use]
+    pub const fn pot_fraction(self) -> Option<(u64, u64)> {
+        match self {
+            Self::ThirdPot => Some((1, 3)),
+            Self::TwoThirdsPot => Some((2, 3)),
+            Self::Pot => Some((1, 1)),
+            Self::Check | Self::Call | Self::Fold => None,
+        }
+    }
 }
 
 /// 手牌強度分桶。
@@ -76,7 +341,7 @@ pub enum FacingSize {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PostflopContext {
     pub street: Street,
-    pub board_texture: BoardTexture,
+    pub board_textures: BoardTextures,
     pub hand_strength: HandStrength,
     /// 本街仍在牌局的人數
     pub active_players: u8,
@@ -109,7 +374,9 @@ impl PostflopCondition {
     #[must_use]
     pub fn matches(&self, context: &PostflopContext) -> bool {
         option_matches(self.street, context.street)
-            && option_matches(self.board_texture, context.board_texture)
+            && self
+                .board_texture
+                .is_none_or(|texture| context.board_textures.contains(texture))
             && option_matches(self.hand_strength, context.hand_strength)
             && range_matches(self.active_players.as_ref(), context.active_players)
             && option_matches(self.hero_position, context.hero_position)
@@ -151,7 +418,7 @@ impl PostflopCondition {
     #[must_use]
     pub fn intersects(&self, other: &Self) -> bool {
         option_intersects(self.street, other.street)
-            && option_intersects(self.board_texture, other.board_texture)
+            && texture_intersects(self.board_texture, other.board_texture)
             && option_intersects(self.hand_strength, other.hand_strength)
             && range_intersects(self.active_players.as_ref(), other.active_players.as_ref())
             && option_intersects(self.hero_position, other.hero_position)
@@ -162,6 +429,13 @@ impl PostflopCondition {
             && option_intersects(self.pot_type, other.pot_type)
             && option_intersects(self.facing_size, other.facing_size)
             && range_intersects(self.spr_centi.as_ref(), other.spr_centi.as_ref())
+    }
+}
+
+fn texture_intersects(a: Option<BoardTexture>, b: Option<BoardTexture>) -> bool {
+    match (a, b) {
+        (None, _) | (_, None) => true,
+        (Some(x), Some(y)) => x == y || x.is_connectivity() != y.is_connectivity(),
     }
 }
 

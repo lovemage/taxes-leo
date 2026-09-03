@@ -8,12 +8,19 @@
 // 一個永遠不會被查到的格子上編輯。
 
 import { useEffect, useState } from 'react';
-import type { StrategyNodesView } from '../../../../packages/poker-types/src/index';
-import { strategyNodes } from '../api';
+import type {
+  PostflopStrategyView,
+  StrategyNodesView,
+} from '../../../../packages/poker-types/src/index';
+import { postflopStrategy, strategyNodes } from '../api';
 import { Segmented } from '../components/Field';
 
-/** 目前檢視中的翻前節點。欄位鍵與引擎決策時查表用的完全相同 */
+export type StrategyStage = 'preflop' | 'flop' | 'turn' | 'river';
+
+/** 目前檢視中的策略節點。翻前與翻後共用同一份面板選取狀態。 */
 export interface StrategySelection {
+  stage: StrategyStage;
+  situation: string;
   seated: number;
   hero: string;
   bucket: string;
@@ -21,6 +28,8 @@ export interface StrategySelection {
 }
 
 export const DEFAULT_SELECTION: StrategySelection = {
+  stage: 'preflop',
+  situation: 'no-bet',
   seated: 9,
   hero: 'BTN',
   bucket: '160-240',
@@ -38,9 +47,25 @@ export function StrategyNav({
   overrideCount: number;
 }) {
   const [nodes, setNodes] = useState<StrategyNodesView | null>(null);
+  const [postflop, setPostflop] = useState<PostflopStrategyView | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
 
   useEffect(() => {
+    let disposed = false;
+    postflopStrategy()
+      .then((view) => {
+        if (!disposed) setPostflop(view);
+      })
+      .catch((error: unknown) => {
+        if (!disposed) setFailure(String(error));
+      });
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (selection.stage !== 'preflop') return undefined;
     let disposed = false;
     strategyNodes(selection.seated, selection.hero)
       .then((view) => {
@@ -65,6 +90,14 @@ export function StrategyNav({
   }, [selection, onChange]);
 
   const groups = groupScenarios(nodes);
+  const stages: Array<{ key: StrategyStage; label: string }> = [
+    { key: 'preflop', label: '翻前' },
+    ...((postflop?.streets ?? [
+      { key: 'flop', label: '翻牌' },
+      { key: 'turn', label: '轉牌' },
+      { key: 'river', label: '河牌' },
+    ]) as Array<{ key: StrategyStage; label: string }>),
+  ];
 
   return (
     <>
@@ -85,6 +118,23 @@ export function StrategyNav({
         </div>
       )}
 
+      <section style={{ marginBottom: 18 }}>
+        <SectionTitle>階段</SectionTitle>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 2 }}>
+          {stages.map((stage) => (
+            <Choice
+              key={stage.key}
+              active={selection.stage === stage.key}
+              onClick={() => onChange({ ...selection, stage: stage.key })}
+            >
+              {stage.label}
+            </Choice>
+          ))}
+        </div>
+      </section>
+
+      {selection.stage === 'preflop' && (
+        <>
       <section style={{ marginBottom: 18 }}>
         <SectionTitle>桌型</SectionTitle>
         <Segmented
@@ -159,7 +209,54 @@ export function StrategyNav({
         </div>
       </section>
 
-      {overrideCount > 0 && (
+        </>
+      )}
+
+      {selection.stage !== 'preflop' && (
+        <>
+          <section style={{ marginBottom: 18 }}>
+            <SectionTitle>下注狀態</SectionTitle>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {(postflop?.situations ?? []).map((situation) => (
+                <Choice
+                  key={situation.key}
+                  active={selection.situation === situation.key}
+                  onClick={() => onChange({ ...selection, situation: situation.key })}
+                >
+                  {situation.label}
+                </Choice>
+              ))}
+            </div>
+          </section>
+
+          <section style={{ marginBottom: 18 }}>
+            <SectionTitle>牌面分類</SectionTitle>
+            {['花色／公對', '順子結構'].map((dimension) => (
+              <div key={dimension} style={{ marginBottom: 10 }}>
+                <div className="dim" style={{ fontSize: 10, marginBottom: 3 }}>
+                  {dimension}
+                </div>
+                {(postflop?.textures ?? [])
+                  .filter((texture) => texture.dimension === dimension)
+                  .map((texture) => (
+                    <div
+                      key={texture.key}
+                      title={texture.description}
+                      style={{ padding: '3px 8px', fontSize: 11, color: 'var(--text-secondary)' }}
+                    >
+                      {texture.label}
+                    </div>
+                  ))}
+              </div>
+            ))}
+            <div className="dim" style={{ fontSize: 10, lineHeight: 1.5 }}>
+              每個牌面同時命中一個花色／公對類型與一個乾／濕類型。
+            </div>
+          </section>
+        </>
+      )}
+
+      {selection.stage === 'preflop' && overrideCount > 0 && (
         <div
           style={{
             padding: '6px 8px',

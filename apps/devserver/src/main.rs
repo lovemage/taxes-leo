@@ -13,11 +13,11 @@
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 
-use poker_engine::chips::Chips;
 use poker_engine::bot::{BotAgent, BotConfig};
-use poker_engine::strategy::baseline::BaselineRules;
+use poker_engine::chips::Chips;
 use poker_engine::rng::RNG_VERSION;
 use poker_engine::session::{run_session, SessionConfig};
+use poker_engine::strategy::baseline::BaselineRules;
 use poker_engine::table::TableConfig;
 use poker_ipc::{CellOverrideView, HoleCardVisibility, IpcHandler};
 use poker_storage::codec::{HandRecord, LOG_FORMAT_VERSION};
@@ -206,6 +206,9 @@ fn serve(mut stream: TcpStream, handler: &IpcHandler, run_id: i64) -> std::io::R
         // 在瀏覽器開發模式下也是真的——否則 Linux 開發機（沒有 webkit2gtk，
         // 開不了 Tauri 殼）就完全看不到自己在改什麼
         "/api/strategy/meta" => serde_json::to_string(&poker_ipc::strategy::meta()).ok(),
+        "/api/strategy/postflop" => {
+            serde_json::to_string(&poker_ipc::strategy::postflop_strategy()).ok()
+        }
         "/api/strategy/nodes" => {
             let seated = u8::try_from(param(query, "seated").unwrap_or(9)).unwrap_or(9);
             let hero = text_param(query, "hero").unwrap_or_default();

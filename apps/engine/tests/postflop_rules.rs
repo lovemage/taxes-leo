@@ -4,14 +4,23 @@
 //! 被遮蔽的規則不會報錯、只會靜默失效，因此必須靠工具找出來。
 
 use poker_engine::betting::Action;
+use poker_engine::card::Card;
 use poker_engine::chips::Chips;
 use poker_engine::hand::Street;
 use poker_engine::position::PositionLabel;
 use poker_engine::strategy::distribution::{ActionDistribution, FULL};
 use poker_engine::strategy::postflop::{
-    BoardTexture, CoverageStats, FacingSize, HandStrength, Matched, PostflopCondition,
-    PostflopContext, PostflopRule, PotType, RuleIssue, RuleSet,
+    classify_board, BoardTexture, CoverageStats, FacingSize, HandStrength, Matched,
+    PostflopActionKind, PostflopCondition, PostflopContext, PostflopRule, PostflopSituation,
+    PotType, RuleIssue, RuleSet,
 };
+
+fn cards(values: &[&str]) -> Vec<Card> {
+    values
+        .iter()
+        .map(|value| Card::parse(value).expect("合法測試牌"))
+        .collect()
+}
 
 fn bet(units: u64) -> Action {
     Action::RaiseTo(Chips::new(units))
@@ -32,7 +41,7 @@ fn rule(name: &str, condition: PostflopCondition) -> PostflopRule {
 fn context() -> PostflopContext {
     PostflopContext {
         street: Street::Flop,
-        board_texture: BoardTexture::Dry,
+        board_textures: classify_board(&cards(&["As", "7d", "2c"])).expect("翻牌面"),
         hand_strength: HandStrength::Value,
         active_players: 3,
         hero_position: PositionLabel::Btn,
@@ -40,6 +49,70 @@ fn context() -> PostflopContext {
         pot_type: PotType::SingleRaised,
         facing_size: FacingSize::None,
         spr_centi: 400,
+    }
+}
+
+#[test]
+fn 八種牌面分類涵蓋六種外觀與乾濕結構() {
+    let cases = [
+        (["As", "7s", "2s"], BoardTexture::Flush),
+        (["As", "7s", "2d"], BoardTexture::FlushDraw),
+        (["As", "7d", "2c"], BoardTexture::Rainbow),
+        (["As", "Ad", "7c"], BoardTexture::RainbowPaired),
+        (["As", "Ad", "7s"], BoardTexture::FlushDrawPaired),
+        (["As", "Ad", "Ac"], BoardTexture::Trips),
+    ];
+    for (board, expected) in cases {
+        let textures = classify_board(&cards(&board)).expect("翻牌面");
+        assert_eq!(textures.surface(), expected, "牌面 {board:?}");
+    }
+
+    let dry = classify_board(&cards(&["As", "7d", "2c"])).expect("乾面");
+    assert!(dry.contains(BoardTexture::Dry));
+    let wet = classify_board(&cards(&["9s", "8d", "7c"])).expect("濕面");
+    assert!(wet.contains(BoardTexture::Wet));
+}
+
+#[test]
+fn 彩虹與乾濕是可同時命中的兩個維度() {
+    let dry = context();
+    assert!(PostflopCondition {
+        board_texture: Some(BoardTexture::Rainbow),
+        ..Default::default()
+    }
+    .matches(&dry));
+    assert!(PostflopCondition {
+        board_texture: Some(BoardTexture::Dry),
+        ..Default::default()
+    }
+    .matches(&dry));
+
+    let rainbow = PostflopCondition {
+        board_texture: Some(BoardTexture::Rainbow),
+        ..Default::default()
+    };
+    let wet = PostflopCondition {
+        board_texture: Some(BoardTexture::Wet),
+        ..Default::default()
+    };
+    assert!(rainbow.intersects(&wet));
+}
+
+#[test]
+fn 無人下注與面對下注的動作合法性符合牌局規則() {
+    assert!(PostflopActionKind::Check.is_available(PostflopSituation::NoBet));
+    assert!(!PostflopActionKind::Call.is_available(PostflopSituation::NoBet));
+    assert!(!PostflopActionKind::Fold.is_available(PostflopSituation::NoBet));
+    assert!(!PostflopActionKind::Check.is_available(PostflopSituation::FacingBet));
+    assert!(PostflopActionKind::Call.is_available(PostflopSituation::FacingBet));
+    assert!(PostflopActionKind::Fold.is_available(PostflopSituation::FacingBet));
+    for action in [
+        PostflopActionKind::ThirdPot,
+        PostflopActionKind::TwoThirdsPot,
+        PostflopActionKind::Pot,
+    ] {
+        assert!(action.is_available(PostflopSituation::NoBet));
+        assert!(action.is_available(PostflopSituation::FacingBet));
     }
 }
 
@@ -118,11 +191,14 @@ fn 依優先序取第一條命中的規則() {
                     ..Default::default()
                 },
             ),
-            rule("翻牌乾面", PostflopCondition {
-                street: Some(Street::Flop),
-                board_texture: Some(BoardTexture::Dry),
-                ..Default::default()
-            }),
+            rule(
+                "翻牌乾面",
+                PostflopCondition {
+                    street: Some(Street::Flop),
+                    board_texture: Some(BoardTexture::Dry),
+                    ..Default::default()
+                },
+            ),
             rule("通則", PostflopCondition::default()),
         ],
         "baseline-v1",
@@ -178,7 +254,10 @@ fn 遮蔽後權重歸零時走_fallback_而非任選() {
 
 #[test]
 fn 遮蔽後仍有合法行動時重新正規化() {
-    let set = RuleSet::new(vec![rule("通則", PostflopCondition::default())], "baseline-v1");
+    let set = RuleSet::new(
+        vec![rule("通則", PostflopCondition::default())],
+        "baseline-v1",
+    );
     let (matched, distribution) = set.resolve(&context(), &|a| !matches!(a, Action::RaiseTo(_)));
 
     assert_eq!(matched, Matched::Rule(0));
@@ -379,7 +458,9 @@ fn 兩種_fallback_原因分開計數() {
     use poker_engine::strategy::postflop::FallbackReason;
     let mut stats = CoverageStats::default();
     stats.record(&Matched::Fallback(FallbackReason::NoRuleMatched));
-    stats.record(&Matched::Fallback(FallbackReason::AllWeightsMasked { rule: 2 }));
+    stats.record(&Matched::Fallback(FallbackReason::AllWeightsMasked {
+        rule: 2,
+    }));
 
     assert_eq!(stats.fallback_no_rule, 1);
     assert_eq!(

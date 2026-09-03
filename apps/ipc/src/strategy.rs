@@ -1,12 +1,11 @@
 //! 面板 D — 自身策略的檢視與逐格覆寫。
 //!
-//! # 為什麼這一層只有翻前
+//! # 翻前矩陣與翻後規則架構
 //!
 //! 翻前走的是 [`BaselineRules`] 的參數化產生器，因此桌型、位置、有效
-//! 籌碼 bucket 與情境都真的會改變分佈，攤開來給使用者看是有內容的。
-//! **翻後沒有內容**——顧問的規則表還沒進來，一律走 fallback。因此本
-//! 模組不提供翻後規則清單（UI 規格 D.5）：畫一個空的規則編輯器只會
-//! 讓人以為那裡有策略。
+//! 籌碼 bucket 與情境會改變分佈，使用 169 格矩陣。翻後則依街別、是否
+//! 面對下注與牌面質地列出規則節點和合法動作；頻率目前仍由未簽核的
+//! equity／牌面工程基準產生，不冒充顧問已交付內容。
 //!
 //! # 編輯路徑是逐格覆寫
 //!
@@ -18,15 +17,17 @@
 //! 覆寫只裝在**使用者座位**上（見 `run::execute`）。裝到全桌等於偷偷
 //! 改掉對手，跑出來的統計就不是在測自己的策略了。
 
+use poker_engine::hand::Street;
 use poker_engine::position::PositionLabel;
 use poker_engine::strategy::baseline::{self, BaselineRules};
 use poker_engine::strategy::calibration::RangeMatrix;
 use poker_engine::strategy::cell_override::{CellOverrides, OverrideCell};
+use poker_engine::strategy::decision::StackBucket;
 use poker_engine::strategy::default_chart::{
     raise_size_centi_bb, ChartAction, ChartDepth, ChartEntry, DefaultChart, CHART_VERSION,
 };
-use poker_engine::strategy::decision::StackBucket;
 use poker_engine::strategy::hand_class::HandClass;
+use poker_engine::strategy::postflop::{BoardTexture, PostflopActionKind, PostflopSituation};
 use poker_engine::strategy::preflop::{
     all_buckets, enumerate_nodes, positions_for, scenarios_for, PreflopNode, PreflopScenario,
 };
@@ -86,6 +87,65 @@ pub struct StrategyMetaView {
     pub chart_coverage_myriad: u32,
     /// 給使用者看的一句話說明：表涵蓋什麼、沒涵蓋什麼
     pub chart_note: String,
+}
+
+/// 翻牌、轉牌或河牌選項。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
+#[serde(rename_all = "camelCase")]
+pub struct PostflopStreetView {
+    pub key: String,
+    pub label: String,
+}
+
+/// 某下注狀態下的一個動作欄位。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
+#[serde(rename_all = "camelCase")]
+pub struct PostflopActionOptionView {
+    pub key: String,
+    pub label: String,
+    /// 是否在此下注狀態成立；實際執行仍會再套引擎的 legal-action mask。
+    pub available: bool,
+    pub unavailable_reason: Option<String>,
+    /// 底池比例；非下注／加注動作為 null。
+    pub pot_numerator: Option<u32>,
+    pub pot_denominator: Option<u32>,
+}
+
+/// 無人下注／面對下注，以及各自的六個動作欄位。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
+#[serde(rename_all = "camelCase")]
+pub struct PostflopSituationView {
+    pub key: String,
+    pub label: String,
+    pub actions: Vec<PostflopActionOptionView>,
+}
+
+/// 八個可供規則比對的牌面標籤。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
+#[serde(rename_all = "camelCase")]
+pub struct PostflopTextureView {
+    pub key: String,
+    pub label: String,
+    /// 花色／公對與乾／濕為兩個維度，同一牌面各命中一項。
+    pub dimension: String,
+    pub description: String,
+}
+
+/// 面板 D 的翻後策略節點定義。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
+#[serde(rename_all = "camelCase")]
+pub struct PostflopStrategyView {
+    pub version: String,
+    pub consultant_approved: bool,
+    pub streets: Vec<PostflopStreetView>,
+    pub situations: Vec<PostflopSituationView>,
+    pub textures: Vec<PostflopTextureView>,
+    pub note: String,
 }
 
 /// 一個有效籌碼分檔（規則細則 8.5）。
@@ -256,7 +316,11 @@ pub fn meta() -> StrategyMetaView {
                     .to_owned(),
             )
         }
-        Err(error) => (0, 0, format!("預設組合表載入失敗，已退回參數產生器：{error}")),
+        Err(error) => (
+            0,
+            0,
+            format!("預設組合表載入失敗，已退回參數產生器：{error}"),
+        ),
     };
     StrategyMetaView {
         chart_source: chart.map_or_else(|_| "（未載入）".to_owned(), |c| c.source.clone()),
@@ -280,6 +344,90 @@ pub fn meta() -> StrategyMetaView {
         ranking_source: status.source,
         ranking_content_grade: status.content_grade,
         ranking_note: status.note,
+    }
+}
+
+/// 翻後三街的規則節點、牌面分類與合法動作欄位。
+#[must_use]
+pub fn postflop_strategy() -> PostflopStrategyView {
+    let streets = [
+        (Street::Flop, "flop", "翻牌"),
+        (Street::Turn, "turn", "轉牌"),
+        (Street::River, "river", "河牌"),
+    ]
+    .into_iter()
+    .map(|(_street, key, label)| PostflopStreetView {
+        key: key.to_owned(),
+        label: label.to_owned(),
+    })
+    .collect();
+
+    let situations = PostflopSituation::ALL
+        .into_iter()
+        .map(|situation| PostflopSituationView {
+            key: situation.key().to_owned(),
+            label: situation.label().to_owned(),
+            actions: PostflopActionKind::ALL
+                .into_iter()
+                .map(|action| {
+                    let available = action.is_available(situation);
+                    let unavailable_reason = if available {
+                        None
+                    } else {
+                        Some(
+                            match (situation, action) {
+                                (PostflopSituation::NoBet, PostflopActionKind::Call) => {
+                                    "無人下注，沒有可跟注的金額"
+                                }
+                                (PostflopSituation::NoBet, PostflopActionKind::Fold) => {
+                                    "可以免費過牌，蓋牌不成立"
+                                }
+                                (PostflopSituation::FacingBet, PostflopActionKind::Check) => {
+                                    "面對下注時不能過牌"
+                                }
+                                _ => "此節點不成立",
+                            }
+                            .to_owned(),
+                        )
+                    };
+                    let (pot_numerator, pot_denominator) =
+                        action
+                            .pot_fraction()
+                            .map_or((None, None), |(numerator, denominator)| {
+                                (
+                                    u32::try_from(numerator).ok(),
+                                    u32::try_from(denominator).ok(),
+                                )
+                            });
+                    PostflopActionOptionView {
+                        key: action.key().to_owned(),
+                        label: action.label(situation).to_owned(),
+                        available,
+                        unavailable_reason,
+                        pot_numerator,
+                        pot_denominator,
+                    }
+                })
+                .collect(),
+        })
+        .collect();
+
+    PostflopStrategyView {
+        version: poker_engine::bot::POSTFLOP_BASELINE_VERSION.to_owned(),
+        consultant_approved: false,
+        streets,
+        situations,
+        textures: BoardTexture::ALL
+            .into_iter()
+            .map(|texture| PostflopTextureView {
+                key: texture.key().to_owned(),
+                label: texture.label().to_owned(),
+                dimension: texture.dimension().to_owned(),
+                description: texture.description().to_owned(),
+            })
+            .collect(),
+        note: "三街已使用牌面分類與 1/3、2/3、1 倍底池尺度；行動頻率目前由未經顧問簽核的工程基準產生。"
+            .to_owned(),
     }
 }
 
@@ -361,7 +509,8 @@ pub fn bot_matrix(
 ) -> Result<RangeMatrixView, String> {
     let node = parse_node(seated, hero, bucket, scenario)?;
     let config = bot.to_bot_config()?;
-    let rules = poker_engine::bot::rules_for_bot(&BaselineRules::engineering_placeholder(), &config);
+    let rules =
+        poker_engine::bot::rules_for_bot(&BaselineRules::engineering_placeholder(), &config);
     build_matrix_view(node, &rules)
 }
 
@@ -375,7 +524,9 @@ fn build_matrix_view(node: PreflopNode, rules: &BaselineRules) -> Result<RangeMa
     // 這個節點的內容是表給的還是參數產生的。面板必須畫得出來：兩者
     // 一個是顧問寫的清單、一個是 equity 排序的啟發式，長相一樣但意義
     // 完全不同
-    let entry = DefaultChart::embedded().ok().and_then(|chart| chart.lookup(&node));
+    let entry = DefaultChart::embedded()
+        .ok()
+        .and_then(|chart| chart.lookup(&node));
 
     let cells: Vec<MatrixCellView> = HandClass::all()
         .into_iter()
@@ -441,12 +592,7 @@ pub fn to_cell_overrides(views: &[CellOverrideView]) -> Result<CellOverrides, St
     Ok(out)
 }
 
-fn parse_node(
-    seated: u8,
-    hero: &str,
-    bucket: &str,
-    scenario: &str,
-) -> Result<PreflopNode, String> {
+fn parse_node(seated: u8, hero: &str, bucket: &str, scenario: &str) -> Result<PreflopNode, String> {
     if !(6..=9).contains(&seated) {
         return Err(format!("座位數 {seated} 不在 6–9 之內"));
     }
@@ -706,6 +852,72 @@ mod tests {
     }
 
     #[test]
+    fn 翻後策略列出三街兩種下注狀態八種牌面() {
+        let view = postflop_strategy();
+        assert_eq!(
+            view.streets
+                .iter()
+                .map(|street| street.key.as_str())
+                .collect::<Vec<_>>(),
+            ["flop", "turn", "river"]
+        );
+        assert_eq!(view.situations.len(), 2);
+        assert_eq!(view.textures.len(), 8);
+        assert!(!view.consultant_approved);
+    }
+
+    #[test]
+    fn 翻後動作欄保留不成立項目並清楚標示() {
+        let view = postflop_strategy();
+        let no_bet = view
+            .situations
+            .iter()
+            .find(|item| item.key == "no-bet")
+            .expect("無人下注");
+        assert_eq!(no_bet.actions.len(), 6);
+        assert!(
+            !no_bet
+                .actions
+                .iter()
+                .find(|a| a.key == "call")
+                .unwrap()
+                .available
+        );
+        assert!(
+            !no_bet
+                .actions
+                .iter()
+                .find(|a| a.key == "fold")
+                .unwrap()
+                .available
+        );
+
+        let facing = view
+            .situations
+            .iter()
+            .find(|item| item.key == "facing-bet")
+            .expect("面對下注");
+        assert!(
+            !facing
+                .actions
+                .iter()
+                .find(|a| a.key == "check")
+                .unwrap()
+                .available
+        );
+        for key in ["third-pot", "two-thirds-pot", "pot"] {
+            assert!(
+                facing
+                    .actions
+                    .iter()
+                    .find(|a| a.key == key)
+                    .unwrap()
+                    .available
+            );
+        }
+    }
+
+    #[test]
     fn 情境鍵可以來回轉換() {
         for seated in 6u8..=9 {
             for hero in positions_for(seated) {
@@ -772,9 +984,15 @@ mod tests {
         assert_eq!(after.fold, 0);
 
         // 相鄰牌類不得被連帶改動
-        assert_eq!(find(&base, "73o").aggressive, find(&edited, "73o").aggressive);
+        assert_eq!(
+            find(&base, "73o").aggressive,
+            find(&edited, "73o").aggressive
+        );
         assert!(!find(&edited, "73o").overridden);
-        assert!(edited.width_myriad > base.width_myriad, "多開一格，寬度必須變大");
+        assert!(
+            edited.width_myriad > base.width_myriad,
+            "多開一格，寬度必須變大"
+        );
     }
 
     #[test]
@@ -790,11 +1008,7 @@ mod tests {
         }];
         let other = matrix(9, "CO", "160-240", "unopened", &overrides).expect("節點合法");
         assert_eq!(
-            other
-                .cells
-                .iter()
-                .filter(|c| c.overridden)
-                .count(),
+            other.cells.iter().filter(|c| c.overridden).count(),
             0,
             "BTN 的覆寫不得出現在 CO 的矩陣"
         );
@@ -866,7 +1080,7 @@ mod tests {
         let view = meta();
         assert!(!view.consultant_approved, "工程佔位內容不得標成已簽核");
         assert_eq!(view.preflop_cell_count, view.preflop_node_count * 169);
-        assert_eq!(view.postflop_baseline, "equityHeuristic/v1-unapproved");
+        assert_eq!(view.postflop_baseline, "equityTexture/v2-unapproved");
         assert_eq!(view.postflop_fallback, "checkFold/v0");
     }
 
@@ -894,7 +1108,11 @@ mod tests {
 
         let aces = view.cells.iter().find(|c| c.class == "AA").expect("有 AA");
         assert_eq!(aces.chart_action.as_deref(), Some("allin"));
-        let junk = view.cells.iter().find(|c| c.class == "72o").expect("有 72o");
+        let junk = view
+            .cells
+            .iter()
+            .find(|c| c.class == "72o")
+            .expect("有 72o");
         assert_eq!(junk.chart_action.as_deref(), Some("fold"));
     }
 
@@ -993,7 +1211,11 @@ mod tests {
             call: 0,
         }];
         let view = matrix(9, "UTG", "0-15", "unopened", &overrides).expect("節點合法");
-        let cell = view.cells.iter().find(|c| c.class == "72o").expect("有 72o");
+        let cell = view
+            .cells
+            .iter()
+            .find(|c| c.class == "72o")
+            .expect("有 72o");
         assert_eq!(cell.aggressive, FULL);
         assert!(cell.overridden);
         // 表上仍然寫著蓋牌——面板要畫得出「你改掉了表的哪一格」

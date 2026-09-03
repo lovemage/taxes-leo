@@ -17,6 +17,7 @@ import type {
   HandView,
   HoleCardVisibility,
   ParamSpecView,
+  PostflopStrategyView,
   PowerPreviewView,
   RangeMatrixView,
   RunPhase,
@@ -189,6 +190,13 @@ export function strategyMeta(): Promise<StrategyMetaView> {
   const bridge = tauri();
   if (bridge) return bridge.core.invoke<StrategyMetaView>('strategy_meta');
   return http<StrategyMetaView>('/api/strategy/meta');
+}
+
+/** 翻牌／轉牌／河牌的牌面分類與合法動作欄位。 */
+export function postflopStrategy(): Promise<PostflopStrategyView> {
+  const bridge = tauri();
+  if (bridge) return bridge.core.invoke<PostflopStrategyView>('postflop_strategy');
+  return http<PostflopStrategyView>('/api/strategy/postflop');
 }
 
 /** 某（桌型 × 位置）下到得了的情境與籌碼分檔。清單由引擎列舉 */

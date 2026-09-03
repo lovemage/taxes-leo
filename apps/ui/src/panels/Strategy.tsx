@@ -3,12 +3,11 @@
 // UI 規格 D.1：資訊密度最高的面板，編輯「自身座位」的策略。節點在左欄
 // 選，這裡畫該節點的 169 格範圍矩陣並提供逐格編輯。
 //
-// # 只有翻前
+// # 翻前矩陣與翻後節點
 //
 // 翻前走參數化 baseline，位置、籌碼分檔與情境真的會改變分佈，攤開來
-// 是有內容的。**翻後沒有內容**——顧問的規則表還沒進來，一律走 fallback。
-// 因此這裡不畫 D.5 的翻後規則清單，只如實標示 fallback 版本：畫一個空的
-// 規則編輯器只會讓人以為那裡有策略。
+// 是有內容的。翻後依街別、下注狀態與八種牌面標籤呈現合法動作；頻率
+// 仍由未簽核的 equity／牌面工程基準產生，因此畫面必須明確揭露內容狀態。
 //
 // # 頻率一律由引擎算
 //
@@ -21,10 +20,11 @@ import type {
   CellOverrideView,
   ChartRowView,
   MatrixCellView,
+  PostflopStrategyView,
   RangeMatrixView,
   StrategyMetaView,
 } from '../../../../packages/poker-types/src/index';
-import { strategyMatrix, strategyMeta } from '../api';
+import { postflopStrategy, strategyMatrix, strategyMeta } from '../api';
 import { cellTone, FULL } from '../components/matrixTone';
 import type { StrategySelection } from './StrategyNav';
 
@@ -42,6 +42,7 @@ export function Strategy({
   locked: boolean;
 }) {
   const [meta, setMeta] = useState<StrategyMetaView | null>(null);
+  const [postflop, setPostflop] = useState<PostflopStrategyView | null>(null);
   const [matrix, setMatrix] = useState<RangeMatrixView | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
@@ -49,6 +50,7 @@ export function Strategy({
 
   useEffect(() => {
     strategyMeta().then(setMeta).catch(() => setMeta(null));
+    postflopStrategy().then(setPostflop).catch(() => setPostflop(null));
   }, []);
 
   // 回應可能亂序抵達（覆寫改動會連發好幾次請求）。只採用最後一次發出的
@@ -56,6 +58,10 @@ export function Strategy({
   const issued = useRef(0);
 
   useEffect(() => {
+    if (selection.stage !== 'preflop') {
+      setPending(false);
+      return;
+    }
     const ticket = ++issued.current;
     setPending(true);
     strategyMatrix(
@@ -109,6 +115,13 @@ export function Strategy({
   const clearNode = () => onOverridesChange(overrides.filter((item) => !isThisNode(item)));
 
   const cell = matrix?.cells.find((item) => item.class === picked) ?? null;
+  const streetLabel =
+    selection.stage === 'preflop'
+      ? null
+      : postflop?.streets.find((street) => street.key === selection.stage)?.label;
+  const situationLabel = postflop?.situations.find(
+    (situation) => situation.key === selection.situation,
+  )?.label;
 
   return (
     <div style={{ padding: 20 }}>
@@ -124,7 +137,11 @@ export function Strategy({
         <h2 style={{ fontSize: 15, margin: 0 }}>
           自身策略
           <span className="dim" style={{ marginLeft: 8, fontSize: 12 }}>
-            {matrix ? `${matrix.seated}-max ${matrix.hero}｜${matrix.scenarioLabel}` : '載入中'}
+            {selection.stage === 'preflop'
+              ? matrix
+                ? `${matrix.seated}-max ${matrix.hero}｜${matrix.scenarioLabel}`
+                : '載入中'
+              : `${streetLabel ?? '翻後'}｜${situationLabel ?? '載入中'}`}
           </span>
         </h2>
         <span className="dim" style={{ fontSize: 11, fontFamily: 'var(--font-mono)' }}>
@@ -132,18 +149,19 @@ export function Strategy({
         </span>
       </div>
       <p className="dim" style={{ fontSize: 11, margin: '0 0 16px', lineHeight: 1.6 }}>
-        節點在左欄選。點任一格可改該手牌的行動頻率；改過的格會蓋掉內容產生的結果，
-        並隨 run 寫進 RunManifest 快照。
+        {selection.stage === 'preflop'
+          ? '節點在左欄選。點任一格可改該手牌的行動頻率；改過的格會蓋掉內容產生的結果，並隨 run 寫進 RunManifest 快照。'
+          : '左欄選擇街別與下注狀態。牌面同時套用花色／公對與乾／濕兩個維度；不成立的動作仍保留在表內並明確標示。'}
       </p>
 
       {failure && <Banner tone="negative">{failure}</Banner>}
       {locked && <Banner tone="warning">run 進行中，策略鎖定。</Banner>}
-      {meta && !meta.chartLoaded && (
+      {selection.stage === 'preflop' && meta && !meta.chartLoaded && (
         <Banner tone="negative">
           預設組合表<strong>沒有載進來</strong>：{meta.chartNote}
         </Banner>
       )}
-      {meta && meta.chartLoaded && matrix?.source === 'baseline' && (
+      {selection.stage === 'preflop' && meta && meta.chartLoaded && matrix?.source === 'baseline' && (
         <Banner tone="warning">
           這個節點<strong>不在預設組合表上</strong>（表沒有「面對跛入」那一欄），
           畫的是 {meta.baselineName}（{meta.baselineVersion}）——參數化產生的工程佔位內容，
@@ -152,14 +170,14 @@ export function Strategy({
       )}
       {/* 低樣本排序畫出來的矩陣與正式的長得一模一樣，使用者沒有任何辦法
           自己分辨。因此非內容級一律明講，而不是只在某個角落寫個取樣數 */}
-      {meta && !meta.rankingContentGrade && (
+      {selection.stage === 'preflop' && meta && !meta.rankingContentGrade && (
         <Banner tone="negative">
           equity 排序<strong>不是正式內容</strong>：{meta.rankingNote}
           。這個面板畫的範圍與此時跑出來的統計都只能當開發參考。
         </Banner>
       )}
 
-      {!matrix && !failure && (
+      {selection.stage === 'preflop' && !matrix && !failure && (
         <section style={{ ...cardStyle, maxWidth: 420 }}>
           <SectionTitle>載入中</SectionTitle>
           <div className="dim" style={{ fontSize: 11, lineHeight: 1.6 }}>
@@ -169,7 +187,7 @@ export function Strategy({
         </section>
       )}
 
-      {matrix && (
+      {selection.stage === 'preflop' && matrix && (
         <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start', flexWrap: 'wrap' }}>
           {/* ── D.4 169 格範圍矩陣 ── */}
           <section style={{ flex: '1 1 560px', minWidth: 420, maxWidth: 720 }}>
@@ -269,6 +287,135 @@ export function Strategy({
           </aside>
         </div>
       )}
+
+      {selection.stage !== 'preflop' && (
+        <PostflopRules
+          view={postflop}
+          stage={selection.stage}
+          situationKey={selection.situation}
+        />
+      )}
+    </div>
+  );
+}
+
+function PostflopRules({
+  view,
+  stage,
+  situationKey,
+}: {
+  view: PostflopStrategyView | null;
+  stage: string;
+  situationKey: string;
+}) {
+  if (!view) {
+    return (
+      <section style={{ ...cardStyle, maxWidth: 420 }}>
+        <SectionTitle>載入中</SectionTitle>
+        <div className="dim" style={{ fontSize: 11 }}>正在取得翻後策略節點。</div>
+      </section>
+    );
+  }
+
+  const street = view.streets.find((item) => item.key === stage);
+  const situation =
+    view.situations.find((item) => item.key === situationKey) ?? view.situations[0];
+  if (!street || !situation) return <Banner tone="negative">找不到指定的翻後節點。</Banner>;
+
+  return (
+    <div style={{ display: 'grid', gap: 14 }}>
+      <Banner tone="warning">
+        {view.note} 版本：<span style={{ fontFamily: 'var(--font-mono)' }}>{view.version}</span>
+      </Banner>
+
+      <section style={{ ...cardStyle, overflowX: 'auto' }}>
+        <div style={{ display: 'flex', gap: 24, marginBottom: 14, flexWrap: 'wrap' }}>
+          <Stat label="階段" value={street.label} />
+          <Stat label="下注狀態" value={situation.label} />
+          <Stat label="牌面標籤" value={`${view.textures.length} 種`} />
+          <Stat label="內容簽核" value={view.consultantApproved ? '已簽核' : '未簽核'} />
+        </div>
+
+        <div
+          style={{
+            minWidth: 860,
+            display: 'grid',
+            gridTemplateColumns: '150px repeat(6, minmax(110px, 1fr))',
+            borderTop: '1px solid var(--border)',
+            borderLeft: '1px solid var(--border)',
+          }}
+        >
+          <GridCell strong>牌面</GridCell>
+          {situation.actions.map((action) => (
+            <GridCell key={action.key} strong>
+              {action.label}
+            </GridCell>
+          ))}
+
+          {view.textures.map((texture) => (
+            <FragmentRow key={texture.key}>
+              <GridCell strong title={texture.description}>
+                <div>{texture.label}</div>
+                <div className="dim" style={{ fontSize: 9, marginTop: 2 }}>
+                  {texture.dimension}
+                </div>
+              </GridCell>
+              {situation.actions.map((action) => (
+                <GridCell key={`${texture.key}-${action.key}`} muted={!action.available}>
+                  {action.available ? '可用' : '不成立'}
+                  {!action.available && action.unavailableReason && (
+                    <div className="dim" style={{ fontSize: 9, marginTop: 2 }}>
+                      {action.unavailableReason}
+                    </div>
+                  )}
+                </GridCell>
+              ))}
+            </FragmentRow>
+          ))}
+        </div>
+      </section>
+
+      <div className="dim" style={{ fontSize: 11, lineHeight: 1.6 }}>
+        無人下注時可過牌或下注，跟注與蓋牌不成立；面對下注時不可過牌。
+        實際牌局仍會依最小加注額、有效籌碼與全下狀態套用引擎合法行動遮罩。
+      </div>
+    </div>
+  );
+}
+
+function FragmentRow({ children }: { children: React.ReactNode }) {
+  return <>{children}</>;
+}
+
+function GridCell({
+  children,
+  strong,
+  muted,
+  title,
+}: {
+  children: React.ReactNode;
+  strong?: boolean;
+  muted?: boolean;
+  title?: string;
+}) {
+  return (
+    <div
+      title={title}
+      style={{
+        minHeight: 48,
+        padding: '8px 10px',
+        borderRight: '1px solid var(--border)',
+        borderBottom: '1px solid var(--border)',
+        background: muted ? 'var(--bg-base)' : 'var(--bg-surface)',
+        color: muted ? 'var(--text-tertiary)' : 'var(--text-secondary)',
+        fontSize: 10,
+        fontWeight: strong ? 600 : 400,
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+      }}
+    >
+      {children}
     </div>
   );
 }

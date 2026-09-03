@@ -31,12 +31,12 @@
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
+use poker_ipc::run::{self, RunControl, RunRequest};
 use poker_ipc::{
     CellOverrideView, HandSummaryView, HandView, HoleCardVisibility, PowerPreviewView,
     RangeMatrixView, RunView, StrategyMetaView, StrategyNodesView,
 };
 use poker_storage::Store;
-use poker_ipc::run::{self, RunControl, RunRequest};
 use tauri::{Emitter, Manager, State};
 
 /// 應用程式狀態。
@@ -201,6 +201,12 @@ fn strategy_meta() -> StrategyMetaView {
     poker_ipc::strategy::meta()
 }
 
+/// 翻牌／轉牌／河牌的牌面分類與合法動作欄位。
+#[tauri::command(async)]
+fn postflop_strategy() -> poker_ipc::strategy::PostflopStrategyView {
+    poker_ipc::strategy::postflop_strategy()
+}
+
 /// 某（桌型 × 位置）下到得了的情境與籌碼分檔
 #[tauri::command(async)]
 fn strategy_nodes(seated: u8, hero: String) -> StrategyNodesView {
@@ -286,7 +292,11 @@ fn main() {
             }
             poker_ipc::log::info(&format!(
                 "桌面殼啟動（{} 建置），資料目錄 {}",
-                if cfg!(debug_assertions) { "debug" } else { "release" },
+                if cfg!(debug_assertions) {
+                    "debug"
+                } else {
+                    "release"
+                },
                 data_dir.display()
             ));
 
@@ -308,9 +318,9 @@ fn main() {
             // 用 `status()` 的話，資產壞掉時會在**主執行緒**上現算低樣本
             // 替代品，等於把剛拆掉的預熱換個名字裝回來
             match poker_ipc::rankings::probe() {
-                Ok((format, samples)) => poker_ipc::log::info(&format!(
-                    "equity 排序資產就緒：v{format}，{samples} 取樣"
-                )),
+                Ok((format, samples)) => {
+                    poker_ipc::log::info(&format!("equity 排序資產就緒：v{format}，{samples} 取樣"))
+                }
                 // 這裡不讓啟動失敗：面板 D 與執行層各自會回報明確錯誤，
                 // 而使用者至少還能瀏覽既有的 run 與 log
                 Err(error) => poker_ipc::log::error(&format!(
@@ -334,6 +344,7 @@ fn main() {
             list_bot_presets,
             runtime_status,
             strategy_meta,
+            postflop_strategy,
             strategy_nodes,
             strategy_matrix,
             bot_strategy_matrix,
