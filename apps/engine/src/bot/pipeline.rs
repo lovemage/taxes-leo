@@ -122,6 +122,36 @@ impl BotConfig {
             .and_then(ParamValue::as_myriad)
             .unwrap_or(FULL)
     }
+
+    /// 把會改動頻率的參數全部中和為恆等變換。
+    ///
+    /// 使用者的翻後覆寫是**絕對頻率**：他填 30% 就是 30%，不是「基準
+    /// 30% 再乘上人格倍率」。但管線不能跳過——七個階段的 trace 必須
+    /// 存在，結構才與一般決策一致，面板 G 也才畫得出來。
+    ///
+    /// 因此改成讓每一階段都成為恆等變換：三個 persona 倍率設為 `FULL`、
+    /// 噪音設為 0、可用尺度放到最寬。第 5 步的 exploit cap 由呼叫端以
+    /// **相同的 reference 與 baseline** 讓它量到 0 偏離，不必動參數。
+    ///
+    /// 剩下能改變最終頻率的只有牌局合法性：最小加注、有效籌碼、全下、
+    /// 重合尺寸與非法動作遮罩。那些改變是可追蹤的，也必須寫進 trace。
+    #[must_use]
+    pub fn neutralised_for_absolute_override(&self) -> Self {
+        let mut config = self.clone();
+        for key in [
+            "preflopAggression",
+            "postflopAggression",
+            "callPersistence",
+            "foldDiscipline",
+        ] {
+            let _ = config.set_override(key, ParamValue::Myriad(FULL));
+        }
+        let _ = config.set_override("decisionNoisePp", ParamValue::Myriad(0));
+        // 尺度上限放到 schema 允許的最大值：覆寫裡填了幾種尺度就要留幾種
+        let max_sizes = spec_of("allowedBetSizes").map_or(u32::MAX, |spec| spec.max);
+        let _ = config.set_override("allowedBetSizes", ParamValue::Count(max_sizes));
+        config
+    }
 }
 
 /// 某欄位的逐層值，對應 UI 規格 UX.2 的「官方預設 → 人格修正 → 行為參數 → 逐座覆寫 → 最終生效值」。

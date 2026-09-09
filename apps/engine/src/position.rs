@@ -27,6 +27,27 @@ pub enum PositionLabel {
 }
 
 impl PositionLabel {
+    /// 翻後的行動順序（0 最先）。
+    ///
+    /// 翻後由小盲起順時針，與翻前的「UTG 起」完全不同。線路判定要問
+    /// 「英雄在那位主動方之前還是之後行動」，靠的就是這個順序。
+    #[must_use]
+    pub const fn postflop_order(self) -> u8 {
+        match self {
+            Self::Sb => 0,
+            Self::Bb => 1,
+            Self::Utg => 2,
+            Self::Utg1 => 3,
+            Self::Utg2 => 4,
+            Self::Utg3 => 5,
+            Self::Utg4 => 6,
+            Self::Lj => 7,
+            Self::Hj => 8,
+            Self::Co => 9,
+            Self::Btn => 10,
+        }
+    }
+
     /// 策略內容與 log 使用的唯一字串。
     #[must_use]
     pub const fn as_str(self) -> &'static str {

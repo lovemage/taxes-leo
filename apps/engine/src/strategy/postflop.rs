@@ -24,10 +24,11 @@ use std::ops::RangeInclusive;
 
 use crate::betting::Action;
 use crate::card::{Card, Rank};
+use crate::chips::Chips;
 use crate::hand::Street;
 use crate::position::PositionLabel;
 use crate::strategy::decision::StackBucket;
-use crate::strategy::distribution::{ActionDistribution, DistributionError};
+use crate::strategy::distribution::{ActionDistribution, DistributionError, Myriad, FULL};
 
 /// 牌面外觀（六選一，UI 規格 D.5）。
 ///
@@ -979,10 +980,30 @@ pub struct PostflopContext {
     pub line: PostflopLine,
 }
 
+impl PostflopContext {
+    /// 這個節點是無人下注還是面對下注。
+    ///
+    /// 由 `facing_size` 推導而不另存一個欄位：兩者若各自可設，就會出現
+    /// 「面對下注但尺度是 None」這種對不起來的狀態。
+    #[must_use]
+    pub const fn situation(&self) -> PostflopSituation {
+        match self.facing_size {
+            FacingSize::None => PostflopSituation::NoBet,
+            _ => PostflopSituation::FacingBet,
+        }
+    }
+}
+
 /// 規則條件。`None` 代表萬用（不限制該欄位）。
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PostflopCondition {
     pub street: Option<Street>,
+    /// 無人下注或面對下注。
+    ///
+    /// 與 `facing_size` 是兩個粒度：`situation` 讓一條規則涵蓋「面對下注
+    /// 的所有尺度」，`facing_size` 才指定到某一檔。兩者矛盾（面對下注
+    /// 卻指定尺度 `None`）由 [`Self::is_impossible`] 擋掉
+    pub situation: Option<PostflopSituation>,
     /// 牌面外觀。與 `board_connectivity` 是獨立兩軸，規則可以只指定其中
     /// 一軸作為廣域條件，也可以同時指定兩軸精確匹配
     pub board_surface: Option<BoardSurface>,
@@ -1005,6 +1026,7 @@ impl PostflopCondition {
     #[must_use]
     pub fn matches(&self, context: &PostflopContext) -> bool {
         option_matches(self.street, context.street)
+            && option_matches(self.situation, context.situation())
             && option_matches(self.board_surface, context.board_textures.surface())
             && option_matches(
                 self.board_connectivity,
@@ -1027,7 +1049,16 @@ impl PostflopCondition {
     /// 條件本身是否不可能成立（範圍顛倒）。
     #[must_use]
     pub fn is_impossible(&self) -> bool {
-        range_impossible(self.active_players.as_ref())
+        // 下注狀態與面對尺度自相矛盾：無人下注不可能有尺度，
+        // 面對下注不可能沒有
+        let situation_conflict = match (self.situation, self.facing_size) {
+            (Some(PostflopSituation::NoBet), Some(size)) => size != FacingSize::None,
+            (Some(PostflopSituation::FacingBet), Some(FacingSize::None)) => true,
+            _ => false,
+        };
+
+        situation_conflict
+            || range_impossible(self.active_players.as_ref())
             || range_impossible(self.opponents_behind.as_ref())
             || range_impossible(self.spr_centi.as_ref())
             || self.line.is_impossible()
@@ -1040,6 +1071,7 @@ impl PostflopCondition {
     #[must_use]
     pub fn contains(&self, other: &Self) -> bool {
         option_contains(self.street, other.street)
+            && option_contains(self.situation, other.situation)
             && option_contains(self.board_surface, other.board_surface)
             && option_contains(self.board_connectivity, other.board_connectivity)
             && option_contains(self.hand_strength, other.hand_strength)
@@ -1063,6 +1095,7 @@ impl PostflopCondition {
     #[must_use]
     pub fn intersects(&self, other: &Self) -> bool {
         option_intersects(self.street, other.street)
+            && option_intersects(self.situation, other.situation)
             && option_intersects(self.board_surface, other.board_surface)
             && option_intersects(self.board_connectivity, other.board_connectivity)
             && option_intersects(self.hand_strength, other.hand_strength)
@@ -1132,6 +1165,124 @@ fn range_intersects<T: PartialOrd>(
     }
 }
 
+/// 換算尺寸意圖時需要的當下金額。
+///
+/// 規則保存的是「1/3 底池」這種**意圖**，不是具體籌碼數；同一條規則在
+/// 不同底池大小下換算出不同的 `Action`。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PostflopSizing {
+    /// 目前底池（不含英雄尚未投入的跟注額）
+    pub pot: Chips,
+    /// 英雄要跟注的金額。無人下注時為 0
+    pub to_call: Chips,
+}
+
+/// 把底池比例意圖換算成「加注到多少」。
+///
+/// - 無人下注：下注額 ＝ 底池 × 比例。
+/// - 面對下注：先算跟注後的底池，再乘比例，最後加上跟注額——這是實際
+///   桌上「加注到 N」的意思，而不是「在跟注之上再加底池的 N 倍」。
+///
+/// 換算結果仍會被 `fit_raise_sizes` 夾進引擎給的合法區間；這裡不自行
+/// 推導最小加注或全下（核心規格 2.2：策略層不得自行推導合法性）。
+#[must_use]
+pub fn postflop_raise_to(sizing: PostflopSizing, numerator: u64, denominator: u64) -> Chips {
+    let denominator = denominator.max(1);
+    let to_call = sizing.to_call.units();
+    let pot_after_call = sizing.pot.units().saturating_add(to_call);
+    let increment = pot_after_call.saturating_mul(numerator) / denominator;
+    Chips::new(to_call.saturating_add(increment))
+}
+
+/// 規則保存的尺寸意圖分布。
+///
+/// **不另立六欄 `u16` 的權重結構**：那會和既有的
+/// [`ActionDistribution`] 形成兩份真理，而兩份真理遲早會對不起來。
+/// 這裡沿用同一個 [`Myriad`]（`FULL = 10_000`），只是鍵換成尺寸意圖。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PostflopIntentDistribution {
+    weights: Vec<(PostflopActionKind, Myriad)>,
+}
+
+impl PostflopIntentDistribution {
+    /// 權重合計必須是 `FULL`。重複的鍵先合併再檢查。
+    ///
+    /// # Errors
+    /// 合計不等於 `FULL` 或清單為空時回傳錯誤。
+    pub fn new(weights: Vec<(PostflopActionKind, Myriad)>) -> Result<Self, DistributionError> {
+        if weights.is_empty() {
+            return Err(DistributionError::Empty);
+        }
+
+        let mut merged: Vec<(PostflopActionKind, Myriad)> = Vec::with_capacity(weights.len());
+        for (kind, weight) in weights {
+            match merged.iter_mut().find(|(other, _)| *other == kind) {
+                Some((_, existing)) => *existing = existing.saturating_add(weight),
+                None => merged.push((kind, weight)),
+            }
+        }
+
+        let total: u64 = merged.iter().map(|(_, w)| u64::from(*w)).sum();
+        if total != u64::from(FULL) {
+            return Err(DistributionError::NotNormalised {
+                total: Myriad::try_from(total).unwrap_or(Myriad::MAX),
+            });
+        }
+        Ok(Self { weights: merged })
+    }
+
+    #[must_use]
+    pub fn weights(&self) -> &[(PostflopActionKind, Myriad)] {
+        &self.weights
+    }
+
+    /// 某個意圖的權重（未列出即為 0）。
+    #[must_use]
+    pub fn weight_of(&self, kind: PostflopActionKind) -> Myriad {
+        self.weights
+            .iter()
+            .find(|(other, _)| *other == kind)
+            .map_or(0, |(_, weight)| *weight)
+    }
+
+    /// 依當下金額換算成具體行動分布。
+    ///
+    /// 撞在同一個合法尺寸上的意圖會被合併（例如底池很小時 2/3 與 1 倍
+    /// 底池可能都被夾到最小加注），因此回傳的分布可能比意圖少幾項。
+    ///
+    /// # Errors
+    /// 換算後為空時回傳錯誤，呼叫端須走 fallback。
+    pub fn to_actions(
+        &self,
+        situation: PostflopSituation,
+        sizing: PostflopSizing,
+    ) -> Result<ActionDistribution, DistributionError> {
+        let mut merged: Vec<(Action, u64)> = Vec::new();
+        for (kind, weight) in &self.weights {
+            // 與下注狀態矛盾的意圖直接丟掉：無人下注不會有跟注與蓋牌，
+            // 面對下注不會有過牌
+            if !kind.is_available(situation) || *weight == 0 {
+                continue;
+            }
+            let action = match kind {
+                PostflopActionKind::Check => Action::Check,
+                PostflopActionKind::Call => Action::Call,
+                PostflopActionKind::Fold => Action::Fold,
+                sized => {
+                    let (numerator, denominator) =
+                        sized.pot_fraction().unwrap_or((1, 1));
+                    Action::RaiseTo(postflop_raise_to(sizing, numerator, denominator))
+                }
+            };
+            match merged.iter_mut().find(|(existing, _)| *existing == action) {
+                Some((_, existing_weight)) => *existing_weight += u64::from(*weight),
+                None => merged.push((action, u64::from(*weight))),
+            }
+        }
+        ActionDistribution::from_weights(merged)
+    }
+}
+
 /// 規則的來源層級（計劃 §4.4）。
 ///
 /// 宣告順序即解析順序：使用者覆寫壓過官方內容，官方壓過同組通則，
@@ -1195,8 +1346,11 @@ pub struct PostflopRule {
     pub id: String,
     pub name: String,
     pub condition: PostflopCondition,
-    /// 行動頻率，合計必為 100%（由 `ActionDistribution` 保證）
-    pub actions: ActionDistribution,
+    /// 尺寸**意圖**頻率，合計必為 100%。
+    ///
+    /// 存意圖而不存具體 `Action`：同一條「1/3 底池 45%」的規則，在
+    /// 底池 20 與底池 200 時要下的籌碼完全不同，決策當下才換算
+    pub intent: PostflopIntentDistribution,
     pub source: RuleSource,
     /// 內容版本字串，隨規則列一起進 manifest
     pub version: String,
@@ -1211,13 +1365,13 @@ impl PostflopRule {
         id: impl Into<String>,
         name: impl Into<String>,
         condition: PostflopCondition,
-        actions: ActionDistribution,
+        intent: PostflopIntentDistribution,
     ) -> Self {
         Self {
             id: id.into(),
             name: name.into(),
             condition,
-            actions,
+            intent,
             source: RuleSource::EngineeringFallback,
             version: "v0-unapproved".to_owned(),
             consultant_approved: false,
@@ -1328,13 +1482,22 @@ impl RuleSet {
     pub fn resolve(
         &self,
         context: &PostflopContext,
+        sizing: PostflopSizing,
         is_legal: &impl Fn(Action) -> bool,
     ) -> (Matched, Option<ActionDistribution>) {
         for (index, rule) in self.rules.iter().enumerate() {
             if !rule.condition.matches(context) {
                 continue;
             }
-            return match rule.actions.mask_and_renormalise(is_legal) {
+            // 意圖換算成具體行動：撞在同一個合法尺寸上的意圖在這裡合併，
+            // 因此換算結果可能比規則裡的項目少
+            let Ok(actions) = rule.intent.to_actions(context.situation(), sizing) else {
+                return (
+                    Matched::Fallback(FallbackReason::AllWeightsMasked { rule: index }),
+                    None,
+                );
+            };
+            return match actions.mask_and_renormalise(is_legal) {
                 Ok(distribution) => (
                     Matched::Rule {
                         index,
@@ -1496,6 +1659,7 @@ impl PostflopNode {
     pub fn condition(&self) -> PostflopCondition {
         PostflopCondition {
             street: Some(self.street),
+            situation: Some(self.situation),
             board_surface: Some(self.surface),
             board_connectivity: Some(self.connectivity),
             hand_strength: Some(self.hand_strength),

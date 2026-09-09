@@ -8,13 +8,14 @@ use poker_engine::card::Card;
 use poker_engine::chips::Chips;
 use poker_engine::hand::Street;
 use poker_engine::position::PositionLabel;
-use poker_engine::strategy::distribution::{ActionDistribution, FULL};
+use poker_engine::strategy::distribution::FULL;
 use poker_engine::strategy::decision::StackBucket;
 use poker_engine::strategy::postflop::{
     classify_board, classify_line, AggressorRole, BoardConnectivity, BoardSurface, CoverageStats,
     FacingSize, HandStrength, Matched, PostflopActionKind, PostflopCondition, PostflopContext,
-    PostflopLine, PostflopLineCondition, PostflopLineName, PostflopNode, PostflopRule,
-    PostflopSituation, PotType, RelativeAggressorOrder, RuleIssue, RuleSet, RuleSource,
+    PostflopIntentDistribution, PostflopLine, PostflopLineCondition, PostflopLineName,
+    PostflopNode, PostflopRule, PostflopSituation, PostflopSizing, PotType,
+    RelativeAggressorOrder, RuleIssue, RuleSet, RuleSource,
 };
 use poker_engine::strategy::postflop::{enumerate_postflop_nodes, node_count_report};
 
@@ -25,12 +26,16 @@ fn cards(values: &[&str]) -> Vec<Card> {
         .collect()
 }
 
-fn bet(units: u64) -> Action {
-    Action::RaiseTo(Chips::new(units))
+fn intent(entries: Vec<(PostflopActionKind, u32)>) -> PostflopIntentDistribution {
+    PostflopIntentDistribution::new(entries).expect("建立意圖分佈")
 }
 
-fn dist(entries: Vec<(Action, u32)>) -> ActionDistribution {
-    ActionDistribution::new(entries).expect("建立分佈")
+/// 測試用的換算金額。底池 30、無人下注，因此 1/3 底池 = 下注到 10
+fn sizing() -> PostflopSizing {
+    PostflopSizing {
+        pot: Chips::new(30),
+        to_call: Chips::new(0),
+    }
 }
 
 fn rule(name: &str, condition: PostflopCondition) -> PostflopRule {
@@ -38,7 +43,10 @@ fn rule(name: &str, condition: PostflopCondition) -> PostflopRule {
         format!("R-{name}"),
         name,
         condition,
-        dist(vec![(Action::Check, 6_000), (bet(10), 4_000)]),
+        intent(vec![
+            (PostflopActionKind::Check, 6_000),
+            (PostflopActionKind::ThirdPot, 4_000),
+        ]),
     )
 }
 
@@ -250,7 +258,7 @@ fn 依優先序取第一條命中的規則() {
         "baseline-v1",
     );
 
-    let (matched, distribution) = set.resolve(&context(), &all_legal);
+    let (matched, distribution) = set.resolve(&context(), sizing(), &all_legal);
     assert_eq!(
         matched,
         Matched::Rule {
@@ -275,7 +283,7 @@ fn 無規則命中時走_fallback() {
         "baseline-v1",
     );
 
-    let (matched, distribution) = set.resolve(&context(), &all_legal);
+    let (matched, distribution) = set.resolve(&context(), sizing(), &all_legal);
     assert!(
         matches!(matched, Matched::Fallback(_)),
         "沒有規則命中必須走 fallback"
@@ -292,13 +300,13 @@ fn 遮蔽後權重歸零時走_fallback_而非任選() {
             "R-only-bet",
             "只會下注",
             PostflopCondition::default(),
-            dist(vec![(bet(10), FULL)]),
+            intent(vec![(PostflopActionKind::ThirdPot, FULL)]),
         )],
         "baseline-v1",
     );
 
     // 下注不合法時，該規則的全部權重都被遮蔽
-    let (matched, distribution) = set.resolve(&context(), &|a| !matches!(a, Action::RaiseTo(_)));
+    let (matched, distribution) = set.resolve(&context(), sizing(), &|a| !matches!(a, Action::RaiseTo(_)));
     assert!(
         matches!(matched, Matched::Fallback(_)),
         "剩餘權重為 0 必須走 fallback"
@@ -312,7 +320,7 @@ fn 遮蔽後仍有合法行動時重新正規化() {
         vec![rule("通則", PostflopCondition::default())],
         "baseline-v1",
     );
-    let (matched, distribution) = set.resolve(&context(), &|a| !matches!(a, Action::RaiseTo(_)));
+    let (matched, distribution) = set.resolve(&context(), sizing(), &|a| !matches!(a, Action::RaiseTo(_)));
 
     assert_eq!(
         matched,

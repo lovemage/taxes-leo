@@ -22,9 +22,13 @@ use crate::strategy::baseline::{self, BaselineRules};
 use crate::strategy::cell_override::CellOverrides;
 use crate::strategy::default_chart::ChartShift;
 use crate::strategy::distribution::{ActionDistribution, Myriad, FULL};
+use crate::strategy::hand_strength::HandStrengthConfig;
 use crate::strategy::postflop::{
-    classify_board, BoardConnectivity, BoardTextures, PostflopActionKind, PostflopSituation,
+    classify_board, BoardConnectivity, BoardTextures, Matched, PostflopActionKind,
+    PostflopSituation, RuleSet, RuleSource,
 };
+use crate::strategy::postflop_baseline::engineering_rules;
+use crate::strategy::postflop_view::postflop_node;
 use crate::strategy::preflop::{PreflopNode, PreflopScenario};
 use crate::strategy::ranking::EquityRanking;
 use crate::strategy::DecisionView;
@@ -76,6 +80,11 @@ pub struct BotAgent {
     /// 用序號而非手序，是因為 [`ActionProvider`] 拿不到手序。同一組設定
     /// 與 seed 會產生同一串決策，因此序號同樣可重現；暫停續跑也不影響
     decisions: u64,
+    /// 翻後規則集。預設是未簽核的工程通則，使用者覆寫由
+    /// [`BotAgent::set_postflop_rules`] 換上
+    postflop_rules: RuleSet,
+    /// 牌力分類的門檻。未簽核工程值，見 [`HandStrengthConfig`]
+    hand_strength: HandStrengthConfig,
 }
 
 /// 由 Bot 設定推導出該座位實際生效的基準規則。
@@ -124,7 +133,19 @@ impl BotAgent {
             seats,
             master_seed,
             decisions: 0,
+            postflop_rules: engineering_rules(),
+            hand_strength: HandStrengthConfig::ENGINEERING,
         }
+    }
+
+    /// 換上翻後規則集。
+    ///
+    /// 規則列必須依 `UserOverride → Official → Generic →
+    /// EngineeringFallback` 排序；順序錯了的話使用者的覆寫會被官方通則
+    /// 蓋掉，而畫面上完全看不出來（由 `RuleSet::analyse` 的
+    /// `LayerOrderViolation` 偵測）。
+    pub fn set_postflop_rules(&mut self, rules: RuleSet) {
+        self.postflop_rules = rules;
     }
 
     /// 以 `samples` 次取樣建立所需的 equity 排序。
@@ -168,6 +189,24 @@ impl BotAgent {
             .unwrap_or_else(|| self.rules.first().expect("至少一組規則"))
     }
 
+    /// 用翻後規則集解出這個節點的行動分布。
+    ///
+    /// 回傳命中規則的來源層——使用者的絕對覆寫要走中和過的管線，
+    /// 官方／通則／工程基準走一般管線，兩者不能靠猜。
+    ///
+    /// 未命中任何規則，或命中後合法動作被遮罩光時回傳 `None`，
+    /// 呼叫端退回 equity heuristic（計劃 §4.4 的 fallback 鏈）。
+    fn resolve_postflop(&self, view: &DecisionView) -> Option<(RuleSource, ActionDistribution)> {
+        let node = postflop_node(view, &self.hand_strength)?;
+        let (matched, distribution) =
+            self.postflop_rules
+                .resolve(&node.context, node.sizing, &legality(&view.legal));
+        match (matched, distribution) {
+            (Matched::Rule { source, .. }, Some(distribution)) => Some((source, distribution)),
+            _ => None,
+        }
+    }
+
     fn reference_for(&self, seat: usize) -> &BaselineRules {
         self.reference
             .get(seat)
@@ -184,20 +223,49 @@ impl ActionProvider for BotAgent {
         let config = self.config_for(view.seat);
         let fit =
             |d: ActionDistribution| drop_free_fold(&fit_raise_sizes(&d, &view.legal), &view.legal);
-        let (baseline, reference, aggression_key) = match view.street {
+        // 使用者的絕對覆寫要走中和過的管線。宣告在外層是為了讓借用活得
+        // 夠久——中和版本是新造的值，不是 self 裡的那一份
+        let neutralised;
+        let (baseline, reference, aggression_key, config) = match view.street {
             Street::Preflop => (
                 preflop_baseline(view, self.rules_for(view.seat), &self.rankings).map(fit),
                 preflop_baseline(view, self.reference_for(view.seat), &self.rankings).map(fit),
                 "preflopAggression",
+                config,
             ),
-            _ => {
-                // Equity 與策略混頻使用不同 RNG domain；調整 equity 樣本數不會
-                // 改變相同節點用來抽 action distribution 的亂數。
-                let mut equity_rng =
-                    Rng::derive(self.master_seed, self.decisions, RngDomain::Equity);
-                let baseline = postflop_baseline(view, &mut equity_rng).map(fit);
-                (baseline.clone(), baseline, "postflopAggression")
-            }
+            _ => match self.resolve_postflop(view) {
+                Some((source, distribution)) => {
+                    let distribution = fit(distribution);
+                    let config = if source == RuleSource::UserOverride {
+                        // 使用者填的是絕對頻率，不是「基準再乘人格倍率」。
+                        // 管線照跑七步（trace 結構必須一致），但每一步都
+                        // 中和成恆等變換；reference 與 baseline 用同一份，
+                        // 第 5 步的 exploit cap 因此量到 0 偏離
+                        neutralised = config.neutralised_for_absolute_override();
+                        &neutralised
+                    } else {
+                        config
+                    };
+                    (
+                        Some(distribution.clone()),
+                        Some(distribution),
+                        "postflopAggression",
+                        config,
+                    )
+                }
+                None => {
+                    // 規則沒命中或合法動作被遮罩光：退回 equity heuristic。
+                    // 這條路徑不因為規則層已經存在就刪掉——規則涵蓋不到的
+                    // 節點還是要有東西可打（計劃 §4.4）
+                    //
+                    // Equity 與策略混頻使用不同 RNG domain；調整 equity
+                    // 樣本數不會改變相同節點用來抽 action distribution 的亂數。
+                    let mut equity_rng =
+                        Rng::derive(self.master_seed, self.decisions, RngDomain::Equity);
+                    let baseline = postflop_baseline(view, &mut equity_rng).map(fit);
+                    (baseline.clone(), baseline, "postflopAggression", config)
+                }
+            },
         };
 
         let Some(baseline) = baseline else {
