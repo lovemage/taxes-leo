@@ -18,6 +18,7 @@ pub mod baseline;
 pub mod calibration;
 pub mod default_chart;
 pub mod cell_override;
+pub mod hand_strength;
 pub mod postflop;
 pub mod range;
 pub mod ranking;

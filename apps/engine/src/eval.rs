@@ -54,6 +54,19 @@ impl HandRank {
         Self(value)
     }
 
+    /// 由重要到次要的五個牌面值（含踢腳）。
+    #[must_use]
+    #[allow(clippy::cast_possible_truncation)]
+    pub const fn ranks(self) -> [u8; 5] {
+        let mut out = [0u8; 5];
+        let mut i = 0;
+        while i < 5 {
+            out[i] = ((self.0 >> (16 - i * 4)) & 0xF) as u8;
+            i += 1;
+        }
+        out
+    }
+
     #[must_use]
     pub fn category(self) -> Category {
         match self.0 >> 20 {
@@ -68,6 +81,148 @@ impl HandRank {
             _ => Category::HighCard,
         }
     }
+}
+
+/// 牌型的**關鍵牌值**，不含踢腳。
+///
+/// 用來回答「這手牌有沒有比公共牌本身更強」。踢腳被排除在外是刻意的：
+/// 公對面上握 `AK` 的手，最佳五張是三條加 A 踢腳，但那個 A 完全沒有
+/// 改善公共牌已經給的三條——把踢腳算成改善，整個牌力組會被公共牌灌水。
+///
+/// `Ord` 的語意即「類別較大，或類別相同但關鍵牌值較高」。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct KeyRank {
+    pub category: Category,
+    /// 由重要到次要的關鍵牌值；未使用的位置為 0
+    pub key_ranks: [u8; 5],
+}
+
+impl KeyRank {
+    /// 某類別有幾個牌值屬於「牌型本身」而非踢腳。
+    #[must_use]
+    pub const fn key_count(category: Category) -> usize {
+        match category {
+            // 高張沒有牌型，五張全是踢腳
+            Category::HighCard => 0,
+            Category::Pair | Category::Trips | Category::Quads => 1,
+            Category::Straight | Category::StraightFlush => 1,
+            Category::TwoPair | Category::FullHouse => 2,
+            // 同花的五張都參與牌型，沒有踢腳可言
+            Category::Flush => 5,
+        }
+    }
+
+    #[must_use]
+    fn from_hand_rank(rank: HandRank) -> Self {
+        let category = rank.category();
+        let all = rank.ranks();
+        let count = Self::key_count(category);
+        let mut key_ranks = [0u8; 5];
+        key_ranks[..count].copy_from_slice(&all[..count]);
+        Self {
+            category,
+            key_ranks,
+        }
+    }
+}
+
+/// 5～7 張牌的關鍵牌值。
+///
+/// # Panics
+/// 牌數少於 5 時 panic，與 [`evaluate`] 相同。
+#[must_use]
+pub fn key_rank(cards: &[Card]) -> KeyRank {
+    KeyRank::from_hand_rank(evaluate(cards))
+}
+
+/// **公共牌自身**的最佳部分牌型（3～5 張）。
+///
+/// [`evaluate`] 至少需要 5 張牌，因此翻牌（3 張）與轉牌（4 張）的公共牌
+/// 根本進不去。而「英雄七張的最佳牌型是否優於只用公共牌的牌型」在翻牌
+/// 又恆為真——英雄只有五張可用，最佳五張必然含兩張底牌。兩個問題合起來
+/// 讓原本的定義在翻牌與轉牌不可計算，因此改為直接算公共牌自己。
+///
+/// 3／4 張時只可能是高張／一對／兩對（4 張）／三條／四條（4 張）：
+/// 順子與同花由公共牌獨立成立，最少也要五張。
+///
+/// # Panics
+/// 牌數不在 3～5 之間時 panic。
+#[must_use]
+pub fn board_partial_rank(board: &[Card]) -> KeyRank {
+    assert!(
+        (3..=5).contains(&board.len()),
+        "公共牌必須是 3～5 張，收到 {}",
+        board.len()
+    );
+
+    if board.len() == 5 {
+        return key_rank(board);
+    }
+
+    let mut counts = [0u8; 15];
+    for card in board {
+        counts[card.rank.value() as usize] += 1;
+    }
+    let by_count = |want: u8| -> Vec<u8> {
+        (2..=14u8)
+            .rev()
+            .filter(|&r| counts[r as usize] == want)
+            .collect()
+    };
+
+    let mut key_ranks = [0u8; 5];
+    if let Some(&quad) = by_count(4).first() {
+        key_ranks[0] = quad;
+        return KeyRank {
+            category: Category::Quads,
+            key_ranks,
+        };
+    }
+    if let Some(&trip) = by_count(3).first() {
+        key_ranks[0] = trip;
+        return KeyRank {
+            category: Category::Trips,
+            key_ranks,
+        };
+    }
+    let pairs = by_count(2);
+    match pairs.as_slice() {
+        [high, low, ..] => {
+            key_ranks[0] = *high;
+            key_ranks[1] = *low;
+            KeyRank {
+                category: Category::TwoPair,
+                key_ranks,
+            }
+        }
+        [only] => {
+            key_ranks[0] = *only;
+            KeyRank {
+                category: Category::Pair,
+                key_ranks,
+            }
+        }
+        [] => KeyRank {
+            category: Category::HighCard,
+            key_ranks,
+        },
+    }
+}
+
+/// 英雄的底牌是否**確實改善**了公共牌。
+///
+/// 條件：英雄成牌的類別嚴格大於公共牌自身的類別，或類別相同但關鍵牌值
+/// 嚴格較高。**踢腳一律不算改善**——這是「成牌」定義的一半，另一半是
+/// 成牌類別至少一對（計劃 §2.3、§3.2）。
+///
+/// # Panics
+/// 公共牌不在 3～5 張時 panic。
+#[must_use]
+pub fn improves_board(hole: [Card; 2], board: &[Card]) -> bool {
+    let mut seven = Vec::with_capacity(board.len() + 2);
+    seven.extend_from_slice(board);
+    seven.extend_from_slice(&hole);
+    key_rank(&seven) > board_partial_rank(board)
 }
 
 /// 由 5～7 張牌評出最佳五張的牌力。
@@ -247,5 +402,118 @@ mod tests {
         // 高牌只取最高五張
         let r = evaluate(&hand("As Kd Qc Jh 9s 3d 2c"));
         assert_eq!(r, evaluate(&hand("As Kd Qc Jh 9s")));
+    }
+
+    // ── 公共牌部分牌型與「改善公共牌」（計劃 §3.2）────────────────
+
+    fn hole(text: &str) -> [Card; 2] {
+        let cards = hand(text);
+        [cards[0], cards[1]]
+    }
+
+    #[test]
+    fn 公共牌部分牌型在三張與四張時仍算得出來() {
+        // evaluate 至少要五張，公共牌自己進不去，因此另走一條路
+        assert_eq!(
+            board_partial_rank(&hand("As 7d 2c")).category,
+            Category::HighCard
+        );
+        assert_eq!(
+            board_partial_rank(&hand("Ks Kd 7c")).category,
+            Category::Pair
+        );
+        assert_eq!(
+            board_partial_rank(&hand("Ks Kd 7c 7h")).category,
+            Category::TwoPair
+        );
+        assert_eq!(
+            board_partial_rank(&hand("2s 2d 2c")).category,
+            Category::Trips
+        );
+        assert_eq!(
+            board_partial_rank(&hand("2s 2d 2c 2h")).category,
+            Category::Quads
+        );
+    }
+
+    #[test]
+    fn 三張與四張公共牌不可能自成順子或同花() {
+        // 三張同花色、三張連號都還不夠；順子與同花最少要五張
+        assert_eq!(
+            board_partial_rank(&hand("9s 8s 7s")).category,
+            Category::HighCard
+        );
+        assert_eq!(
+            board_partial_rank(&hand("9s 8s 7s 6s")).category,
+            Category::HighCard
+        );
+        // 五張才走完整評估
+        assert_eq!(
+            board_partial_rank(&hand("9s 8s 7s 6s 5s")).category,
+            Category::StraightFlush
+        );
+    }
+
+    #[test]
+    fn 改善公共牌的_golden_向量() {
+        // 計劃 §3.2 的對照表，逐條釘住
+        let cases: [(&str, &str, bool); 5] = [
+            // 三條面上的 AK：最佳五張是三條加 A 踢腳，但那個 A 沒有改善任何東西
+            ("As Kd", "2s 2d 2c", false),
+            // 同一個牌面，KK 湊出葫蘆
+            ("Ks Kd", "2s 2d 2c", true),
+            // 公對面上的 A2：一對 K 完全來自公共牌
+            ("As 2d", "Ks Kd 7c", false),
+            // 同一個牌面，77 湊出葫蘆
+            ("7s 7d", "Ks Kd 7c", true),
+            // 河牌公共牌自己就是順子，任何兩張無關牌都沒有改善它
+            ("3s 2d", "As Kd Qc Jh Ts", false),
+        ];
+
+        for (hole_text, board_text, expected) in cases {
+            assert_eq!(
+                improves_board(hole(hole_text), &hand(board_text)),
+                expected,
+                "底牌 {hole_text} 對公共牌 {board_text}"
+            );
+        }
+    }
+
+    #[test]
+    fn 踢腳一律不算改善() {
+        // 公對面上握 A 高：踢腳從 7 變成 A，牌型完全沒變
+        assert!(!improves_board(hole("Ah 3d"), &hand("Ks Kd 7c")));
+        // 但握 K 就是三條，那是真的改善
+        assert!(improves_board(hole("Kh 3d"), &hand("Ks Kd 7c")));
+    }
+
+    #[test]
+    fn 同類別時比較關鍵牌值而不是踢腳() {
+        // 公共牌一對 7，英雄一對 K：同樣是「一對」，但對子點數更高
+        let board = hand("7s 7d 2c");
+        assert!(improves_board(hole("Ks Kh"), &board));
+
+        // 英雄一對 3：兩對（7 與 3）勝過單一對 7
+        assert!(improves_board(hole("3s 3h"), &board));
+    }
+
+    #[test]
+    fn 翻牌握任何底牌都不會恆為改善() {
+        // 舊定義「英雄最佳五張是否優於只用公共牌」在翻牌恆為真——
+        // 英雄只有五張可用，最佳五張必然含兩張底牌。新定義不會這樣
+        let board = hand("As Ad Ac");
+        assert!(
+            !improves_board(hole("7s 2d"), &board),
+            "三條 A 的面上握 72 什麼也沒改善"
+        );
+    }
+
+    #[test]
+    fn 關鍵牌值的個數依類別決定() {
+        assert_eq!(KeyRank::key_count(Category::HighCard), 0);
+        assert_eq!(KeyRank::key_count(Category::Pair), 1);
+        assert_eq!(KeyRank::key_count(Category::TwoPair), 2);
+        assert_eq!(KeyRank::key_count(Category::FullHouse), 2);
+        assert_eq!(KeyRank::key_count(Category::Flush), 5, "同花的五張都參與牌型");
     }
 }
