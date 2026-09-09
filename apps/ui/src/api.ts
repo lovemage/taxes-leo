@@ -17,6 +17,7 @@ import type {
   HandView,
   HoleCardVisibility,
   ParamSpecView,
+  PostflopDiagnosticsView,
   PostflopHandPreviewView,
   PostflopNodesView,
   PostflopOverridesView,
@@ -378,4 +379,15 @@ export function classifyPostflopHand(
   }
   const search = new URLSearchParams({ hole, board });
   return http<PostflopHandPreviewView>(`/api/postflop/classify?${search.toString()}`);
+}
+
+/** 保存前的規則診斷。有 error 就不得保存（UI 規格 D.8）。 */
+export function postflopDiagnostics(
+  overrides: PostflopOverridesView,
+): Promise<PostflopDiagnosticsView> {
+  const bridge = tauri();
+  if (bridge) {
+    return bridge.core.invoke<PostflopDiagnosticsView>('postflop_diagnostics', { overrides });
+  }
+  return httpPost<PostflopDiagnosticsView>('/api/postflop/diagnostics', overrides);
 }

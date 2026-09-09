@@ -127,6 +127,7 @@ fn build_manifest(config: &SessionConfig) -> RunManifest {
         created_at: 1_771_200_000,
         completed: false,
         checkpoint_version: 1,
+        postflop_coverage: None,
     }
 }
 
@@ -237,6 +238,10 @@ fn serve(mut stream: TcpStream, handler: &IpcHandler, run_id: i64) -> std::io::R
             poker_ipc::postflop::postflop_rule(&query, &overrides)
                 .ok()
                 .and_then(|view| serde_json::to_string(&view).ok())
+        }
+        "/api/postflop/diagnostics" => {
+            let overrides = parse_postflop_overrides(&body);
+            serde_json::to_string(&poker_ipc::postflop::postflop_diagnostics(&overrides)).ok()
         }
         "/api/postflop/classify" => {
             let hole = text_param(query, "hole").unwrap_or_default();

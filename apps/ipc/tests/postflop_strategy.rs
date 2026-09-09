@@ -4,9 +4,25 @@
 //! 但錯了會讓使用者以為自己的覆寫還在（或已經沒了）。
 
 use poker_ipc::postflop::{
-    classify_postflop_hand, postflop_nodes, postflop_rule, PostflopNodeOverrideView,
-    PostflopOverridesView, PostflopRuleOverrideView, PostflopRuleQuery, PostflopWeightInput,
+    classify_postflop_hand, postflop_diagnostics, postflop_nodes, postflop_rule,
+    PostflopNodeOverrideView, PostflopOverridesView, PostflopRuleOverrideView, PostflopRuleQuery,
+    PostflopWeightInput,
 };
+
+/// 一條使用者規則覆寫，條件全部可省略
+fn user_rule(id: &str) -> PostflopRuleOverrideView {
+    PostflopRuleOverrideView {
+        id: id.to_owned(),
+        street: None,
+        situation: None,
+        line: None,
+        surface: None,
+        connectivity: None,
+        hand_strength: None,
+        facing_size: None,
+        weights: weights(&[("check", 5_000), ("third-pot", 5_000)]),
+    }
+}
 
 fn weights(pairs: &[(&str, u32)]) -> Vec<PostflopWeightInput> {
     pairs
@@ -366,4 +382,129 @@ fn dto_序列化為_camel_case() {
         .get("coverage")
         .and_then(|coverage| coverage.get("completenessMyriad"))
         .is_some());
+}
+
+// ── 規則診斷（計劃 §5.3、UI 規格 D.8）──────────────────────────
+
+#[test]
+fn 沒有覆寫時工程通則自己不產生任何錯誤() {
+    let diagnostics = postflop_diagnostics(&PostflopOverridesView::default());
+    assert_eq!(
+        diagnostics.error_count, 0,
+        "工程通則自己就有問題的話，使用者的規則會被它連累：{:?}",
+        diagnostics.issues
+    );
+    assert!(diagnostics.can_save);
+}
+
+#[test]
+fn 條件矛盾的規則是阻擋保存的錯誤() {
+    // 無人下注卻指定了面對尺度
+    let mut broken = user_rule("R-broken");
+    broken.situation = Some("no-bet".to_owned());
+    broken.facing_size = Some("two-thirds".to_owned());
+
+    let diagnostics = postflop_diagnostics(&PostflopOverridesView {
+        nodes: Vec::new(),
+        rules: vec![broken],
+    });
+
+    assert!(
+        diagnostics
+            .issues
+            .iter()
+            .any(|issue| issue.kind == "impossible" && issue.severity == "error"),
+        "{:?}",
+        diagnostics.issues
+    );
+    assert!(!diagnostics.can_save, "有 error 時不得保存");
+}
+
+#[test]
+fn 同層遮蔽是警告而不是錯誤() {
+    // 第一條萬用、第二條只管翻牌：後者永遠輪不到
+    let general = user_rule("R-general");
+    let mut specific = user_rule("R-specific");
+    specific.street = Some("flop".to_owned());
+
+    let diagnostics = postflop_diagnostics(&PostflopOverridesView {
+        nodes: Vec::new(),
+        rules: vec![general, specific],
+    });
+
+    assert!(
+        diagnostics
+            .issues
+            .iter()
+            .any(|issue| issue.kind == "shadowed" && issue.severity == "warning"),
+        "{:?}",
+        diagnostics.issues
+    );
+    assert!(
+        diagnostics.can_save,
+        "遮蔽幾乎一定是寫錯，但擋住保存會讓使用者連暫存都做不到"
+    );
+}
+
+#[test]
+fn 命不中任何可達節點的規則是警告() {
+    // 河牌沒有未來補牌，強聽牌在該街不存在
+    let mut unreachable = user_rule("R-unreachable");
+    unreachable.street = Some("river".to_owned());
+    unreachable.hand_strength = Some("strong-draw".to_owned());
+
+    let diagnostics = postflop_diagnostics(&PostflopOverridesView {
+        nodes: Vec::new(),
+        rules: vec![unreachable],
+    });
+
+    let issue = diagnostics
+        .issues
+        .iter()
+        .find(|issue| issue.kind == "unreachable")
+        .expect("應標為不可達");
+    assert_eq!(issue.severity, "warning", "節點集合改版時不該擋住保存");
+    assert_eq!(issue.rule_id, "R-unreachable");
+    assert!(diagnostics.can_save);
+}
+
+#[test]
+fn 使用者自己的問題排在工程通則之前() {
+    let general = user_rule("R-general");
+    let mut specific = user_rule("R-specific");
+    specific.street = Some("flop".to_owned());
+
+    let diagnostics = postflop_diagnostics(&PostflopOverridesView {
+        nodes: Vec::new(),
+        rules: vec![general, specific],
+    });
+
+    let first = diagnostics.issues.first().expect("至少一項");
+    assert_eq!(
+        first.source, "user-override",
+        "工程通則的警告對使用者來說是雜訊，不該排在自己的問題前面"
+    );
+}
+
+#[test]
+fn 診斷_dto_序列化為_camel_case() {
+    let mut broken = user_rule("R-broken");
+    broken.situation = Some("no-bet".to_owned());
+    broken.facing_size = Some("pot".to_owned());
+    let diagnostics = postflop_diagnostics(&PostflopOverridesView {
+        nodes: Vec::new(),
+        rules: vec![broken],
+    });
+    let json = serde_json::to_value(&diagnostics).expect("序列化");
+
+    for key in ["errorCount", "warningCount", "canSave"] {
+        assert!(json.get(key).is_some(), "缺少 {key}");
+    }
+    let issue = json
+        .get("issues")
+        .and_then(|issues| issues.get(0))
+        .expect("至少一項");
+    for key in ["ruleId", "ruleName", "relatedRuleId"] {
+        assert!(issue.get(key).is_some(), "issue 缺少 {key}");
+    }
 }

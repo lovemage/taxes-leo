@@ -85,6 +85,7 @@ fn manifest_for(config: &SessionConfig) -> RunManifest {
         created_at: 1_771_200_000,
         completed: false,
         checkpoint_version: 1,
+        postflop_coverage: None,
     }
 }
 

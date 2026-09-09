@@ -21,8 +21,8 @@ use poker_engine::strategy::hand_strength::{classify, HandStrengthConfig};
 use poker_engine::strategy::postflop::{
     classify_board, enumerate_postflop_nodes, BoardConnectivity, BoardSurface, FacingSize,
     HandStrength, Matched, PostflopActionKind, PostflopCondition, PostflopIntentDistribution,
-    PostflopLineName, PostflopNode, PostflopRule, PostflopSituation, PostflopSizing, RuleSet,
-    RuleSource, NODE_SET_VERSION,
+    PostflopLineName, PostflopNode, PostflopRule, PostflopSituation, PostflopSizing, RuleIssue,
+    RuleSet, RuleSource, NODE_SET_VERSION,
 };
 use poker_engine::strategy::postflop_baseline::engineering_rules;
 use serde::{Deserialize, Serialize};
@@ -224,6 +224,41 @@ pub struct PostflopRuleView {
     pub rule_name: String,
     pub consultant_approved: bool,
     pub restore: PostflopRestoreView,
+}
+
+/// 一條規則診斷。
+///
+/// UI 規格 D.8：只有 `error` 阻擋保存，`warning` 可保存但寫入驗證摘要。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
+#[serde(rename_all = "camelCase")]
+pub struct PostflopIssueView {
+    /// `overlap`／`shadowed`／`unreachable`／`impossible`／
+    /// `layer-order-violation`
+    pub kind: String,
+    /// `error` 或 `warning`
+    pub severity: String,
+    pub rule_id: String,
+    pub rule_name: String,
+    /// 規則的來源層，讓 UI 能把「你的規則」的問題排在前面
+    pub source: String,
+    pub message: String,
+    /// 遮蔽與重疊會指向另一條規則
+    pub related_rule_id: Option<String>,
+}
+
+/// 保存前的驗證摘要。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
+#[serde(rename_all = "camelCase")]
+pub struct PostflopDiagnosticsView {
+    pub issues: Vec<PostflopIssueView>,
+    #[ts(type = "number")]
+    pub error_count: u64,
+    #[ts(type = "number")]
+    pub warning_count: u64,
+    /// 有 error 就不得保存（UI 規格 D.8）
+    pub can_save: bool,
 }
 
 /// 指定底牌的分類預覽。
@@ -468,6 +503,103 @@ pub fn classify_postflop_hand(hole: &str, board: &str) -> Result<PostflopHandPre
         backdoor_draw: snapshot.backdoor_draw,
         opponent_model: HandStrengthConfig::OPPONENT_MODEL.to_owned(),
         consultant_approved: config.consultant_approved,
+    })
+}
+
+/// 保存前的規則診斷。
+///
+/// 靜態檢查（矛盾條件、同層遮蔽與重疊、來源排序）與可達性檢查
+/// （命不中任何可達節點）一起跑。可達性是 O(規則數 × 節點數)，因此
+/// 只在這一支跑，不在每次編輯時跑。
+#[must_use]
+pub fn postflop_diagnostics(overrides: &PostflopOverridesView) -> PostflopDiagnosticsView {
+    let rules = to_rule_set(overrides);
+    let nodes = enumerate_postflop_nodes();
+
+    let mut issues: Vec<PostflopIssueView> = rules
+        .analyse()
+        .into_iter()
+        .chain(rules.analyse_reachability(&nodes))
+        .filter_map(|issue| to_issue_view(&rules, issue))
+        .collect();
+
+    // 使用者自己的問題排前面：工程通則的警告對他來說是雜訊
+    issues.sort_by_key(|issue| match issue.source.as_str() {
+        "user-override" => 0,
+        "official" => 1,
+        "generic" => 2,
+        _ => 3,
+    });
+
+    let error_count = issues
+        .iter()
+        .filter(|issue| issue.severity == "error")
+        .count() as u64;
+    let warning_count = u64::try_from(issues.len()).unwrap_or(u64::MAX) - error_count;
+
+    PostflopDiagnosticsView {
+        issues,
+        error_count,
+        warning_count,
+        can_save: error_count == 0,
+    }
+}
+
+fn to_issue_view(rules: &RuleSet, issue: RuleIssue) -> Option<PostflopIssueView> {
+    let rule = rules.rules().get(issue.rule())?;
+    let related = |index: usize| rules.rules().get(index).map(|other| strip_prefix(&other.id));
+
+    let (kind, message, related_rule_id) = match issue {
+        RuleIssue::Overlap { with, .. } => (
+            "overlap",
+            format!(
+                "與同一層的規則 {} 部分重疊。先特例後通則時這是正常的。",
+                related(with).unwrap_or_default()
+            ),
+            related(with),
+        ),
+        RuleIssue::Shadowed { by, .. } => (
+            "shadowed",
+            format!(
+                "被同一層更早的規則 {} 完全涵蓋，永遠不會命中。",
+                related(by).unwrap_or_default()
+            ),
+            related(by),
+        ),
+        RuleIssue::Unreachable { .. } => (
+            "unreachable",
+            "條件命不中任何可達節點。可能是條件寫錯，也可能是節點集合改版。".to_owned(),
+            None,
+        ),
+        RuleIssue::Impossible { .. } => (
+            "impossible",
+            "條件本身不可能成立（範圍為空，或下注狀態與面對尺度矛盾）。".to_owned(),
+            None,
+        ),
+        RuleIssue::LayerOrderViolation { after, .. } => (
+            "layer-order-violation",
+            format!(
+                "排在來源層級較低的規則 {} 之後，你的覆寫會被它蓋掉。",
+                related(after).unwrap_or_default()
+            ),
+            related(after),
+        ),
+    };
+
+    Some(PostflopIssueView {
+        kind: kind.to_owned(),
+        severity: if issue.is_error() { "error" } else { "warning" }.to_owned(),
+        rule_id: strip_prefix(&rule.id),
+        rule_name: rule.name.clone(),
+        source: match rule.source {
+            RuleSource::UserOverride => "user-override",
+            RuleSource::Official => "official",
+            RuleSource::Generic => "generic",
+            RuleSource::EngineeringFallback => "engineering-fallback",
+        }
+        .to_owned(),
+        message,
+        related_rule_id,
     })
 }
 

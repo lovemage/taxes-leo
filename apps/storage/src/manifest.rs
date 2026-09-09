@@ -118,6 +118,39 @@ impl Default for RuleVariants {
     }
 }
 
+/// 翻後策略在這次 run 的實際命中分佈。
+///
+/// 分母是**英雄實際發生的翻後決策次數**，與策略頁「可達節點數」的靜態
+/// 覆蓋是兩個不同的指標，不得互相取代。兩者都必須帶節點集合版本，
+/// 否則跨版本比較沒有意義。
+///
+/// 兩種 fallback 原因分開存：「沒有規則命中」是策略缺口，「合法動作全被
+/// 遮罩」是籌碼造成的合法性事件，混在一起會讓使用者以為策略沒寫完。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PostflopCoverageRecord {
+    pub node_set_version: String,
+    pub user_hits: u64,
+    pub official_hits: u64,
+    pub generic_hits: u64,
+    pub engineering_hits: u64,
+    pub fallback_no_rule: u64,
+    pub fallback_masked: u64,
+}
+
+impl PostflopCoverageRecord {
+    /// 英雄實際發生的翻後決策次數。
+    #[must_use]
+    pub const fn total(&self) -> u64 {
+        self.user_hits
+            + self.official_hits
+            + self.generic_hits
+            + self.engineering_hits
+            + self.fallback_no_rule
+            + self.fallback_masked
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunManifest {
@@ -162,6 +195,12 @@ pub struct RunManifest {
     pub created_at: i64,
     pub completed: bool,
     pub checkpoint_version: u32,
+    /// 翻後策略的執行期覆蓋（0907 計劃 §5.3）。
+    ///
+    /// 舊 run 沒有這個欄位，因此是 `Option` 並帶 `serde(default)`：
+    /// 統計是後來才加的，不能讓既有的 manifest 讀不回來
+    #[serde(default)]
+    pub postflop_coverage: Option<PostflopCoverageRecord>,
 }
 
 impl RunManifest {

@@ -80,6 +80,7 @@ fn manifest(config: &SessionConfig) -> RunManifest {
         created_at: 1_771_200_000,
         completed: false,
         checkpoint_version: 1,
+        postflop_coverage: None,
     }
 }
 
@@ -488,4 +489,20 @@ fn 桌次卡的結束原因與桌次數與_manifest_一致() {
 fn 不存在的_run_回傳錯誤而不是空報表() {
     let (handler, run_id) = prepared(&full_table());
     assert!(handler.report(run_id + 999, false).is_err());
+}
+
+#[test]
+fn 舊_run_沒有翻後覆蓋時報表顯示為_null() {
+    // 這份 fixture 用 CallingStation 而不是 BotAgent，manifest 裡沒有
+    // 翻後覆蓋。報表必須如實回 null，不能編一份 0/0 出來——那看起來像
+    // 「跑過但完整度 0%」，意思完全不同
+    let (handler, run_id) = prepared(&full_table());
+    let report = handler.report(run_id, false).expect("報表");
+    assert!(report.postflop_coverage.is_none());
+
+    let json = serde_json::to_value(&report).expect("序列化");
+    assert!(
+        json.get("postflopCoverage").expect("欄位必須存在").is_null(),
+        "null 要實際出現在 JSON 裡，前端才知道是「沒有這份資料」"
+    );
 }

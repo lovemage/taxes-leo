@@ -652,3 +652,46 @@ fn 不合法的覆寫讓執行直接失敗() {
     )
     .is_err());
 }
+
+#[test]
+fn run_結束時把翻後覆蓋寫進_manifest() {
+    let mut request = request();
+    request.hand_limit = 200;
+    let config = request.to_session_config().expect("轉換");
+
+    let store = Arc::new(Mutex::new(Store::open_in_memory().expect("資料庫")));
+    let control = Arc::new(RunControl::default());
+    let run_id = execute(
+        &config,
+        &request.bots,
+        HeroStrategy::none(),
+        &store,
+        &control,
+        1_771_200_000,
+        |_| {},
+    )
+    .expect("執行");
+
+    let manifest = store
+        .lock()
+        .expect("鎖")
+        .load_manifest(run_id)
+        .expect("manifest");
+    let coverage = manifest
+        .postflop_coverage
+        .expect("跑完的 run 必須帶著翻後覆蓋");
+
+    assert_eq!(coverage.node_set_version, "postflop-nodes/v1");
+    assert!(
+        coverage.total() > 0,
+        "200 手裡總會有幾手走到翻後，統計不該是空的"
+    );
+    assert_eq!(
+        coverage.user_hits, 0,
+        "這次 run 沒有任何使用者覆寫，玩家完整度應為 0"
+    );
+    assert!(
+        coverage.generic_hits > 0,
+        "翻後決策應該命中未簽核的工程通則"
+    );
+}

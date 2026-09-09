@@ -258,6 +258,42 @@ pub struct EndReasonView {
     pub count: u64,
 }
 
+/// 翻後策略的執行期覆蓋（0907 計劃 §5.3）。
+///
+/// 分母是**英雄實際發生的翻後決策次數**，與策略頁的靜態節點覆蓋是兩個
+/// 不同的指標：策略頁在儲存前沒有 run，算不出決策次數；報表算不出
+/// 「還有幾個節點沒寫」。兩者都必須帶節點集合版本，否則跨版本比較沒有
+/// 意義。
+///
+/// 舊 run 沒有這份資料，因此在 [`ReportView`] 裡是 `null`。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
+#[serde(rename_all = "camelCase")]
+pub struct PostflopRuntimeCoverageView {
+    pub node_set_version: String,
+    #[ts(type = "number")]
+    pub user: u64,
+    #[ts(type = "number")]
+    pub official: u64,
+    #[ts(type = "number")]
+    pub generic: u64,
+    /// 命中工程 fallback**規則**：有規則可用，只是未經簽核
+    #[ts(type = "number")]
+    pub engineering: u64,
+    /// 沒有任何規則命中。這是策略缺口
+    #[ts(type = "number")]
+    pub fallback_no_rule: u64,
+    /// 規則命中但合法動作全被遮罩。這是籌碼造成的合法性事件，
+    /// 與策略缺口混在一起會讓使用者以為策略沒寫完
+    #[ts(type = "number")]
+    pub fallback_masked: u64,
+    #[ts(type = "number")]
+    pub total_decisions: u64,
+    /// 玩家完整度（萬分比）＝ user ÷ total。工程 fallback 規則的命中
+    /// 不計入分子
+    pub completeness_myriad: u32,
+}
+
 /// 面板 F 的完整報表。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
@@ -274,6 +310,8 @@ pub struct ReportView {
     /// 被逐位置表排除的手數。整體卡**不**排除這些手
     #[ts(type = "number")]
     pub dead_hands: u64,
+    /// 翻後策略的執行期覆蓋。舊 run 沒有這份資料
+    pub postflop_coverage: Option<PostflopRuntimeCoverageView>,
 }
 
 // ── 逐手事實 ─────────────────────────────────────────────────────────
@@ -826,7 +864,34 @@ pub fn report(store: &Store, run_id: i64, include_dead: bool) -> Result<ReportVi
         tables: tables(&manifest),
         include_dead,
         dead_hands: count(&all, |f| f.dead),
+        postflop_coverage: manifest
+            .postflop_coverage
+            .as_ref()
+            .map(postflop_coverage_view),
     })
+}
+
+/// 把 manifest 裡的原始計數換成報表 DTO。
+fn postflop_coverage_view(
+    record: &poker_storage::manifest::PostflopCoverageRecord,
+) -> PostflopRuntimeCoverageView {
+    let total = record.total();
+    PostflopRuntimeCoverageView {
+        node_set_version: record.node_set_version.clone(),
+        user: record.user_hits,
+        official: record.official_hits,
+        generic: record.generic_hits,
+        engineering: record.engineering_hits,
+        fallback_no_rule: record.fallback_no_rule,
+        fallback_masked: record.fallback_masked,
+        total_decisions: total,
+        // 分子只有使用者覆寫：官方內容與同組通則不是使用者寫的，
+        // 工程 fallback 更不是（計劃 §5.3）
+        completeness_myriad: (record.user_hits * 10_000)
+            .checked_div(total)
+            .and_then(|value| u32::try_from(value).ok())
+            .unwrap_or(0),
+    }
 }
 
 #[cfg(test)]

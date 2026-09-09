@@ -35,14 +35,15 @@ pub use strategy::{
     StrategyMetaView, StrategyNodesView,
 };
 pub use postflop::{
-    classify_postflop_hand, postflop_nodes, postflop_rule, PostflopHandPreviewView,
+    classify_postflop_hand, postflop_diagnostics, postflop_nodes, postflop_rule,
+    PostflopDiagnosticsView, PostflopHandPreviewView, PostflopIssueView,
     PostflopLineOptionView, PostflopNodeOverrideView, PostflopNodesView, PostflopOptionView,
     PostflopOverridesView, PostflopRestoreView, PostflopRuleOverrideView, PostflopRuleQuery,
     PostflopRuleView, PostflopStaticCoverageView, PostflopWeightInput, PostflopWeightView,
 };
 pub use report::{
-    EndReasonView, EstimateView, OverallView, PositionRowView, ProportionView, ReportScopeView,
-    ReportView, TablesView,
+    EndReasonView, EstimateView, OverallView, PositionRowView, PostflopRuntimeCoverageView,
+    ProportionView, ReportScopeView, ReportView, TablesView,
 };
 pub use view::{
     ActionView, FrameView, HandSummaryView, HandView, HoleCardVisibility, PowerPreviewView, RunView,

@@ -519,3 +519,83 @@ fn 解析結果帶著命中規則的來源() {
         }
     ));
 }
+
+// ── 執行期覆蓋統計（計劃 §5.3）──────────────────────────────────
+
+#[test]
+fn 覆蓋統計只記英雄座位() {
+    let mut agent = agent_with(engineering_rules());
+    agent.set_hero_seat(HERO);
+
+    let hero_view = flop_view("As Ks", "Ah 7d 3c", 0);
+    agent.choose(&hero_view);
+    assert_eq!(agent.postflop_coverage().total(), 1);
+
+    // 同一個節點換成別的座位：那是 Bot 的決策
+    let mut bot_view = flop_view("As Ks", "Ah 7d 3c", 0);
+    bot_view.seat = 3;
+    bot_view.legal.seat = 3;
+    agent.choose(&bot_view);
+
+    assert_eq!(
+        agent.postflop_coverage().total(),
+        1,
+        "統計主體只有使用者座位；把 Bot 也算進去，完整度就變成另一個意思"
+    );
+}
+
+#[test]
+fn 沒有指定英雄座位時完全不統計() {
+    let mut agent = agent_with(engineering_rules());
+    agent.choose(&flop_view("As Ks", "Ah 7d 3c", 0));
+    assert_eq!(
+        agent.postflop_coverage().total(),
+        0,
+        "寧可沒有數字，也不要一份把 Bot 也算進去的數字"
+    );
+}
+
+#[test]
+fn 覆蓋統計依來源分層() {
+    let mut agent = BotAgent::new(
+        BaselineRules::engineering_placeholder(),
+        BotAgent::rankings(500),
+        vec![SeatConfig::defaults("測試"); 6],
+        4_242,
+    );
+    agent.set_postflop_rules(user_override());
+    agent.set_hero_seat(HERO);
+
+    let view = flop_view("As Ks", "Ah 7d 3c", 0);
+    for _ in 0..10 {
+        agent.choose(&view);
+    }
+
+    let coverage = agent.postflop_coverage();
+    assert_eq!(coverage.user_hits, 10);
+    assert_eq!(coverage.generic_hits, 0);
+    assert_eq!(
+        coverage.completeness_myriad(),
+        Some(10_000),
+        "全部命中使用者覆寫時完整度是 100%"
+    );
+}
+
+#[test]
+fn 工程通則的命中不算進玩家完整度() {
+    let mut agent = agent_with(engineering_rules());
+    agent.set_hero_seat(HERO);
+
+    let view = flop_view("As Ks", "Ah 7d 3c", 0);
+    for _ in 0..10 {
+        agent.choose(&view);
+    }
+
+    let coverage = agent.postflop_coverage();
+    assert_eq!(coverage.generic_hits, 10);
+    assert_eq!(
+        coverage.completeness_myriad(),
+        Some(0),
+        "十次都命中了規則，但沒有一次是使用者寫的"
+    );
+}

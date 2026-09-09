@@ -24,7 +24,7 @@ use crate::strategy::default_chart::ChartShift;
 use crate::strategy::distribution::{ActionDistribution, Myriad, FULL};
 use crate::strategy::hand_strength::HandStrengthConfig;
 use crate::strategy::postflop::{
-    classify_board, BoardConnectivity, BoardTextures, Matched, PostflopActionKind,
+    classify_board, BoardConnectivity, BoardTextures, CoverageStats, Matched, PostflopActionKind,
     PostflopSituation, RuleSet, RuleSource,
 };
 use crate::strategy::postflop_baseline::engineering_rules;
@@ -85,6 +85,14 @@ pub struct BotAgent {
     postflop_rules: RuleSet,
     /// 牌力分類的門檻。未簽核工程值，見 [`HandStrengthConfig`]
     hand_strength: HandStrengthConfig,
+    /// 英雄座位的翻後規則命中統計，依來源分層。
+    ///
+    /// **只記英雄。** 統計主體只有使用者座位（核心規格 5.0）；把 Bot 的
+    /// 命中也算進去，完整度就變成「這個規則集涵蓋多少決策」，而使用者
+    /// 想知道的是「我自己的策略寫了多少」
+    postflop_coverage: CoverageStats,
+    /// 英雄座位。逐座設定裡沒有這個資訊，因此由呼叫端指定
+    hero_seat: Option<usize>,
 }
 
 /// 由 Bot 設定推導出該座位實際生效的基準規則。
@@ -135,7 +143,23 @@ impl BotAgent {
             decisions: 0,
             postflop_rules: engineering_rules(),
             hand_strength: HandStrengthConfig::ENGINEERING,
+            postflop_coverage: CoverageStats::default(),
+            hero_seat: None,
         }
+    }
+
+    /// 指定要統計哪一個座位的翻後命中。
+    ///
+    /// 不設的話完全不統計——寧可沒有數字，也不要一份把 Bot 也算進去的
+    /// 數字：那個比例看起來很像完整度，但意思完全不同。
+    pub fn set_hero_seat(&mut self, seat: usize) {
+        self.hero_seat = Some(seat);
+    }
+
+    /// 英雄座位到目前為止的翻後命中統計。
+    #[must_use]
+    pub const fn postflop_coverage(&self) -> &CoverageStats {
+        &self.postflop_coverage
     }
 
     /// 換上翻後規則集。
@@ -196,11 +220,18 @@ impl BotAgent {
     ///
     /// 未命中任何規則，或命中後合法動作被遮罩光時回傳 `None`，
     /// 呼叫端退回 equity heuristic（計劃 §4.4 的 fallback 鏈）。
-    fn resolve_postflop(&self, view: &DecisionView) -> Option<(RuleSource, ActionDistribution)> {
+    fn resolve_postflop(&mut self, view: &DecisionView) -> Option<(RuleSource, ActionDistribution)> {
         let node = postflop_node(view, &self.hand_strength)?;
         let (matched, distribution) =
             self.postflop_rules
                 .resolve(&node.context, node.sizing, &legality(&view.legal));
+
+        // 分母界定：只算英雄座位、只算他真的有選擇的節點。已全下或沒有
+        // 合法選項的節點根本不會走到這裡
+        if self.hero_seat == Some(view.seat) {
+            self.postflop_coverage.record(&matched);
+        }
+
         match (matched, distribution) {
             (Matched::Rule { source, .. }, Some(distribution)) => Some((source, distribution)),
             _ => None,
@@ -220,6 +251,14 @@ impl ActionProvider for BotAgent {
         let mut rng = Rng::derive(self.master_seed, self.decisions, RngDomain::StrategyMix);
         let roll = Myriad::try_from(rng.below(u64::from(FULL))).unwrap_or(0);
 
+        // 翻後先解規則：它要記統計，因此需要 `&mut self`，不能與下面的
+        // `config` 借用重疊
+        let resolved = if matches!(view.street, Street::Preflop) {
+            None
+        } else {
+            self.resolve_postflop(view)
+        };
+
         let config = self.config_for(view.seat);
         let fit =
             |d: ActionDistribution| drop_free_fold(&fit_raise_sizes(&d, &view.legal), &view.legal);
@@ -233,7 +272,7 @@ impl ActionProvider for BotAgent {
                 "preflopAggression",
                 config,
             ),
-            _ => match self.resolve_postflop(view) {
+            _ => match resolved {
                 Some((source, distribution)) => {
                     let distribution = fit(distribution);
                     let config = if source == RuleSource::UserOverride {

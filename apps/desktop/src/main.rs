@@ -238,6 +238,14 @@ fn postflop_rule(
     poker_ipc::postflop::postflop_rule(&query, &overrides)
 }
 
+/// 保存前的規則診斷。有 error 就不得保存（UI 規格 D.8）
+#[tauri::command(async)]
+fn postflop_diagnostics(
+    overrides: poker_ipc::postflop::PostflopOverridesView,
+) -> poker_ipc::postflop::PostflopDiagnosticsView {
+    poker_ipc::postflop::postflop_diagnostics(&overrides)
+}
+
 /// 指定底牌的牌力分類預覽
 #[tauri::command(async)]
 fn classify_postflop_hand(
@@ -400,6 +408,7 @@ fn main() {
             strategy_matrix,
             postflop_nodes,
             postflop_rule,
+            postflop_diagnostics,
             classify_postflop_hand,
             bot_strategy_matrix,
             get_run,

@@ -20,6 +20,7 @@ import type {
   CellOverrideView,
   ChartRowView,
   MatrixCellView,
+  PostflopDiagnosticsView,
   PostflopHandPreviewView,
   PostflopNodesView,
   PostflopOverridesView,
@@ -32,6 +33,7 @@ import type {
 } from '../../../../packages/poker-types/src/index';
 import {
   classifyPostflopHand,
+  postflopDiagnostics,
   postflopNodes,
   postflopRule,
   postflopStrategy,
@@ -345,6 +347,7 @@ function PostflopRules({
   const [undoStack, setUndoStack] = useState<PostflopOverridesView[]>([]);
   /** 批次恢復的二次確認。null 代表沒有待確認的操作 */
   const [pendingBatch, setPendingBatch] = useState<BatchScope | null>(null);
+  const [diagnostics, setDiagnostics] = useState<PostflopDiagnosticsView | null>(null);
 
   useEffect(() => {
     postflopNodes(stage, overrides)
@@ -369,6 +372,12 @@ function PostflopRules({
       setFacingSize('two-thirds');
     }
   }, [nodes, situationKey, line, facingSize]);
+
+  useEffect(() => {
+    postflopDiagnostics(overrides)
+      .then(setDiagnostics)
+      .catch(() => setDiagnostics(null));
+  }, [overrides]);
 
   // 牌力組清單依街別過濾：河牌只有五組
   useEffect(() => {
@@ -427,7 +436,9 @@ function PostflopRules({
     .filter((weight) => weight.available)
     .reduce((sum, weight) => sum + (current[weight.kind] ?? 0), 0);
   const dirty = draft !== null;
-  const canSave = !locked && dirty && total === FULL;
+  // 有 error 就不得保存（UI 規格 D.8）。warning 可保存，留在驗證摘要
+  const blocked = (diagnostics?.errorCount ?? 0) > 0;
+  const canSave = !locked && dirty && total === FULL && !blocked;
 
   const setWeight = (kind: string, myriad: number) =>
     setDraft({ ...current, [kind]: Math.max(0, Math.min(FULL, myriad)) });
@@ -626,6 +637,11 @@ function PostflopRules({
                 合計必須是 100% 才能儲存
               </span>
             )}
+            {blocked && (
+              <span style={{ fontSize: 11, color: 'var(--negative)' }}>
+                有 {diagnostics?.errorCount} 個必須修正的問題，先處理才能儲存
+              </span>
+            )}
             <Chip disabled={!canSave} onClick={save}>
               儲存這個節點
             </Chip>
@@ -676,6 +692,51 @@ function PostflopRules({
             覆寫目前只保存在這次開啟的視窗，<strong>關掉重開會清空</strong>；
             策略庫（命名存檔、複製、匯出）是另一個功能，尚未實作。
             進行中的 run 已在開始時凍結快照，這裡的修改不影響它。
+          </div>
+        </section>
+      )}
+
+      {/* ── 驗證摘要（UI 規格 D.8）── */}
+      {diagnostics && diagnostics.issues.length > 0 && (
+        <section style={{ ...cardStyle, maxWidth: 720 }}>
+          <SectionTitle>
+            驗證摘要（{diagnostics.errorCount} 個錯誤、{diagnostics.warningCount} 個警告）
+          </SectionTitle>
+          <div className="dim" style={{ fontSize: 10, margin: '4px 0 8px', lineHeight: 1.6 }}>
+            遮蔽、重疊與不可達是警告：幾乎一定是寫錯，但擋住保存會讓你連暫存都做不到。
+            只有條件矛盾與來源排序錯誤會阻擋儲存。
+          </div>
+          <div style={{ display: 'grid', gap: 6 }}>
+            {diagnostics.issues.slice(0, 12).map((issue, index) => (
+              <div
+                key={`${issue.ruleId}-${issue.kind}-${index}`}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '64px 1fr',
+                  gap: 10,
+                  fontSize: 11,
+                  lineHeight: 1.6,
+                }}
+              >
+                <span
+                  style={{
+                    color: issue.severity === 'error' ? 'var(--negative)' : 'var(--warning)',
+                    fontWeight: 600,
+                  }}
+                >
+                  {issue.severity === 'error' ? '錯誤' : '警告'}
+                </span>
+                <span>
+                  <strong>{issue.ruleName}</strong>
+                  <span className="dim" style={{ marginLeft: 6 }}>{issue.message}</span>
+                </span>
+              </div>
+            ))}
+            {diagnostics.issues.length > 12 && (
+              <div className="dim" style={{ fontSize: 10 }}>
+                還有 {diagnostics.issues.length - 12} 項，依來源層級排序後只列前 12 項。
+              </div>
+            )}
           </div>
         </section>
       )}

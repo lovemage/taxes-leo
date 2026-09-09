@@ -388,6 +388,8 @@ pub fn execute(
     // 翻後規則以值凍結：這一份是 run 開始那一刻的快照，
     // UI 後續的修改不會滲進來
     agent.set_postflop_rules(crate::postflop::to_rule_set(strategy.postflop_overrides));
+    // 只統計英雄座位的翻後命中（核心規格 5.0：統計主體只有使用者座位）
+    agent.set_hero_seat(hero);
 
     let summary = run_session(config, &mut agent, |played| {
         if aborted || !control.checkpoint() {
@@ -458,6 +460,18 @@ pub fn execute(
         })
         .collect();
     final_manifest.completed = !aborted;
+    // 翻後覆蓋隨 manifest 一起落地：報表要能在 run 結束後說出
+    // 「你的策略涵蓋了多少實際決策」，而不是重跑一次去猜
+    let coverage = agent.postflop_coverage();
+    final_manifest.postflop_coverage = Some(poker_storage::manifest::PostflopCoverageRecord {
+        node_set_version: poker_engine::strategy::postflop::NODE_SET_VERSION.to_owned(),
+        user_hits: coverage.user_hits,
+        official_hits: coverage.official_hits,
+        generic_hits: coverage.generic_hits,
+        engineering_hits: coverage.engineering_hits,
+        fallback_no_rule: coverage.fallback_no_rule,
+        fallback_masked: coverage.fallback_masked,
+    });
 
     {
         let mut guard = store.lock().map_err(|_| "資料庫鎖已毀損")?;
@@ -593,5 +607,6 @@ fn build_manifest(
         created_at,
         completed: false,
         checkpoint_version: 1,
+        postflop_coverage: None,
     }
 }
