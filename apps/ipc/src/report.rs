@@ -24,8 +24,8 @@ use poker_engine::hand::Street;
 use poker_engine::position::{resolve, PositionLabel};
 use poker_engine::rng::{Rng, RngDomain};
 use poker_engine::stats::{
-    estimate_block_length, moving_block_bootstrap, wilson, Estimate, Observation, Proportion,
-    DEFAULT_RESAMPLES,
+    cluster_bootstrap, estimate_block_length, moving_block_bootstrap, ClusterCount, Estimate,
+    Observation, Proportion, DEFAULT_PROPORTION_RESAMPLES, DEFAULT_RESAMPLES,
 };
 use poker_storage::codec::{HandRecord, PostKind};
 use poker_storage::db::Store;
@@ -45,6 +45,21 @@ const SLICE_RESAMPLES: usize = 500;
 /// 一次讀進記憶體的手數。10 萬手的紀錄全部展開約數十 MB，
 /// 分頁讀取讓峰值只跟這個常數有關
 const PAGE: u64 = 4_096;
+
+/// 比例重抽的工作量上限：`重抽次數 × cluster 數`。
+///
+/// cluster bootstrap 的成本就是這個乘積，而桌次數不是小數字——短碼不補碼
+/// 的 10 萬手實測有 2915 個桌次，整份報表要算 99 個比例（7 個頻率、
+/// 2 個整體、最多 30 列 × 3）。固定 1000 次重抽會讓報表多花數百毫秒，
+/// 而 F.4 的門檻是 500ms。
+///
+/// 重抽次數的邊際效益隨次數遞減（區間端點的 Monte Carlo 誤差約 1/√B），
+/// 因此 cluster 多時降低次數的代價，遠小於讓使用者多等半秒。cluster 少時
+/// 預算除不完，仍用呼叫端要求的完整次數。
+const PROPORTION_RESAMPLE_BUDGET: usize = 120_000;
+
+/// 重抽次數下限。再低區間端點自己的雜訊就會蓋過要看的東西。
+const MIN_PROPORTION_RESAMPLES: usize = 200;
 
 // ── DTO ─────────────────────────────────────────────────────────────
 
@@ -67,11 +82,20 @@ pub struct ProportionView {
     /// 點估計，0.0～1.0。分母為 0 時為 null（核心規格 5.4：顯示 N/A）
     #[ts(type = "number | null")]
     pub point: Option<f64>,
-    /// Wilson 區間，0.0～1.0。分母為 0 時為 null
+    /// 95% 區間，0.0～1.0。分母為 0 時為 null
     #[ts(type = "number | null")]
     pub ci_low: Option<f64>,
     #[ts(type = "number | null")]
     pub ci_high: Option<f64>,
+    /// 實際使用的方法。核心規格 5.3 要求 estimator 名稱顯示於報表——
+    /// 「cluster bootstrap」與「Wilson 獨立近似」的可信度不同，
+    /// 兩者長得一樣的話使用者無從分辨
+    pub estimator: String,
+    /// 有效樣本：有分母的桌次數。桌次不足而退回 Wilson 時仍然填實際值，
+    /// 使用者才知道區間為什麼是近似的（核心規格 5.3「有效樣本以 block 數
+    /// 或桌次數計，不以原始手數計」）
+    #[ts(type = "number")]
+    pub effective_clusters: u64,
 }
 
 impl ProportionView {
@@ -85,6 +109,8 @@ impl ProportionView {
             point: p.point(),
             ci_low: has_sample.then_some(p.ci_low),
             ci_high: has_sample.then_some(p.ci_high),
+            estimator: p.estimator.as_str().to_owned(),
+            effective_clusters: p.effective_clusters as u64,
         }
     }
 }
@@ -256,6 +282,7 @@ pub struct ReportView {
 ///
 /// 每一個布林都在讀紀錄時就定案，聚合階段只做加總——「這手算不算
 /// C-bet」的判斷散落在聚合迴圈裡的話，改一個定義要改好幾處。
+#[cfg_attr(test, derive(Default))]
 struct HandFacts {
     instance: u64,
     seated: u8,
@@ -327,6 +354,11 @@ fn analyse(record: &HandRecord, hero: usize, hero_delta: i64, big_blind: u64) ->
     let mut fold_to_cbet = false;
     // 翻牌圈的第一個下注由誰打出。是翻前攻擊者打的才叫 C-bet
     let mut first_flop_bet: Option<usize> = None;
+    // 翻牌圈到目前為止的進攻次數。**只有 1 次時使用者面對的才是 C-bet
+    // 本身**：A 下注、B 加注、使用者棄牌，那是面對加注，不是面對 C-bet。
+    // 少了這個計數，隔位加注造成的棄牌會全部灌進 Fold to C-bet，
+    // 而那個指標存在的唯一用途正是看使用者對 C-bet 的防守鬆緊
+    let mut flop_aggression_count = 0u32;
     // 使用者在翻牌圈的 C-bet 機會／面對 C-bet 只認第一次，
     // 同一手裡的後續下注輪不是 C-bet
     let mut flop_settled = false;
@@ -369,7 +401,10 @@ fn analyse(record: &HandRecord, hero: usize, hero_delta: i64, big_blind: u64) ->
                         cbet_chance = true;
                         cbet = aggressive;
                         flop_settled = true;
-                    } else if first_flop_bet.is_some() && first_flop_bet == preflop_aggressor {
+                    } else if first_flop_bet.is_some()
+                        && first_flop_bet == preflop_aggressor
+                        && flop_aggression_count == 1
+                    {
                         faced_cbet = true;
                         fold_to_cbet = matches!(action.action, Action::Fold);
                         flop_settled = true;
@@ -383,8 +418,11 @@ fn analyse(record: &HandRecord, hero: usize, hero_delta: i64, big_blind: u64) ->
             level = action.committed_to.units();
             match street {
                 Street::Preflop => preflop_aggressor = Some(seat),
-                Street::Flop if before == 0 && first_flop_bet.is_none() => {
-                    first_flop_bet = Some(seat);
+                Street::Flop => {
+                    flop_aggression_count += 1;
+                    if before == 0 && first_flop_bet.is_none() {
+                        first_flop_bet = Some(seat);
+                    }
                 }
                 _ => {}
             }
@@ -455,11 +493,18 @@ fn estimate(facts: &[&HandFacts], seed: u64, resamples: usize) -> Estimate {
 }
 
 /// 樣本標準差、每百手標準差與最大回撤。
+///
+/// 兩者的樣本數要求不同，因此**分開判斷**：標準差的分母是 `n − 1`，
+/// 一筆樣本算不出來；最大回撤只是累計曲線的峰谷差，第一手輸 10 bb
+/// 的回撤就是 10 bb。綁在同一個 `n < 2` 判斷裡，只完成一手的部分結果
+/// 會顯示回撤為 0，而那手明明是輸的。
 #[allow(clippy::cast_precision_loss)]
 fn dispersion(facts: &[&HandFacts]) -> (f64, f64, f64) {
+    let drawdown = max_drawdown(facts);
+
     let n = facts.len();
     if n < 2 {
-        return (0.0, 0.0, 0.0);
+        return (0.0, 0.0, drawdown);
     }
     let mean = facts.iter().map(|f| f.delta_bb).sum::<f64>() / n as f64;
     let variance = facts
@@ -469,8 +514,14 @@ fn dispersion(facts: &[&HandFacts]) -> (f64, f64, f64) {
         / (n - 1) as f64;
     let sigma = variance.sqrt();
 
-    // 最大回撤：累計曲線的最大峰谷差。用累計而非逐手，因為連續小輸
-    // 造成的深谷才是使用者真正會經歷的事
+    (sigma, sigma * 10.0, drawdown)
+}
+
+/// 累計盈虧曲線的最大峰谷差。
+///
+/// 用累計而非逐手，因為連續小輸造成的深谷才是使用者真正會經歷的事。
+/// 峰值由 0 起算：還沒開始打就是持平，第一手就輸的話那一段本身即是回撤。
+fn max_drawdown(facts: &[&HandFacts]) -> f64 {
     let mut cumulative = 0.0;
     let mut peak = 0.0f64;
     let mut drawdown = 0.0f64;
@@ -479,64 +530,123 @@ fn dispersion(facts: &[&HandFacts]) -> (f64, f64, f64) {
         peak = peak.max(cumulative);
         drawdown = drawdown.max(peak - cumulative);
     }
-
-    (sigma, sigma * 10.0, drawdown)
+    drawdown
 }
 
 fn count(facts: &[&HandFacts], predicate: impl Fn(&HandFacts) -> bool) -> u64 {
     facts.iter().filter(|f| predicate(f)).count() as u64
 }
 
+/// 逐手事實依桌次聚合成 cluster 計數。
+///
+/// `measure` 回傳該手的（分子, 分母）。分母為 0 代表這手沒有製造機會，
+/// 例如沒有面對加注的手不進 3-bet 的分母。
+fn clusters(
+    facts: &[&HandFacts],
+    measure: impl Fn(&HandFacts) -> (u64, u64),
+) -> Vec<ClusterCount> {
+    let mut by_instance: BTreeMap<u64, ClusterCount> = BTreeMap::new();
+    for f in facts {
+        let (numerator, denominator) = measure(f);
+        let entry = by_instance.entry(f.instance).or_default();
+        entry.numerator += numerator;
+        entry.denominator += denominator;
+    }
+    by_instance.into_values().collect()
+}
+
+/// 一個比例指標，以桌次為 cluster 估計區間。
+///
+/// **不直接呼叫 `wilson()`。** 同一桌次內的手牌不是獨立樣本：籌碼深度、
+/// 對手組成與位置循環都跨手延續，某一桌打得緊會讓那一整段的 VPIP 一起
+/// 偏低。把 600 手當成 600 筆獨立觀測，區間會窄到與證據不相稱
+/// （核心規格 5.3、UI 規格 F.3.1）。桌次不足時 `cluster_bootstrap`
+/// 自己退回 Wilson，並在 `estimator` 如實標示。
+fn proportion(
+    label: &str,
+    definition: &str,
+    facts: &[&HandFacts],
+    resamples: usize,
+    rng: &mut Rng,
+    measure: impl Fn(&HandFacts) -> (u64, u64),
+) -> ProportionView {
+    let counts = clusters(facts, measure);
+    let contributing = counts.iter().filter(|c| c.denominator > 0).count();
+    let resamples = (PROPORTION_RESAMPLE_BUDGET / contributing.max(1))
+        .clamp(MIN_PROPORTION_RESAMPLES.min(resamples), resamples);
+
+    ProportionView::new(label, definition, cluster_bootstrap(&counts, resamples, rng))
+}
+
+/// 比例重抽用的 rng。
+///
+/// 與 EV 的 stream 分開（EV 用 index 0），否則兩者會互相移動同一條序列，
+/// 加一個指標就讓既有指標的區間跟著變。
+fn proportion_rng(seed: u64, index: u64) -> Rng {
+    Rng::derive(seed, index, RngDomain::Stats)
+}
+
 /// 行為頻率（UI 規格 F.4／F.2）。
-fn frequencies(facts: &[&HandFacts]) -> Vec<ProportionView> {
-    let hands = facts.len() as u64;
-    let faced_raise: u64 = facts.iter().map(|f| f.faced_raise).sum();
-    let three_bet: u64 = facts.iter().map(|f| f.three_bet).sum();
+fn frequencies(facts: &[&HandFacts], seed: u64) -> Vec<ProportionView> {
+    let mut rng = proportion_rng(seed, 1);
+    let n = DEFAULT_PROPORTION_RESAMPLES;
 
     vec![
-        ProportionView::new(
+        proportion(
             "VPIP",
             "自願投入籌碼進池手數 ÷ 總手數",
-            wilson(count(facts, |f| f.vpip), hands),
+            facts,
+            n,
+            &mut rng,
+            |f| (u64::from(f.vpip), 1),
         ),
-        ProportionView::new(
+        proportion(
             "PFR",
             "翻前加注手數 ÷ 總手數",
-            wilson(count(facts, |f| f.pfr), hands),
+            facts,
+            n,
+            &mut rng,
+            |f| (u64::from(f.pfr), 1),
         ),
-        ProportionView::new(
+        proportion(
             "3-bet",
             "翻前再加注次數 ÷ 面對加注機會次數",
-            wilson(three_bet, faced_raise),
+            facts,
+            n,
+            &mut rng,
+            |f| (f.three_bet, f.faced_raise),
         ),
-        ProportionView::new(
+        proportion(
             "C-bet",
             "翻牌圈下注次數 ÷ 作為翻前攻擊者可下注次數",
-            wilson(count(facts, |f| f.cbet), count(facts, |f| f.cbet_chance)),
+            facts,
+            n,
+            &mut rng,
+            |f| (u64::from(f.cbet), u64::from(f.cbet_chance)),
         ),
-        ProportionView::new(
+        proportion(
             "Fold to C-bet",
-            "面對 C-bet 棄牌次數 ÷ 面對 C-bet 次數",
-            wilson(
-                count(facts, |f| f.fold_to_cbet),
-                count(facts, |f| f.faced_cbet),
-            ),
+            "面對 C-bet 棄牌次數 ÷ 面對 C-bet 次數（不含 C-bet 後又被加注的節點）",
+            facts,
+            n,
+            &mut rng,
+            |f| (u64::from(f.fold_to_cbet), u64::from(f.faced_cbet)),
         ),
-        ProportionView::new(
+        proportion(
             "WTSD",
             "進入攤牌手數 ÷ 看到翻牌手數",
-            wilson(
-                count(facts, |f| f.showdown && f.saw_flop),
-                count(facts, |f| f.saw_flop),
-            ),
+            facts,
+            n,
+            &mut rng,
+            |f| (u64::from(f.showdown && f.saw_flop), u64::from(f.saw_flop)),
         ),
-        ProportionView::new(
+        proportion(
             "W$SD",
             "攤牌贏得籌碼手數 ÷ 進入攤牌手數（含平分，與「攤牌獲勝比例」的獨贏定義不同）",
-            wilson(
-                count(facts, |f| f.showdown_money),
-                count(facts, |f| f.showdown),
-            ),
+            facts,
+            n,
+            &mut rng,
+            |f| (u64::from(f.showdown_money), u64::from(f.showdown)),
         ),
     ]
 }
@@ -555,26 +665,38 @@ fn position_rows(facts: &[&HandFacts], seed: u64) -> Vec<PositionRowView> {
 
     groups
         .into_iter()
-        .map(|((seated, label), rows)| {
-            let hands = rows.len() as u64;
+        .enumerate()
+        .map(|(index, ((seated, label), rows))| {
+            // 每列自己的 stream。共用一個 rng 的話，插入一個新桌型會讓
+            // 它後面每一列的區間全部改變，看起來像資料變了
+            let mut rng = proportion_rng(seed, 100 + index as u64);
             PositionRowView {
                 seated,
                 position: label.as_str().to_owned(),
                 ev: estimate(&rows, seed, SLICE_RESAMPLES).into(),
-                hands_won: ProportionView::new(
+                hands_won: proportion(
                     "獲勝手數比例",
                     "獨贏手數 ÷ 該切片手數",
-                    wilson(count(&rows, |f| f.sole_win), hands),
+                    &rows,
+                    SLICE_RESAMPLES,
+                    &mut rng,
+                    |f| (u64::from(f.sole_win), 1),
                 ),
-                vpip: ProportionView::new(
+                vpip: proportion(
                     "VPIP",
                     "自願投入籌碼進池手數 ÷ 該切片手數",
-                    wilson(count(&rows, |f| f.vpip), hands),
+                    &rows,
+                    SLICE_RESAMPLES,
+                    &mut rng,
+                    |f| (u64::from(f.vpip), 1),
                 ),
-                pfr: ProportionView::new(
+                pfr: proportion(
                     "PFR",
                     "翻前加注手數 ÷ 該切片手數",
-                    wilson(count(&rows, |f| f.pfr), hands),
+                    &rows,
+                    SLICE_RESAMPLES,
+                    &mut rng,
+                    |f| (u64::from(f.pfr), 1),
                 ),
             }
         })
@@ -647,23 +769,27 @@ pub fn report(store: &Store, run_id: i64, include_dead: bool) -> Result<ReportVi
     let hands = all.len() as u64;
     let (sigma_bb, sigma100_bb, max_drawdown_bb) = dispersion(&all);
     let seed = manifest.master_seed;
+    let mut overall_rng = proportion_rng(seed, 2);
 
     let overall = OverallView {
         ev: estimate(&all, seed, DEFAULT_RESAMPLES).into(),
         net_bb: all.iter().map(|f| f.delta_bb).sum(),
-        hands_won: ProportionView::new(
+        hands_won: proportion(
             "獲勝手數比例",
             "獨贏手數 ÷ 總手數（含棄牌手，9-max 下典型 10–15%）",
-            wilson(count(&all, |f| f.sole_win), hands),
+            &all,
+            DEFAULT_PROPORTION_RESAMPLES,
+            &mut overall_rng,
+            |f| (u64::from(f.sole_win), 1),
         ),
         ties: count(&all, |f| f.tie),
-        showdown_won: ProportionView::new(
+        showdown_won: proportion(
             "攤牌獲勝比例",
             "攤牌獨贏手數 ÷ 進入攤牌手數",
-            wilson(
-                count(&all, |f| f.showdown_sole_win),
-                count(&all, |f| f.showdown),
-            ),
+            &all,
+            DEFAULT_PROPORTION_RESAMPLES,
+            &mut overall_rng,
+            |f| (u64::from(f.showdown_sole_win), u64::from(f.showdown)),
         ),
         sigma_bb,
         sigma100_bb,
@@ -695,10 +821,256 @@ pub fn report(store: &Store, run_id: i64, include_dead: bool) -> Result<ReportVi
             completed: manifest.completed,
         },
         overall,
-        frequencies: frequencies(&all),
+        frequencies: frequencies(&all, seed),
         positions: position_rows(&sliced, seed),
         tables: tables(&manifest),
         include_dead,
         dead_hands: count(&all, |f| f.dead),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use poker_engine::card::Card;
+    use poker_engine::chips::Chips;
+    use poker_storage::codec::{RecordedAction, RecordedPost};
+
+    use super::*;
+
+    const HERO: usize = 0;
+    const SEATS: usize = 6;
+
+    fn chips(n: u64) -> Chips {
+        Chips::new(n)
+    }
+
+    fn act(seat: u8, street: Street, action: Action, committed_to: u64) -> RecordedAction {
+        RecordedAction {
+            street,
+            seat,
+            action,
+            committed_to: chips(committed_to),
+        }
+    }
+
+    /// 6 人桌、BB 在座位 1，因此使用者（座位 0）是 SB、座位 5 是 BTN。
+    /// 盲注 1／2，翻牌固定為一個不影響分類的乾燥面
+    fn record(actions: Vec<RecordedAction>) -> HandRecord {
+        HandRecord {
+            hand_index: 0,
+            instance_index: 0,
+            occupied: vec![true; SEATS],
+            big_blind_seat: 1,
+            hole_cards: vec![None; SEATS],
+            revealed: vec![false; SEATS],
+            board: ["As", "7d", "2c"]
+                .iter()
+                .map(|t| Card::parse(t).expect("合法牌面"))
+                .collect(),
+            actions,
+            starting_stacks: vec![chips(400); SEATS],
+            posts: vec![
+                RecordedPost {
+                    seat: 0,
+                    kind: PostKind::SmallBlind,
+                    amount: chips(1),
+                },
+                RecordedPost {
+                    seat: 1,
+                    kind: PostKind::BigBlind,
+                    amount: chips(2),
+                },
+            ],
+            payouts: vec![chips(0); SEATS],
+            refunds: vec![chips(0); SEATS],
+            rake: chips(0),
+        }
+    }
+
+    fn analyse_hero(actions: Vec<RecordedAction>) -> HandFacts {
+        analyse(&record(actions), HERO, 0, 2).expect("使用者在桌")
+    }
+
+    /// 座位 2 翻前加注到 6、使用者跟注的共同開場
+    fn opened_by_seat_two() -> Vec<RecordedAction> {
+        vec![
+            act(2, Street::Preflop, Action::RaiseTo(chips(6)), 6),
+            act(0, Street::Preflop, Action::Call, 6),
+        ]
+    }
+
+    // ── Fold to C-bet 的分母 ─────────────────────────────────────
+
+    #[test]
+    fn 面對_c_bet_直接棄牌計入防守指標() {
+        let mut actions = opened_by_seat_two();
+        actions.extend([
+            act(2, Street::Flop, Action::RaiseTo(chips(10)), 10),
+            act(0, Street::Flop, Action::Fold, 0),
+        ]);
+        let facts = analyse_hero(actions);
+
+        assert!(facts.faced_cbet);
+        assert!(facts.fold_to_cbet);
+    }
+
+    #[test]
+    fn 面對_c_bet_跟注計入分母但不計入分子() {
+        let mut actions = opened_by_seat_two();
+        actions.extend([
+            act(2, Street::Flop, Action::RaiseTo(chips(10)), 10),
+            act(0, Street::Flop, Action::Call, 10),
+        ]);
+        let facts = analyse_hero(actions);
+
+        assert!(facts.faced_cbet);
+        assert!(!facts.fold_to_cbet);
+    }
+
+    #[test]
+    fn c_bet_被隔位加注後的棄牌不算_fold_to_c_bet() {
+        // 座位 2 翻前加注、使用者與座位 3 跟注；翻牌座位 2 下注 10，
+        // 座位 3 加注到 30，使用者棄牌。使用者面對的是加注，不是 C-bet
+        let mut actions = opened_by_seat_two();
+        actions.push(act(3, Street::Preflop, Action::Call, 6));
+        actions.extend([
+            act(2, Street::Flop, Action::RaiseTo(chips(10)), 10),
+            act(3, Street::Flop, Action::RaiseTo(chips(30)), 30),
+            act(0, Street::Flop, Action::Fold, 0),
+        ]);
+        let facts = analyse_hero(actions);
+
+        assert!(
+            !facts.faced_cbet,
+            "面對加注的棄牌灌進 Fold to C-bet，會讓防守指標看起來比實際鬆"
+        );
+        assert!(!facts.fold_to_cbet);
+    }
+
+    #[test]
+    fn 使用者過牌後面對的下注不是_c_bet() {
+        // 使用者翻前加注、翻牌過牌，對手下注後棄牌：那是 stab，
+        // 使用者自己才是 C-bet 機會的一方
+        let actions = vec![
+            act(0, Street::Preflop, Action::RaiseTo(chips(6)), 6),
+            act(2, Street::Preflop, Action::Call, 6),
+            act(0, Street::Flop, Action::Check, 0),
+            act(2, Street::Flop, Action::RaiseTo(chips(10)), 10),
+            act(0, Street::Flop, Action::Fold, 0),
+        ];
+        let facts = analyse_hero(actions);
+
+        assert!(facts.cbet_chance, "使用者是翻前攻擊者，這是一次 C-bet 機會");
+        assert!(!facts.cbet, "他過牌了");
+        assert!(!facts.faced_cbet);
+        assert!(!facts.fold_to_cbet);
+    }
+
+    #[test]
+    fn 翻前攻擊者下注記為_c_bet() {
+        let actions = vec![
+            act(0, Street::Preflop, Action::RaiseTo(chips(6)), 6),
+            act(2, Street::Preflop, Action::Call, 6),
+            act(0, Street::Flop, Action::RaiseTo(chips(8)), 8),
+        ];
+        let facts = analyse_hero(actions);
+
+        assert!(facts.cbet_chance && facts.cbet);
+        assert!(!facts.faced_cbet, "自己下注不算面對 C-bet");
+    }
+
+    #[test]
+    fn 非翻前攻擊者的下注不是_c_bet() {
+        // 座位 2 翻前加注，但翻牌是座位 3 先下注：那是 donk bet
+        let mut actions = opened_by_seat_two();
+        actions.push(act(3, Street::Preflop, Action::Call, 6));
+        actions.extend([
+            act(3, Street::Flop, Action::RaiseTo(chips(10)), 10),
+            act(0, Street::Flop, Action::Fold, 0),
+        ]);
+        let facts = analyse_hero(actions);
+
+        assert!(!facts.faced_cbet);
+        assert!(!facts.fold_to_cbet);
+    }
+
+    // ── 最大回撤 ─────────────────────────────────────────────────
+
+    fn facts_from(deltas: &[f64]) -> Vec<HandFacts> {
+        deltas
+            .iter()
+            .map(|&delta_bb| HandFacts {
+                delta_bb,
+                ..Default::default()
+            })
+            .collect()
+    }
+
+    fn dispersion_of(deltas: &[f64]) -> (f64, f64, f64) {
+        let owned = facts_from(deltas);
+        let refs: Vec<&HandFacts> = owned.iter().collect();
+        dispersion(&refs)
+    }
+
+    #[test]
+    fn 空資料的離散度全為零() {
+        assert_eq!(dispersion_of(&[]), (0.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn 只有一手且輸錢時仍回報回撤() {
+        let (sigma, sigma100, drawdown) = dispersion_of(&[-10.0]);
+        // 標準差的分母是 n−1，一筆樣本算不出來
+        assert_eq!(sigma, 0.0);
+        assert_eq!(sigma100, 0.0);
+        assert!(
+            (drawdown - 10.0).abs() < 1e-9,
+            "第一手輸 10 bb 的回撤就是 10 bb，不是 0"
+        );
+    }
+
+    #[test]
+    fn 只有一手且贏錢時回撤為零() {
+        let (_, _, drawdown) = dispersion_of(&[10.0]);
+        assert!(drawdown.abs() < 1e-9);
+    }
+
+    #[test]
+    fn 回撤取累計曲線的峰谷差() {
+        // 累計：10 → −20，峰值 10、谷底 −20，峰谷差 30
+        let (_, _, drawdown) = dispersion_of(&[10.0, -30.0]);
+        assert!((drawdown - 30.0).abs() < 1e-9, "實際 {drawdown}");
+    }
+
+    #[test]
+    fn 一路上漲時沒有回撤() {
+        let (_, _, drawdown) = dispersion_of(&[1.0, 2.0, 3.0]);
+        assert!(drawdown.abs() < 1e-9);
+    }
+
+    // ── 比例的桌次聚合 ───────────────────────────────────────────
+
+    #[test]
+    fn 比例依桌次聚合為_cluster() {
+        let owned: Vec<HandFacts> = (0..10)
+            .map(|i| HandFacts {
+                instance: i / 5,
+                vpip: i % 2 == 0,
+                ..Default::default()
+            })
+            .collect();
+        let refs: Vec<&HandFacts> = owned.iter().collect();
+        let counts = clusters(&refs, |f| (u64::from(f.vpip), 1));
+
+        assert_eq!(counts.len(), 2, "兩個桌次應聚成兩個 cluster");
+        for c in &counts {
+            assert_eq!(c.denominator, 5);
+            assert_eq!(c.numerator, 3.min(c.numerator), "分子不得超過該桌次的手數");
+        }
+        assert_eq!(
+            counts.iter().map(|c| c.denominator).sum::<u64>(),
+            10,
+            "cluster 分母合計必須等於總手數"
+        );
+    }
 }

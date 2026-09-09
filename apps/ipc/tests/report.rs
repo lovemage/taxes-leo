@@ -21,6 +21,7 @@ use poker_storage::manifest::{
 };
 use poker_storage::Store;
 
+use poker_engine::stats::MIN_CLUSTERS_FOR_BOOTSTRAP;
 use poker_ipc::report::{ProportionView, ReportView};
 use poker_ipc::IpcHandler;
 
@@ -96,7 +97,11 @@ fn full_table() -> SessionConfig {
 }
 
 /// 不補碼，且使用者以外的座位只有 20 籌碼。跟注站互相全下，座位會一個個
-/// 空出來——`include_dead` 要有東西可測，就必須真的打出 dead button 的手
+/// 空出來——`include_dead` 要有東西可測，就必須真的打出 dead button 的手。
+///
+/// 手數開到 900 是為了讓桌次數跨過 [`MIN_CLUSTERS_FOR_BOOTSTRAP`]：桌次
+/// 不夠的話比例會全部退回 Wilson，cluster bootstrap 這條路在整合層等於
+/// 沒有被走到（實測每個桌次約 33 手）
 fn busting_table() -> SessionConfig {
     let mut stacks = vec![c(20); 9];
     // 使用者不出局，run 才不會在第一次全下就結束
@@ -107,7 +112,7 @@ fn busting_table() -> SessionConfig {
         starting_stacks: stacks,
         auto_refill: None,
         hero_seat: HERO,
-        hand_limit: 300,
+        hand_limit: 900,
         master_seed: 777,
     }
 }
@@ -266,6 +271,11 @@ fn 比例指標一律附分子分母與區間() {
         assert!(!p.label.is_empty(), "指標必須有名稱");
         assert!(!p.definition.is_empty(), "{} 缺少定義說明", p.label);
         assert!(
+            !p.estimator.is_empty(),
+            "{} 缺少 estimator 名稱（核心規格 5.3）",
+            p.label
+        );
+        assert!(
             p.numerator <= p.denominator,
             "{}：分子 {} 大於分母 {}",
             p.label,
@@ -324,6 +334,52 @@ fn 頻率清單涵蓋規格列出的七個行為指標() {
     // VPIP／PFR 的分母是總手數，與整體卡同一份樣本
     assert_eq!(report.frequencies[0].denominator, report.scope.hands);
     assert_eq!(report.frequencies[1].denominator, report.scope.hands);
+}
+
+#[test]
+fn 比例的_estimator_與有效桌次數如實揭露() {
+    // 同一桌次內的手牌不是獨立樣本，因此比例的區間走 cluster bootstrap；
+    // 桌次不足時退回 Wilson，但必須說出來（核心規格 5.3、UI 規格 F.3.1）
+    let (handler, run_id) = prepared(&busting_table());
+    let report = handler.report(run_id, false).expect("報表");
+
+    for p in all_proportions(&report) {
+        assert!(
+            p.effective_clusters <= report.scope.instance_count,
+            "{}：有效桌次 {} 不得超過總桌次 {}",
+            p.label,
+            p.effective_clusters,
+            report.scope.instance_count
+        );
+
+        let clusters =
+            usize::try_from(p.effective_clusters).expect("桌次數必在 usize 範圍");
+        if clusters >= MIN_CLUSTERS_FOR_BOOTSTRAP {
+            assert!(
+                p.estimator.contains("cluster bootstrap"),
+                "{}：{} 個桌次足以做 cluster bootstrap，卻標成「{}」",
+                p.label,
+                clusters,
+                p.estimator
+            );
+        } else {
+            assert!(
+                p.estimator.contains("Wilson"),
+                "{}：只有 {} 個桌次時不得冒充 cluster bootstrap（標成「{}」）",
+                p.label,
+                clusters,
+                p.estimator
+            );
+        }
+    }
+
+    assert!(
+        all_proportions(&report)
+            .iter()
+            .any(|p| p.estimator.contains("cluster bootstrap")),
+        "測試資料的桌次數（實際 {}）必須跨過 {MIN_CLUSTERS_FOR_BOOTSTRAP} 的門檻，否則 cluster bootstrap 這條路在整合層根本沒被走到",
+        report.scope.instance_count
+    );
 }
 
 #[test]
@@ -395,6 +451,14 @@ fn 報表_dto_序列化為_camel_case_供前端直接使用() {
     let ev = overall.get("ev").expect("ev");
     for key in ["ciLow", "ciHigh", "halfWidth", "effectiveBlocks"] {
         assert!(ev.get(key).is_some(), "ev 缺少 {key}");
+    }
+
+    let vpip = json
+        .get("frequencies")
+        .and_then(|f| f.get(0))
+        .expect("第一個頻率");
+    for key in ["ciLow", "ciHigh", "estimator", "effectiveClusters"] {
+        assert!(vpip.get(key).is_some(), "比例缺少 {key}");
     }
 
     let tables = json.get("tables").expect("tables");

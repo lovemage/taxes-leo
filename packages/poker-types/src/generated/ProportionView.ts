@@ -20,6 +20,18 @@ definition: string, numerator: number, denominator: number,
  */
 point: number | null, 
 /**
- * Wilson 區間，0.0～1.0。分母為 0 時為 null
+ * 95% 區間，0.0～1.0。分母為 0 時為 null
  */
-ciLow: number | null, ciHigh: number | null, };
+ciLow: number | null, ciHigh: number | null, 
+/**
+ * 實際使用的方法。核心規格 5.3 要求 estimator 名稱顯示於報表——
+ * 「cluster bootstrap」與「Wilson 獨立近似」的可信度不同，
+ * 兩者長得一樣的話使用者無從分辨
+ */
+estimator: string, 
+/**
+ * 有效樣本：有分母的桌次數。桌次不足而退回 Wilson 時仍然填實際值，
+ * 使用者才知道區間為什麼是近似的（核心規格 5.3「有效樣本以 block 數
+ * 或桌次數計，不以原始手數計」）
+ */
+effectiveClusters: number, };

@@ -20,4 +20,7 @@ pub use power::{
     hands_required, preview, preview_all, AnalysisLevel, PowerPreview, PLANNING_SIGMA_BB100,
     TARGET_HALF_WIDTH_BB100,
 };
-pub use proportion::{wilson, Proportion};
+pub use proportion::{
+    cluster_bootstrap, wilson, ClusterCount, Proportion, ProportionEstimator,
+    DEFAULT_PROPORTION_RESAMPLES, MIN_CLUSTERS_FOR_BOOTSTRAP,
+};

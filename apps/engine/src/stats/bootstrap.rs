@@ -243,8 +243,10 @@ fn mean(series: &[f64]) -> f64 {
     series.iter().sum::<f64>() / series.len() as f64
 }
 
+/// 已排序序列的百分位。比例的 cluster bootstrap 共用同一個取法，
+/// 兩處各寫一份的話，同一份資料在兩個指標上會落在不同的位置
 #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-fn percentile(sorted: &[f64], p: f64) -> f64 {
+pub(crate) fn percentile(sorted: &[f64], p: f64) -> f64 {
     if sorted.is_empty() {
         return 0.0;
     }
