@@ -27,7 +27,9 @@ use poker_engine::strategy::default_chart::{
     raise_size_centi_bb, ChartAction, ChartDepth, ChartEntry, DefaultChart, CHART_VERSION,
 };
 use poker_engine::strategy::hand_class::HandClass;
-use poker_engine::strategy::postflop::{BoardTexture, PostflopActionKind, PostflopSituation};
+use poker_engine::strategy::postflop::{
+    BoardConnectivity, BoardSurface, PostflopActionKind, PostflopSituation,
+};
 use poker_engine::strategy::preflop::{
     all_buckets, enumerate_nodes, positions_for, scenarios_for, PreflopNode, PreflopScenario,
 };
@@ -123,15 +125,17 @@ pub struct PostflopSituationView {
     pub actions: Vec<PostflopActionOptionView>,
 }
 
-/// 八個可供規則比對的牌面標籤。
+/// 一個牌面軸上的可選值。
+///
+/// 外觀與順子結構是**兩個獨立的軸**，因此各自產生一份清單，不再混裝成
+/// 一個帶 `dimension` 欄位的八項清單——混裝的話 UI 只能靠字串比對把它們
+/// 拆回兩組，而規則條件本來就是兩個欄位。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
 #[serde(rename_all = "camelCase")]
 pub struct PostflopTextureView {
     pub key: String,
     pub label: String,
-    /// 花色／公對與乾／濕為兩個維度，同一牌面各命中一項。
-    pub dimension: String,
     pub description: String,
 }
 
@@ -144,7 +148,10 @@ pub struct PostflopStrategyView {
     pub consultant_approved: bool,
     pub streets: Vec<PostflopStreetView>,
     pub situations: Vec<PostflopSituationView>,
-    pub textures: Vec<PostflopTextureView>,
+    /// 牌面外觀，六選一
+    pub surfaces: Vec<PostflopTextureView>,
+    /// 順子結構，二選一。與 `surfaces` 共同決定一個牌面節點
+    pub connectivities: Vec<PostflopTextureView>,
     pub note: String,
 }
 
@@ -417,13 +424,20 @@ pub fn postflop_strategy() -> PostflopStrategyView {
         consultant_approved: false,
         streets,
         situations,
-        textures: BoardTexture::ALL
+        surfaces: BoardSurface::ALL
             .into_iter()
-            .map(|texture| PostflopTextureView {
-                key: texture.key().to_owned(),
-                label: texture.label().to_owned(),
-                dimension: texture.dimension().to_owned(),
-                description: texture.description().to_owned(),
+            .map(|surface| PostflopTextureView {
+                key: surface.key().to_owned(),
+                label: surface.label().to_owned(),
+                description: surface.description().to_owned(),
+            })
+            .collect(),
+        connectivities: BoardConnectivity::ALL
+            .into_iter()
+            .map(|connectivity| PostflopTextureView {
+                key: connectivity.key().to_owned(),
+                label: connectivity.label().to_owned(),
+                description: connectivity.description().to_owned(),
             })
             .collect(),
         note: "三街已使用牌面分類與 1/3、2/3、1 倍底池尺度；行動頻率目前由未經顧問簽核的工程基準產生。"
@@ -862,7 +876,9 @@ mod tests {
             ["flop", "turn", "river"]
         );
         assert_eq!(view.situations.len(), 2);
-        assert_eq!(view.textures.len(), 8);
+        // 六個外觀 × 兩種順子結構是兩個獨立的軸，不是八選一
+        assert_eq!(view.surfaces.len(), 6);
+        assert_eq!(view.connectivities.len(), 2);
         assert!(!view.consultant_approved);
     }
 

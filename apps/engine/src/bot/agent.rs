@@ -23,7 +23,7 @@ use crate::strategy::cell_override::CellOverrides;
 use crate::strategy::default_chart::ChartShift;
 use crate::strategy::distribution::{ActionDistribution, Myriad, FULL};
 use crate::strategy::postflop::{
-    classify_board, BoardTexture, BoardTextures, PostflopActionKind, PostflopSituation,
+    classify_board, BoardConnectivity, BoardTextures, PostflopActionKind, PostflopSituation,
 };
 use crate::strategy::preflop::{PreflopNode, PreflopScenario};
 use crate::strategy::ranking::EquityRanking;
@@ -301,7 +301,7 @@ fn postflop_raise_weights(
     if total == 0 {
         return Vec::new();
     }
-    let shares = if textures.contains(BoardTexture::Wet) {
+    let shares = if textures.connectivity() == BoardConnectivity::Wet {
         [1_000u64, 5_500, 3_500]
     } else {
         [6_000u64, 3_000, 1_000]

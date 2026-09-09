@@ -6,4 +6,12 @@ import type { PostflopTextureView } from "./PostflopTextureView";
 /**
  * 面板 D 的翻後策略節點定義。
  */
-export type PostflopStrategyView = { version: string, consultantApproved: boolean, streets: Array<PostflopStreetView>, situations: Array<PostflopSituationView>, textures: Array<PostflopTextureView>, note: string, };
+export type PostflopStrategyView = { version: string, consultantApproved: boolean, streets: Array<PostflopStreetView>, situations: Array<PostflopSituationView>, 
+/**
+ * 牌面外觀，六選一
+ */
+surfaces: Array<PostflopTextureView>, 
+/**
+ * 順子結構，二選一。與 `surfaces` 共同決定一個牌面節點
+ */
+connectivities: Array<PostflopTextureView>, note: string, };

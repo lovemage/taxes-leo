@@ -231,22 +231,23 @@ export function StrategyNav({
 
           <section style={{ marginBottom: 18 }}>
             <SectionTitle>牌面分類</SectionTitle>
-            {['花色／公對', '順子結構'].map((dimension) => (
+            {[
+              { dimension: '牌面外觀', options: postflop?.surfaces ?? [] },
+              { dimension: '順子結構', options: postflop?.connectivities ?? [] },
+            ].map(({ dimension, options }) => (
               <div key={dimension} style={{ marginBottom: 10 }}>
                 <div className="dim" style={{ fontSize: 10, marginBottom: 3 }}>
                   {dimension}
                 </div>
-                {(postflop?.textures ?? [])
-                  .filter((texture) => texture.dimension === dimension)
-                  .map((texture) => (
-                    <div
-                      key={texture.key}
-                      title={texture.description}
-                      style={{ padding: '3px 8px', fontSize: 11, color: 'var(--text-secondary)' }}
-                    >
-                      {texture.label}
-                    </div>
-                  ))}
+                {options.map((texture) => (
+                  <div
+                    key={texture.key}
+                    title={texture.description}
+                    style={{ padding: '3px 8px', fontSize: 11, color: 'var(--text-secondary)' }}
+                  >
+                    {texture.label}
+                  </div>
+                ))}
               </div>
             ))}
             <div className="dim" style={{ fontSize: 10, lineHeight: 1.5 }}>

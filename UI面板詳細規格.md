@@ -569,21 +569,59 @@
 
 | 欄位 | 型別 | 說明 |
 |---|---|---|
+| id | string | 穩定識別碼，供 UI 顯示「你的規則 R#」與 trace 引用 |
+| source | enum | `userOverride`／`official`／`generic`／`engineeringFallback`；解析順序即此順序 |
+| version | string | 內容版本，隨規則列一起進 manifest |
+| consultantApproved | bool | 未簽核內容不得顯示為 GTO 或正式顧問策略 |
 | street | enum | flop／turn／river |
-| boardTexture | enum | 乾／濕／成對／單色／三同花／順子面／高張… |
-| handStrength | enum | value／bluff／bluffcatcher／draw／其他分桶 |
+| boardSurface | enum | 牌面外觀六選一：花面／聽花面／彩虹面／彩虹公對面／聽花公對面／三條面 |
+| boardConnectivity | enum | 順子結構二選一：乾燥／濕潤。與 `boardSurface` 是**獨立的另一軸** |
+| handStrength | enum | 八組：nuts／madePlusDraw／strongMade／mediumMade／bluffCatcher／strongDraw／weakDraw／air |
+| line | struct | 牌局線路，見下方 action history 軸 |
 | activePlayers | integer／range | 本街仍在牌局的人數 |
-| actionOrder | struct | 英雄行動順位及各存活對手的相對位置；多人底池不得只用 IP／OOP |
+| opponentsBehind | integer／range | 英雄身後仍會行動的對手數；多人底池不得只用 IP／OOP |
+| heroPosition | enum | 英雄的位置標籤 |
 | potType | enum | SRP／3-bet Pot／4-bet Pot |
-| currentStreetAction | struct | 當前街截至此節點的公開行動序列 |
-| prevAction | struct | 前街公開行動序列 |
-| facingSize | enum | 面對下注尺度級距（1/4、1/3、1/2、2/3、3/4、1x、overbet…） |
+| facingSize | enum | 面對下注尺度級距（1/4、1/3、1/2、2/3、3/4、1x、overbet…）。第一版 UI 只提供 1/3、2/3、1x 三檔，完整級距仍保留在引擎條件層 |
 | spr | range | SPR 區間 |
-| effectiveStacks | struct | 英雄與相關存活對手的有效籌碼 bucket |
+| effectiveStackBucket | enum | 有效籌碼分檔，沿用翻前既有的 bucket 邊界（規則細則 8.5），不新增第二套 |
 | actions | freq[] | Fold／Check／Call／Bet(sz)／Raise(sz)／All-in 各頻率 |
 
+**牌面是兩個軸，不是八選一。** 同一個牌面同時具有一個外觀與一個順子結構（例如「彩虹面＋濕潤面」）。規則可以只指定其中一軸作為廣域條件，也可以同時指定兩軸精確匹配；「彩虹乾燥」與「彩虹濕潤」必須能設定不同策略。
+
+**action history 的軸**（`line`）：
+
+| 軸 | 型別 | 說明 |
+|---|---|---|
+| previousStreetAggressor | enum | `hero`／`opponent`／`none` |
+| lastAggressorBeforeCurrentStreet | enum | 跨街回溯、**不含本街目前下注**的最近主動方。即使上一街 check-through 仍保留更早街的主動方——delayed c-bet 與 probe 的差別就在這裡 |
+| relativeAggressorOrder | enum | `heroBefore`／`heroAfter`／`notApplicable`。只在上一欄是對手時有意義；其餘情況一律 `notApplicable`，列舉器不得為不適用的情況產生兩個布林分支 |
+| heroCheckedThisStreet | bool | 區分「面對 donk bet」與「過牌後面對 stab／float bet」 |
+| currentStreetBetCount | range | 本街下注次數 |
+| currentStreetRaiseCount | range | 本街加注次數。用範圍才表達得出「至少加注一次」 |
+
+**線路的命名情境**（導覽的第一級，不藏在「更多條件」）：
+
+| 下注狀態 | 線路 | 最小條件 |
+|---|---|---|
+| 無人下注 | c-bet 機會 | `previousStreetAggressor=hero` |
+| 無人下注 | delayed c-bet 機會 | `previousStreetAggressor=none`、`lastAggressorBeforeCurrentStreet=hero` |
+| 無人下注 | donk bet 機會 | `previousStreetAggressor=opponent`、`relativeOrder=heroBefore` |
+| 無人下注 | stab／float bet 機會 | `previousStreetAggressor=opponent`、`relativeOrder=heroAfter` |
+| 無人下注 | probe bet 機會 | `previousStreetAggressor=none`、`lastAggressorBeforeCurrentStreet=opponent`、`relativeOrder=heroBefore` |
+| 無人下注 | delayed stab 機會 | `previousStreetAggressor=none`、`lastAggressorBeforeCurrentStreet=opponent`、`relativeOrder=heroAfter` |
+| 無人下注 | 無主動方底池下注機會 | `lastAggressorBeforeCurrentStreet=none` |
+| 面對下注 | 面對 c-bet | `previousStreetAggressor=opponent` |
+| 面對下注 | 面對 delayed c-bet | `previousStreetAggressor=none`、`lastAggressorBeforeCurrentStreet=opponent` |
+| 面對下注 | 面對 donk bet | `previousStreetAggressor=hero`、`heroCheckedThisStreet=false` |
+| 面對下注 | 過牌後面對 stab／float bet | `previousStreetAggressor=hero`、`heroCheckedThisStreet=true` |
+| 面對下注 | 面對 probe bet | `previousStreetAggressor=none`、`lastAggressorBeforeCurrentStreet=hero` |
+| 面對下注 | 面對無主動方底池下注 | `lastAggressorBeforeCurrentStreet=none` |
+
+線路名稱只描述**英雄當前面對的情境**，不使用「直接加注／check-raise」這類英雄尚未選擇的動作名稱。同一狀態內若多條命名條件可同時命中，依表格順序取第一個。**不得建立可編輯的共用「其他」桶**；出現未覆蓋但可達的線路簽章時，列舉測試直接失敗，要求先命名。
+
 - 行動頻率合計 = 100%；不合法行動先 mask 再正規化。若合法行動剩餘權重為 0，直接進入 fallback。
-- 規則編輯器即時標示條件重疊、被更高優先規則完全遮蔽及不可達規則；使用者必須處理 error，warning 可保留但寫入驗證摘要。
+- 規則編輯器即時標示問題，嚴重度見 D.8。**遮蔽與重疊只在同一 `source` 層內比較**：使用者覆寫壓過官方通則是設計本意，跨層相交報成警告的話，每寫一條覆寫就多一個假警報，真正的問題會被噪音蓋掉。
 
 ### D.6 下注尺度樹（`betSizeTree`）
 
@@ -604,7 +642,11 @@
 ### D.7 Fallback
 
 - 未命中任何規則，或合法行動 mask 後剩餘權重為 0 的節點，由具版本的 fallback 基準策略補足。
-- fallback 命中次數列入報告；策略完整度 = 命中玩家規則的節點數 ÷ 總決策節點數，翻前／翻後及各切片分開統計。
+- 解析順序：**使用者指定特例 → 顧問／官方規則 → 同牌力組的一般規則 → 工程 equity 基準 → 最終合法 fallback**。
+- fallback 命中次數列入報告；策略完整度 = 命中**玩家**規則的節點數 ÷ 總決策節點數，翻前／翻後及各切片分開統計。
+- **完整度依來源分層計算。** 工程 fallback 規則本身也是規則；不分層的話「命中規則的比例」會逼近 100%，而這個數字存在的用途正是告訴使用者還有多少節點沒寫。因此解析必須回傳命中規則的 `source`，統計依來源累加。
+- **兩種 fallback 原因不得合併**：「沒有規則命中」是策略缺口，「合法動作全被遮罩」是籌碼造成的合法性事件。混在一起會讓使用者以為策略沒寫完。
+- 完整度必須帶**節點集合版本**。節點集合會隨階段擴充（面對尺度、SPR、位置、有效籌碼逐項加入），同一份覆寫的完整度會在不同版本間暴跌；版本不同的兩份數字不得直接比較。
 
 ### D.8 驗證與策略完整度
 
@@ -613,9 +655,24 @@
 | 頻率合計 | 每節點行動頻率 = 100% |
 | 合法行動 | 不合法行動移除後正規化 |
 | 參數區間 | 所有參數在合法範圍 |
-| 完整度 | 儲存前顯示「你的策略 翻前 X%／翻後 Y% ＋ 基準 vZ 補足」 |
+| 完整度 | 儲存前顯示「你的策略 翻前 X%／翻後 Y% ＋ 基準 vZ 補足」，並帶節點集合版本 |
 | Preflop action 維度 | 每個 hand class 的合法 action 頻率合計 100% |
-| 規則可達性 | 不得存在完全不可達或資料不完整的規則；遮蔽規則需明確 warning |
+| 規則可達性 | 完全不可達的規則標為 warning（見下表）；資料不完整的規則不得儲存 |
+
+**問題與嚴重度**
+
+| 問題 | 判定 | 嚴重度 |
+|---|---|---|
+| `Overlap` | 同一 `source` 層內兩條規則部分相交 | warning |
+| `Shadowed` | 同一 `source` 層內較早的規則完整包含較晚的規則 | warning |
+| `Unreachable` | 條件命不中任何可達節點 | warning |
+| `Impossible` | 靜態條件自相矛盾／範圍為空、權重合計不等於 100%，或正權重全部填在該下注狀態固定不成立的動作 | **error** |
+| `LayerOrderViolation` | 規則來源排序違反「使用者覆寫優先」不變量 | **error** |
+
+- `Shadowed` 與 `Unreachable` 幾乎一定是寫錯，但擋住保存會讓使用者連暫存都做不到，因此列為 warning 並留在驗證摘要。
+- 節點集合改版時，原本可達的條件可能變成 `Unreachable`；那不是使用者的錯，更不該擋住保存。
+- 執行期因籌碼／最小加注造成合法動作全被遮罩，走正常 fallback，**不回推成編輯期的 `Impossible`**。
+- 只有上表的兩個 error 阻擋保存；warning 可保存但寫入驗證摘要。
 
 ### D.9 策略庫：儲存、命名與切換
 
@@ -787,7 +844,12 @@
 - **範圍選擇器**（合併後新增）：切換資料範圍為「本次 run／指定 run／全部 run」，並顯示目前範圍的桌型、策略版本、Bot 組合、engine 版本與時間區間。跨 engine 版本的 run 不得合併統計，選取時直接標示為不可比（核心規格 3.3）。
 - **整體卡**：先顯示「可判定／無法判定／樣本不足」，再顯示 EV／bb100＋CI、estimator、**總盈虧**、獲勝手數比例的分子／分母與區間、All-in EV、σ、σ₁₀₀、最大回撤及樣本數。
 - **顯著性摘要**（原面板 F）：顯著性閘門結果、切片有效樣本（以 block 數計）、**最虧三類情境**、**策略完整度**（翻前／翻後與逐桌型，見 D.7）。最虧三類情境必須同時顯示樣本數、區間與探索性標籤，不得只依點估計排序後斷言漏洞（核心規格 5.4）。
-- **行為頻率**（原面板 F）：VPIP／PFR／3-bet／C-bet／Fold to C-bet／WTSD／W$SD，各顯示分子／分母與 Wilson interval。
+  - **完整度依來源分層顯示**：你的覆寫／官方內容／同組通則／工程 fallback 各占多少，加上兩種 fallback 原因（沒有規則命中、合法動作全被遮罩）分開列。工程 fallback 的命中不計入玩家完整度（D.7）。
+  - 報表的完整度分母是**英雄實際發生的決策次數**，與策略頁「可達節點數」的靜態覆蓋是**兩個不同的指標**，不得互相取代或並列成同一個百分比。兩者都必須帶節點集合版本。
+  - **逐桌型（9／8／7／6 人）完整度延後**：本期先做翻前／翻後兩層分開統計，逐桌型切片與「預計有 N% 手牌落在未校準桌型」的執行前警告不在本期範圍。理由是翻後節點集合本身仍在凍結中，先固定分母再切桌型才有意義；此差異在此明文記載，不得默默省略。
+- **行為頻率**（原面板 F）：VPIP／PFR／3-bet／C-bet／Fold to C-bet／WTSD／W$SD，各顯示分子／分母與區間。
+  - 同一桌次內的手牌不是獨立樣本，因此比例的區間走**桌次 cluster bootstrap**；桌次數不足時退回 Wilson 獨立近似，並如實顯示 estimator 名稱與有效桌次數（核心規格 5.3、F.3.1）。
+  - **Fold to C-bet 的分母只含直接面對 C-bet 的節點。** C-bet 之後又被其他人加注時，英雄面對的是加注而不是 C-bet，那次棄牌不計入——混進來的話這個指標就不再是「對 C-bet 的防守鬆緊」。
 - **逐位置表**：列 = 位置，欄 = EV／bb/100／獲勝手數比例／VPIP／PFR。**必須依當手在桌人數切片**；使用者在 9 人桌的 BTN 與在 7 人桌的 BTN 是不同母體，不得合併為同一列。切片的有效樣本以 block 數計。
   - **位置標籤**取自引擎依 [`德州撲克規則細則.md`](德州撲克規則細則.md) 8.4.1 寫入每手 log 的欄位，不自行推導。
   - **dead button／dead small blind 手預設排除**於逐位置表，並在表頭顯示被排除的手數與占比。這些手少收一份強制下注，底池結構與一般手不同。使用者可切換為納入，切換狀態必須顯示於切片脈絡。

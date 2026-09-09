@@ -322,6 +322,17 @@ function PostflopRules({
     view.situations.find((item) => item.key === situationKey) ?? view.situations[0];
   if (!street || !situation) return <Banner tone="negative">找不到指定的翻後節點。</Banner>;
 
+  // 外觀與順子結構是兩個獨立的軸，一個牌面節點是兩者的組合——
+  // 「彩虹面」與「濕潤面」不是同一層的選項，混在一張清單裡列會讓
+  // 使用者以為它們互斥
+  const boardNodes = view.surfaces.flatMap((surface) =>
+    view.connectivities.map((connectivity) => ({
+      key: `${surface.key}+${connectivity.key}`,
+      label: `${surface.label}＋${connectivity.label}`,
+      description: `${surface.description}；${connectivity.description}`,
+    })),
+  );
+
   return (
     <div style={{ display: 'grid', gap: 14 }}>
       <Banner tone="warning">
@@ -332,7 +343,10 @@ function PostflopRules({
         <div style={{ display: 'flex', gap: 24, marginBottom: 14, flexWrap: 'wrap' }}>
           <Stat label="階段" value={street.label} />
           <Stat label="下注狀態" value={situation.label} />
-          <Stat label="牌面標籤" value={`${view.textures.length} 種`} />
+          <Stat
+            label="牌面節點"
+            value={`${view.surfaces.length} 外觀 × ${view.connectivities.length} 結構`}
+          />
           <Stat label="內容簽核" value={view.consultantApproved ? '已簽核' : '未簽核'} />
         </div>
 
@@ -352,16 +366,13 @@ function PostflopRules({
             </GridCell>
           ))}
 
-          {view.textures.map((texture) => (
-            <FragmentRow key={texture.key}>
-              <GridCell strong title={texture.description}>
-                <div>{texture.label}</div>
-                <div className="dim" style={{ fontSize: 9, marginTop: 2 }}>
-                  {texture.dimension}
-                </div>
+          {boardNodes.map(({ key, label, description }) => (
+            <FragmentRow key={key}>
+              <GridCell strong title={description}>
+                <div>{label}</div>
               </GridCell>
               {situation.actions.map((action) => (
-                <GridCell key={`${texture.key}-${action.key}`} muted={!action.available}>
+                <GridCell key={`${key}-${action.key}`} muted={!action.available}>
                   {action.available ? '可用' : '不成立'}
                   {!action.available && action.unavailableReason && (
                     <div className="dim" style={{ fontSize: 9, marginTop: 2 }}>
