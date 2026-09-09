@@ -1,7 +1,12 @@
 //! Bot 的兩層參數與其 schema。
 //!
 //! 核心規格 4.3（2026-08-16 移除等級後）：參數為**人格層**（`persona`，11 欄）
-//! 與**行為層**（`botBehavior`，10 欄），兩層皆可逐座覆寫。
+//! 與**行為層**（`botBehavior`），兩層皆可逐座覆寫。
+//!
+//! 行為層原列 10 欄。`postflopBucketCount`（翻後分桶數）在牌力組固定為
+//! 八組之後不再是有效的可調參數（0907 計劃 §6.3），因此從表上移除，
+//! 現為 9 欄。舊存檔仍可帶著那個欄位匯入——未登錄的鍵會被拒絕設定，
+//! 但不會讓整份設定讀不回來。
 //!
 //! 規格另要求：「每個參數必須在 generated schema 中具有型別、單位、合法範圍、
 //! 預設值、顯示名稱、說明與可覆寫層級。」因此每個欄位都有對應的
@@ -94,7 +99,7 @@ pub struct ParamSpec {
     /// 那個滑桿拉了不會有事——UI 該告訴他的是這件事。
     ///
     /// 參數 schema 是照核心規格 4.3 一次宣告完的，決策路徑只實作了一部分。
-    /// 沒有這個旗標，UI 會把 21 個滑桿一視同仁地畫出來，使用者拉了沒作用
+    /// 沒有這個旗標，UI 會把二十個滑桿一視同仁地畫出來，使用者拉了沒作用
     /// 的那些卻以為調到了東西——那跟接線之前的「調參數是假動作」沒兩樣。
     ///
     /// 兩個方向都由測試守住，不會與實作漂開：
@@ -294,7 +299,7 @@ pub const PERSONA_SPECS: [ParamSpec; 11] = [
 ];
 
 /// 行為層 10 欄（核心規格 4.3，原等級層）。
-pub const BEHAVIOR_SPECS: [ParamSpec; 10] = [
+pub const BEHAVIOR_SPECS: [ParamSpec; 9] = [
     ParamSpec {
         key: "decisionNoisePp",
         display: "決策噪音",
@@ -315,17 +320,6 @@ pub const BEHAVIOR_SPECS: [ParamSpec; 10] = [
         default: ParamValue::Myriad(10_000),
         min: 0,
         max: 10_000,
-        implemented: false,
-    },
-    ParamSpec {
-        key: "postflopBucketCount",
-        display: "翻後分桶數",
-        unit: NONE,
-        description: "翻後牌力分桶的粒度。越少越粗糙",
-        level: OverrideLevel::BehaviorThenSeat,
-        default: ParamValue::Count(8),
-        min: 2,
-        max: 24,
         implemented: false,
     },
     ParamSpec {
@@ -423,7 +417,12 @@ mod tests {
     #[test]
     fn 欄位數符合規格() {
         assert_eq!(PERSONA_SPECS.len(), 11, "核心規格 4.3：人格層 11 欄");
-        assert_eq!(BEHAVIOR_SPECS.len(), 10, "核心規格 4.3：行為層 10 欄");
+        assert_eq!(
+            BEHAVIOR_SPECS.len(),
+            9,
+            "核心規格 4.3 原列行為層 10 欄；`postflopBucketCount` 在牌力組固定為八組後\
+             不再是有效的可調參數（0907 計劃 §6.3），從表上移除"
+        );
     }
 
     #[test]
@@ -436,7 +435,7 @@ mod tests {
         let before = keys.len();
         keys.sort_unstable();
         keys.dedup();
-        assert_eq!(before, keys.len(), "21 個欄位鍵必須互異");
+        assert_eq!(before, keys.len(), "欄位鍵必須互異");
     }
 
     #[test]

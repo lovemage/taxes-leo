@@ -1,6 +1,6 @@
 //! Bot 設定的跨 IPC 表示（面板 B／C）。
 //!
-//! 參數的**權威定義在 Rust**（`poker_engine::bot::params` 的 21 個
+//! 參數的**權威定義在 Rust**（`poker_engine::bot::params` 的 20 個
 //! `ParamSpec`）：鍵、顯示名、單位、說明與上下限都從那裡送到前端，
 //! 前端不另外抄一份。抄一份的後果是引擎改了範圍而 UI 不知道，
 //! 使用者會拉到一個引擎會拒絕的值。
@@ -57,7 +57,7 @@ fn numeric(value: ParamValue) -> i64 {
     }
 }
 
-/// 全部 21 個參數的規格，人格層在前。
+/// 全部 20 個參數的規格，人格層在前。
 #[must_use]
 pub fn all_specs() -> Vec<ParamSpecView> {
     PERSONA_SPECS
@@ -107,6 +107,15 @@ impl BotSeatConfig {
         });
 
         for (key, &raw) in &self.params {
+            // 舊存檔還帶著已移除的欄位。整份拒絕會讓使用者的設定讀不回來，
+            // 而那個欄位本來就沒有作用——忽略並記一筆比較誠實
+            // （0907 計劃 §6.3）
+            if DEPRECATED_KEYS.contains(&key.as_str()) {
+                crate::log::info(&format!(
+                    "忽略已移除的 Bot 參數 {key}：牌力組固定為八組後它不再有作用"
+                ));
+                continue;
+            }
             let spec = spec_of(key).ok_or_else(|| format!("未登錄的參數：{key}"))?;
             // 值的型別跟著 spec 的預設值走，前端只需傳數字
             let value = match spec.default {
@@ -125,6 +134,13 @@ impl BotSeatConfig {
         Ok(config)
     }
 }
+
+/// 曾經存在、現已從 schema 移除的參數鍵。
+///
+/// `postflopBucketCount` 的舊範圍是 2–24，用來調翻後牌力分桶的粒度。
+/// 牌力組固定為八組之後它不再是有效的可調參數，因此從表上移除；
+/// 但舊存檔仍然帶著它，匯入時接受並忽略。
+const DEPRECATED_KEYS: [&str; 1] = ["postflopBucketCount"];
 
 fn clamp_u32(value: i64) -> u32 {
     u32::try_from(value.clamp(0, i64::from(u32::MAX))).unwrap_or(0)
@@ -194,4 +210,60 @@ pub fn demo_presets() -> Vec<BotSeatConfig> {
             .collect(),
         },
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn 已移除的參數在舊存檔裡被忽略而不是讓整份設定讀不回來() {
+        let seat = BotSeatConfig {
+            name: "舊存檔".to_owned(),
+            params: [
+                ("rangeWidth".to_owned(), 8_000),
+                // 牌力組固定為八組後這個欄位不再有作用（0907 計劃 §6.3）
+                ("postflopBucketCount".to_owned(), 12),
+            ]
+            .into_iter()
+            .collect(),
+        };
+
+        let config = seat.to_bot_config().expect("舊存檔必須仍然讀得回來");
+        assert_eq!(
+            config
+                .effective("rangeWidth")
+                .and_then(ParamValue::as_myriad),
+            Some(8_000),
+            "其他欄位照常生效"
+        );
+        assert!(
+            config.effective("postflopBucketCount").is_none(),
+            "已移除的欄位不得偷偷復活"
+        );
+    }
+
+    #[test]
+    fn 真正未登錄的參數仍然被拒絕() {
+        let seat = BotSeatConfig {
+            name: "亂填".to_owned(),
+            params: [("notARealParameter2".to_owned(), 1)]
+                .into_iter()
+                .collect(),
+        };
+        assert!(
+            seat.to_bot_config().is_err(),
+            "核心規格 4.3：不得直接注入未登錄參數"
+        );
+    }
+
+    #[test]
+    fn 已移除的參數不再出現在_schema() {
+        assert!(
+            !all_specs()
+                .iter()
+                .any(|spec| spec.key == "postflopBucketCount"),
+            "無作用的滑桿不該畫在面板上"
+        );
+    }
 }

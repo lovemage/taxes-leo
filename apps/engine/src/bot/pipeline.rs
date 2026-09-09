@@ -190,6 +190,32 @@ impl PipelineStage {
     }
 }
 
+/// 翻後決策的額外脈絡（0907 計劃 Stage 5）。
+///
+/// 逐手重播要能回答「為什麼這一手打成這樣」，而翻後的答案有一半在
+/// 管線之前：牌力被分到哪一組、命中了哪一條規則、意圖換算成了什麼尺寸。
+/// 這些不記下來的話，trace 只會顯示「基準分佈是這樣」，而那個分佈是
+/// 怎麼來的完全看不到。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PostflopTrace {
+    pub hand_strength: crate::strategy::postflop::HandStrength,
+    /// 對均勻隨機合法對手的百分位，萬分比
+    pub percentile_myriad: u32,
+    pub effective_outs_centi: u16,
+    pub draw_outs_centi: u16,
+    pub board_surface: crate::strategy::postflop::BoardSurface,
+    pub board_connectivity: crate::strategy::postflop::BoardConnectivity,
+    /// 命名線路。`None` 代表線路值不自洽，這本身就是要查的事
+    pub line: Option<crate::strategy::postflop::PostflopLineName>,
+    /// 規則解析的結果（命中第幾條、來源層，或走了哪種 fallback）
+    pub matched: crate::strategy::postflop::Matched,
+    pub rule_id: Option<String>,
+    /// 換算前的尺寸意圖頻率
+    pub intent: Vec<(crate::strategy::postflop::PostflopActionKind, Myriad)>,
+    /// 換算後、進管線前的行動頻率。與意圖對照就看得出哪些尺寸被合併了
+    pub converted: Option<ActionDistribution>,
+}
+
 /// 決策 trace：逐階段的分佈與最終行動。
 ///
 /// 核心規格 4.3 要求保存「實際偏移公式、套用前後值及最終分佈」，
@@ -202,6 +228,13 @@ pub struct DecisionTrace {
     pub applied_offsets: Vec<(&'static str, Myriad)>,
     /// 是否因剝削上限而被夾住
     pub exploit_cap_applied: bool,
+    /// 這次決策走的是使用者的絕對覆寫，因此每個階段都被中和成恆等變換。
+    ///
+    /// 沒有這個旗標的話，trace 上會看到七個階段全部「沒有變化」，
+    /// 看起來像管線壞了，而不是刻意如此
+    pub neutralised_by_absolute_override: bool,
+    /// 翻後決策的額外脈絡。翻前為 `None`
+    pub postflop: Option<PostflopTrace>,
     pub final_action: Action,
 }
 
@@ -366,6 +399,10 @@ pub(crate) fn run_with_reference_and_aggression(
         stages,
         applied_offsets,
         exploit_cap_applied: cap_applied,
+        // 這兩個由呼叫端在拿到 trace 之後補：管線本身看不到規則來源，
+        // 也看不到牌力分類
+        neutralised_by_absolute_override: false,
+        postflop: None,
         final_action,
     })
 }

@@ -355,12 +355,17 @@ pub fn execute(
         ));
     }
 
+    // 翻後規則以值凍結在這裡：manifest 與 agent 用的是同一份，
+    // 兩邊各自建構的話，快照記的就不是實際跑的那一份
+    let postflop_rules = crate::postflop::to_rule_set(strategy.postflop_overrides);
+
     let manifest = build_manifest(
         config,
         &rules,
         &hero_rules,
         &bot_configs,
         rankings,
+        &postflop_rules,
         created_at,
     );
     let run_id = {
@@ -387,7 +392,7 @@ pub fn execute(
     agent.set_seat_overrides(hero, hero_overrides);
     // 翻後規則以值凍結：這一份是 run 開始那一刻的快照，
     // UI 後續的修改不會滲進來
-    agent.set_postflop_rules(crate::postflop::to_rule_set(strategy.postflop_overrides));
+    agent.set_postflop_rules(postflop_rules.clone());
     // 只統計英雄座位的翻後命中（核心規格 5.0：統計主體只有使用者座位）
     agent.set_hero_seat(hero);
 
@@ -445,6 +450,7 @@ pub fn execute(
         &hero_rules,
         &bot_configs,
         rankings,
+        &postflop_rules,
         created_at,
     );
     final_manifest.instances = summary
@@ -525,8 +531,12 @@ fn build_manifest(
     // 實際載入的 equity 排序。記來源與等級而不只是取樣數：用 debug 替代品
     // 跑出來的 run，事後必須看得出來它不是正式內容
     rankings: &crate::rankings::Rankings,
+    // 這次 run 實際生效的翻後規則列（工程通則 ＋ 使用者覆寫）
+    postflop_rules: &poker_engine::strategy::postflop::RuleSet,
     created_at: i64,
 ) -> RunManifest {
+    let hand_strength_config =
+        poker_engine::strategy::hand_strength::HandStrengthConfig::ENGINEERING;
     RunManifest {
         engine_version: env!("CARGO_PKG_VERSION").to_owned(),
         schema_version: SCHEMA_VERSION,
@@ -560,22 +570,38 @@ fn build_manifest(
         auto_refill_target: config.auto_refill,
         rule_variants: RuleVariants::default(),
         // 核心規格 3.3：內容本身必須保存，只留 hash 不合格。
-        // 因此存的是整份規則與逐座全部 21 個生效值，不是名稱或差異
+        // 因此存的是整份規則與逐座全部 20 個生效值，不是名稱或差異
         hero_strategy: ContentSnapshot::new(
             hero_rules.name.clone(),
             hero_rules.version.clone(),
             serde_json::json!({
                 "preflop": crate::snapshot::baseline(hero_rules),
+                // 完整的翻後規則列（工程通則 ＋ 使用者覆寫）。
+                // 核心規格 3.3：內容本身必須保存，只留 hash 不合格；
+                // 這一份能在沒有外部版本表的情況下獨立重建當次策略
+                "postflopRules": crate::snapshot::postflop(postflop_rules),
+                "postflopClassifier": {
+                    "opponentModel": poker_engine::strategy::hand_strength::HandStrengthConfig::OPPONENT_MODEL,
+                    "consultantApproved": hand_strength_config.consultant_approved,
+                    "nutsFloorMyriad": hand_strength_config.nuts_floor_myriad,
+                    "strongMadeFloorMyriad": hand_strength_config.strong_made_floor_myriad,
+                    "mediumMadeFloorMyriad": hand_strength_config.medium_made_floor_myriad,
+                    "showdownValueFloorMyriad": hand_strength_config.showdown_value_floor_myriad,
+                    "strongDrawFloorCenti": hand_strength_config.strong_draw_floor_centi,
+                    "overcardOutWeightCenti": hand_strength_config.overcard_out_weight_centi,
+                    "pollutedOutWeightCenti": hand_strength_config.polluted_out_weight_centi,
+                },
                 "postflopBaseline": {
                     "version": poker_engine::bot::POSTFLOP_BASELINE_VERSION,
                     "consultantApproved": false,
                     "equitySamples": poker_engine::bot::POSTFLOP_EQUITY_SAMPLES,
                     "opponentRange": "uniformRandomLegalHands",
                     "decisionBuckets": "fairShare+potOdds+boardTexture/v2",
-                    "boardTextures": [
+                    "boardSurfaces": [
                         "flush", "flush-draw", "rainbow", "rainbow-paired",
-                        "flush-draw-paired", "trips", "dry", "wet"
+                        "flush-draw-paired", "trips"
                     ],
+                    "boardConnectivities": ["dry", "wet"],
                     "betSizes": [
                         {"numerator": 1, "denominator": 3},
                         {"numerator": 2, "denominator": 3},

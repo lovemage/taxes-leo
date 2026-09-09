@@ -24,8 +24,8 @@ use crate::strategy::default_chart::ChartShift;
 use crate::strategy::distribution::{ActionDistribution, Myriad, FULL};
 use crate::strategy::hand_strength::HandStrengthConfig;
 use crate::strategy::postflop::{
-    classify_board, BoardConnectivity, BoardTextures, CoverageStats, Matched, PostflopActionKind,
-    PostflopSituation, RuleSet, RuleSource,
+    classify_board, classify_line, BoardConnectivity, BoardTextures, CoverageStats, Matched,
+    PostflopActionKind, PostflopSituation, RuleSet, RuleSource,
 };
 use crate::strategy::postflop_baseline::engineering_rules;
 use crate::strategy::postflop_view::postflop_node;
@@ -93,6 +93,12 @@ pub struct BotAgent {
     postflop_coverage: CoverageStats,
     /// 英雄座位。逐座設定裡沒有這個資訊，因此由呼叫端指定
     hero_seat: Option<usize>,
+    /// 是否保留最後一次決策的完整 trace。
+    ///
+    /// **預設關閉。** trace 要 clone 好幾份分佈，10 萬手 × 每手數個決策
+    /// 的代價不該由批次執行付；需要逐手重播或除錯時才打開
+    trace_enabled: bool,
+    last_trace: Option<pipeline::DecisionTrace>,
 }
 
 /// 由 Bot 設定推導出該座位實際生效的基準規則。
@@ -145,7 +151,20 @@ impl BotAgent {
             hand_strength: HandStrengthConfig::ENGINEERING,
             postflop_coverage: CoverageStats::default(),
             hero_seat: None,
+            trace_enabled: false,
+            last_trace: None,
         }
+    }
+
+    /// 打開決策 trace 的保留。
+    pub fn enable_trace(&mut self) {
+        self.trace_enabled = true;
+    }
+
+    /// 最後一次決策的完整 trace。未打開保留時恆為 `None`。
+    #[must_use]
+    pub const fn last_trace(&self) -> Option<&pipeline::DecisionTrace> {
+        self.last_trace.as_ref()
     }
 
     /// 指定要統計哪一個座位的翻後命中。
@@ -220,8 +239,16 @@ impl BotAgent {
     ///
     /// 未命中任何規則，或命中後合法動作被遮罩光時回傳 `None`，
     /// 呼叫端退回 equity heuristic（計劃 §4.4 的 fallback 鏈）。
-    fn resolve_postflop(&mut self, view: &DecisionView) -> Option<(RuleSource, ActionDistribution)> {
-        let node = postflop_node(view, &self.hand_strength)?;
+    fn resolve_postflop(
+        &mut self,
+        view: &DecisionView,
+    ) -> (
+        Option<(RuleSource, ActionDistribution)>,
+        Option<pipeline::PostflopTrace>,
+    ) {
+        let Some(node) = postflop_node(view, &self.hand_strength) else {
+            return (None, None);
+        };
         let (matched, distribution) =
             self.postflop_rules
                 .resolve(&node.context, node.sizing, &legality(&view.legal));
@@ -232,10 +259,29 @@ impl BotAgent {
             self.postflop_coverage.record(&matched);
         }
 
-        match (matched, distribution) {
+        let rule = match &matched {
+            Matched::Rule { index, .. } => self.postflop_rules.rules().get(*index),
+            Matched::Fallback(_) => None,
+        };
+        let trace = self.trace_enabled.then(|| pipeline::PostflopTrace {
+            hand_strength: node.snapshot.group,
+            percentile_myriad: node.snapshot.random_opponent_percentile_myriad,
+            effective_outs_centi: node.snapshot.effective_outs_centi,
+            draw_outs_centi: node.snapshot.draw_outs_centi,
+            board_surface: node.context.board_textures.surface(),
+            board_connectivity: node.context.board_textures.connectivity(),
+            line: classify_line(node.context.situation(), node.context.line),
+            matched: matched.clone(),
+            rule_id: rule.map(|rule| rule.id.clone()),
+            intent: rule.map(|rule| rule.intent.weights().to_vec()).unwrap_or_default(),
+            converted: distribution.clone(),
+        });
+
+        let resolved = match (matched, distribution) {
             (Matched::Rule { source, .. }, Some(distribution)) => Some((source, distribution)),
             _ => None,
-        }
+        };
+        (resolved, trace)
     }
 
     fn reference_for(&self, seat: usize) -> &BaselineRules {
@@ -253,8 +299,8 @@ impl ActionProvider for BotAgent {
 
         // 翻後先解規則：它要記統計，因此需要 `&mut self`，不能與下面的
         // `config` 借用重疊
-        let resolved = if matches!(view.street, Street::Preflop) {
-            None
+        let (resolved, postflop_trace) = if matches!(view.street, Street::Preflop) {
+            (None, None)
         } else {
             self.resolve_postflop(view)
         };
@@ -265,6 +311,9 @@ impl ActionProvider for BotAgent {
         // 使用者的絕對覆寫要走中和過的管線。宣告在外層是為了讓借用活得
         // 夠久——中和版本是新造的值，不是 self 裡的那一份
         let neutralised;
+        // 是否走了絕對覆寫的中和管線。trace 上沒有這個旗標的話，
+        // 七個階段全部「沒有變化」會看起來像管線壞了
+        let mut neutralised_override = false;
         let (baseline, reference, aggression_key, config) = match view.street {
             Street::Preflop => (
                 preflop_baseline(view, self.rules_for(view.seat), &self.rankings).map(fit),
@@ -280,6 +329,7 @@ impl ActionProvider for BotAgent {
                         // 管線照跑七步（trace 結構必須一致），但每一步都
                         // 中和成恆等變換；reference 與 baseline 用同一份，
                         // 第 5 步的 exploit cap 因此量到 0 偏離
+                        neutralised_override = true;
                         neutralised = config.neutralised_for_absolute_override();
                         &neutralised
                     } else {
@@ -320,7 +370,16 @@ impl ActionProvider for BotAgent {
             legality(&view.legal),
             roll,
         ) {
-            Ok(trace) => trace.final_action,
+            Ok(mut trace) => {
+                let action = trace.final_action;
+                if self.trace_enabled {
+                    // 管線本身看不到規則來源與牌力分類，因此在這裡補上
+                    trace.neutralised_by_absolute_override = neutralised_override;
+                    trace.postflop = postflop_trace;
+                    self.last_trace = Some(trace);
+                }
+                action
+            }
             // 遮蔽後無合法行動：核心規格 4.2 要求進入 fallback，
             // 不得除以 0 或任選行動
             Err(PipelineError::NoLegalAction | PipelineError::Distribution(_)) => {

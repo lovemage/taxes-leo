@@ -19,6 +19,9 @@ use poker_engine::strategy::default_chart::{
     raise_size_centi_bb, ChartAction, ChartScenario, DefaultChart, CHART_VERSION,
 };
 use poker_engine::strategy::playability::PlayabilityCategory;
+use poker_engine::strategy::postflop::{
+    PostflopCondition, PostflopIntentDistribution, PostflopLineCondition, RuleSet,
+};
 use poker_engine::strategy::ScenarioWidths;
 use serde_json::{json, Map, Value};
 
@@ -109,7 +112,7 @@ pub fn baseline(rules: &BaselineRules) -> Value {
     })
 }
 
-/// 一組 Bot 的**全部 21 個生效值**。
+/// 一組 Bot 的**全部 20 個生效值**。
 ///
 /// 記生效值而不是「改過的欄位」：改過的欄位要配上當時的預設值才讀得回
 /// 完整設定，而預設值會隨版本改變——那樣的紀錄過幾個版本就再也還原不出
@@ -224,6 +227,132 @@ fn default_chart(rules: &BaselineRules) -> Value {
     })
 }
 
+// ── 翻後（0907 計劃 §6.2）────────────────────────────────────────────
+
+/// 完整的翻後規則列。
+///
+/// 核心規格 3.3 要求 manifest 能在**沒有外部版本表**的情況下獨立重建
+/// 當次策略，因此存的是每一條規則的條件與意圖頻率，不是「規則集版本
+/// v1」這種指標。版本字串會被重新定義，內容不會。
+///
+/// 使用者覆寫也在同一份清單裡（來源層 `userOverride`），因此重建時
+/// 連解析順序都是完整的。
+#[must_use]
+pub fn postflop(rules: &RuleSet) -> Value {
+    let entries: Vec<Value> = rules
+        .rules()
+        .iter()
+        .map(|rule| {
+            json!({
+                "id": rule.id,
+                "name": rule.name,
+                "source": rule.source.key(),
+                "version": rule.version,
+                "consultantApproved": rule.consultant_approved,
+                "condition": condition(&rule.condition),
+                "intent": intent(&rule.intent),
+            })
+        })
+        .collect();
+
+    json!({
+        "nodeSetVersion": poker_engine::strategy::postflop::NODE_SET_VERSION,
+        "fallbackVersion": rules.fallback_version,
+        "ruleCount": entries.len(),
+        "rules": entries,
+    })
+}
+
+/// 一條規則的條件。省略的欄位就是萬用，因此只寫出有指定的那些——
+/// 全部寫出來的話，一條只指定牌力組的通則會多出十幾個 `null`。
+fn condition(condition: &PostflopCondition) -> Value {
+    let mut map = Map::new();
+    if let Some(street) = condition.street {
+        map.insert("street".to_owned(), json!(format!("{street:?}").to_lowercase()));
+    }
+    if let Some(situation) = condition.situation {
+        map.insert("situation".to_owned(), json!(situation.key()));
+    }
+    if let Some(surface) = condition.board_surface {
+        map.insert("boardSurface".to_owned(), json!(surface.key()));
+    }
+    if let Some(connectivity) = condition.board_connectivity {
+        map.insert("boardConnectivity".to_owned(), json!(connectivity.key()));
+    }
+    if let Some(strength) = condition.hand_strength {
+        map.insert("handStrength".to_owned(), json!(strength.key()));
+    }
+    if let Some(size) = condition.facing_size {
+        map.insert("facingSize".to_owned(), json!(size.key()));
+    }
+    if let Some(bucket) = condition.effective_stack_bucket {
+        map.insert("effectiveStackBucket".to_owned(), json!(bucket.as_str()));
+    }
+    if let Some(pot) = condition.pot_type {
+        map.insert("potType".to_owned(), json!(format!("{pot:?}")));
+    }
+    if let Some(position) = condition.hero_position {
+        map.insert("heroPosition".to_owned(), json!(position.as_str()));
+    }
+    if let Some(range) = condition.active_players.as_ref() {
+        map.insert("activePlayers".to_owned(), json!([range.start(), range.end()]));
+    }
+    if let Some(range) = condition.opponents_behind.as_ref() {
+        map.insert("opponentsBehind".to_owned(), json!([range.start(), range.end()]));
+    }
+    if let Some(range) = condition.spr_centi.as_ref() {
+        map.insert("sprCenti".to_owned(), json!([range.start(), range.end()]));
+    }
+    let line = line_condition(&condition.line);
+    if !line.is_empty() {
+        map.insert("line".to_owned(), Value::Object(line));
+    }
+    Value::Object(map)
+}
+
+fn line_condition(line: &PostflopLineCondition) -> Map<String, Value> {
+    let mut map = Map::new();
+    if let Some(role) = line.previous_street_aggressor {
+        map.insert("previousStreetAggressor".to_owned(), json!(role.key()));
+    }
+    if let Some(role) = line.last_aggressor_before_current_street {
+        map.insert(
+            "lastAggressorBeforeCurrentStreet".to_owned(),
+            json!(role.key()),
+        );
+    }
+    if let Some(order) = line.relative_aggressor_order {
+        map.insert("relativeAggressorOrder".to_owned(), json!(order.key()));
+    }
+    if let Some(checked) = line.hero_checked_this_street {
+        map.insert("heroCheckedThisStreet".to_owned(), json!(checked));
+    }
+    if let Some(range) = line.current_street_bet_count.as_ref() {
+        map.insert(
+            "currentStreetBetCount".to_owned(),
+            json!([range.start(), range.end()]),
+        );
+    }
+    if let Some(range) = line.current_street_raise_count.as_ref() {
+        map.insert(
+            "currentStreetRaiseCount".to_owned(),
+            json!([range.start(), range.end()]),
+        );
+    }
+    map
+}
+
+/// 尺寸意圖頻率。存意圖而不是換算後的籌碼：同一條規則在不同底池下
+/// 要下的注不同，存死了就不是原本那條規則。
+fn intent(intent: &PostflopIntentDistribution) -> Value {
+    let weights: Map<String, Value> = intent
+        .weights()
+        .iter()
+        .map(|(kind, myriad)| (kind.key().to_owned(), json!(myriad)))
+        .collect();
+    Value::Object(weights)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -277,5 +406,81 @@ mod tests {
             size < 80_000,
             "翻前快照 {size} 位元組偏大——每個 run 都會存一份"
         );
+    }
+
+    // ── 翻後（0907 計劃 §6.2）────────────────────────────────────
+
+    #[test]
+    fn 翻後快照存的是完整內容而不是版本指標() {
+        let rules = crate::postflop::to_rule_set(&crate::postflop::PostflopOverridesView::default());
+        let snapshot = postflop(&rules);
+
+        let entries = snapshot["rules"].as_array().expect("規則列");
+        assert_eq!(entries.len(), 16, "十六條工程通則");
+        assert_eq!(snapshot["nodeSetVersion"], "postflop-nodes/v1");
+
+        for entry in entries {
+            assert!(
+                entry["condition"].is_object(),
+                "每條規則都要有條件，否則重建不出來"
+            );
+            assert!(
+                entry["intent"].as_object().is_some_and(|map| !map.is_empty()),
+                "每條規則都要有意圖頻率"
+            );
+            assert!(entry["source"].is_string());
+            assert_eq!(
+                entry["consultantApproved"], false,
+                "工程通則未經簽核，快照必須誠實記下來"
+            );
+        }
+    }
+
+    #[test]
+    fn 使用者覆寫也進同一份快照() {
+        let overrides = crate::postflop::PostflopOverridesView {
+            nodes: vec![crate::postflop::PostflopNodeOverrideView {
+                node_key: "flop|no-bet|cbet-chance|rainbow|dry|strong-made|none".to_owned(),
+                weights: vec![crate::postflop::PostflopWeightInput {
+                    kind: "check".to_owned(),
+                    myriad: 10_000,
+                }],
+            }],
+            rules: Vec::new(),
+        };
+        let rules = crate::postflop::to_rule_set(&overrides);
+        let snapshot = postflop(&rules);
+        let entries = snapshot["rules"].as_array().expect("規則列");
+
+        assert_eq!(entries.len(), 17, "十六條通則加一條使用者覆寫");
+        // 使用者覆寫排在最前面：解析順序也必須能從快照重建
+        assert_eq!(entries[0]["source"], "user-override");
+        assert_eq!(entries[0]["intent"]["check"], 10_000);
+    }
+
+    #[test]
+    fn 翻後快照的體積留在預算內() {
+        let rules = crate::postflop::to_rule_set(&crate::postflop::PostflopOverridesView::default());
+        let size = postflop(&rules).to_string().len();
+        assert!(
+            size < 80_000,
+            "翻後規則列 {size} 位元組偏大——與翻前共用同一個 80 KB 閘門"
+        );
+    }
+
+    #[test]
+    fn 條件只寫出有指定的欄位() {
+        let rules = crate::postflop::to_rule_set(&crate::postflop::PostflopOverridesView::default());
+        let snapshot = postflop(&rules);
+        let condition = snapshot["rules"][0]["condition"]
+            .as_object()
+            .expect("條件");
+
+        // 工程通則只指定下注狀態與牌力組，其餘萬用。全部寫出來的話
+        // 會多出十幾個 null，體積白白翻倍
+        assert!(condition.contains_key("situation"));
+        assert!(condition.contains_key("handStrength"));
+        assert!(!condition.contains_key("heroPosition"));
+        assert!(!condition.contains_key("sprCenti"));
     }
 }

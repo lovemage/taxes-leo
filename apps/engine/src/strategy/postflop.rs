@@ -957,6 +957,35 @@ impl PostflopLineCondition {
     }
 }
 
+impl FacingSize {
+    pub const ALL: [Self; 9] = [
+        Self::None,
+        Self::Quarter,
+        Self::Third,
+        Self::Half,
+        Self::TwoThirds,
+        Self::ThreeQuarters,
+        Self::Pot,
+        Self::Overbet,
+        Self::AllIn,
+    ];
+
+    #[must_use]
+    pub const fn key(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Quarter => "quarter",
+            Self::Third => "third",
+            Self::Half => "half",
+            Self::TwoThirds => "two-thirds",
+            Self::ThreeQuarters => "three-quarters",
+            Self::Pot => "pot",
+            Self::Overbet => "overbet",
+            Self::AllIn => "all-in",
+        }
+    }
+}
+
 /// 決策節點的實際狀態，供條件比對。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PostflopContext {
@@ -1650,7 +1679,7 @@ impl PostflopNode {
             self.surface.key(),
             self.connectivity.key(),
             self.hand_strength.key(),
-            facing_size_key(self.facing_size),
+            self.facing_size.key(),
         )
     }
 
@@ -1677,21 +1706,6 @@ const fn street_key(street: Street) -> &'static str {
         Street::Flop => "flop",
         Street::Turn => "turn",
         Street::River => "river",
-    }
-}
-
-#[must_use]
-const fn facing_size_key(size: FacingSize) -> &'static str {
-    match size {
-        FacingSize::None => "none",
-        FacingSize::Quarter => "quarter",
-        FacingSize::Third => "third",
-        FacingSize::Half => "half",
-        FacingSize::TwoThirds => "two-thirds",
-        FacingSize::ThreeQuarters => "three-quarters",
-        FacingSize::Pot => "pot",
-        FacingSize::Overbet => "overbet",
-        FacingSize::AllIn => "all-in",
     }
 }
 

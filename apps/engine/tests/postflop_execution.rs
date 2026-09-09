@@ -18,9 +18,9 @@ use poker_engine::strategy::decision::{DecisionView, OpponentPublic, PublicActio
 use poker_engine::strategy::distribution::FULL;
 use poker_engine::strategy::hand_strength::HandStrengthConfig;
 use poker_engine::strategy::postflop::{
-    HandStrength, Matched, PostflopActionKind as Kind, PostflopCondition,
-    PostflopIntentDistribution, PostflopSituation, PostflopSizing, PostflopRule, RuleSet,
-    RuleSource,
+    BoardConnectivity, BoardSurface, HandStrength, Matched, PostflopActionKind as Kind,
+    PostflopCondition, PostflopIntentDistribution, PostflopLineName, PostflopRule,
+    PostflopSituation, PostflopSizing, RuleSet, RuleSource,
 };
 use poker_engine::strategy::postflop_baseline::engineering_rules;
 use poker_engine::strategy::postflop_view::postflop_node;
@@ -598,4 +598,83 @@ fn 工程通則的命中不算進玩家完整度() {
         Some(0),
         "十次都命中了規則，但沒有一次是使用者寫的"
     );
+}
+
+// ── 決策 trace（計劃 Stage 5）────────────────────────────────────
+
+#[test]
+fn trace_預設不保留() {
+    let mut agent = agent_with(engineering_rules());
+    agent.choose(&flop_view("As Ks", "Ah 7d 3c", 0));
+    assert!(
+        agent.last_trace().is_none(),
+        "trace 要 clone 好幾份分佈，批次執行不該付這個代價"
+    );
+}
+
+#[test]
+fn trace_記下牌力分組與命中規則() {
+    let mut agent = agent_with(engineering_rules());
+    agent.enable_trace();
+    agent.choose(&flop_view("As Ks", "Ah 7d 3c", 0));
+
+    let trace = agent.last_trace().expect("已打開保留");
+    let postflop = trace.postflop.as_ref().expect("翻後決策必須有翻後脈絡");
+
+    // Ah 7d 3c：三種花色、無公對 → 彩虹面
+    assert_eq!(postflop.board_surface, BoardSurface::Rainbow);
+    assert_eq!(postflop.board_connectivity, BoardConnectivity::Dry);
+    assert_eq!(
+        postflop.line,
+        Some(PostflopLineName::CbetChance),
+        "英雄翻前加注、翻牌無人下注"
+    );
+    assert!(postflop.percentile_myriad > 0);
+    assert!(
+        matches!(postflop.matched, Matched::Rule { .. }),
+        "應命中工程通則"
+    );
+    assert!(postflop.rule_id.is_some());
+    assert!(
+        !postflop.intent.is_empty(),
+        "換算前的尺寸意圖要留下來，才看得出哪些尺寸被合併了"
+    );
+    assert!(postflop.converted.is_some());
+
+    // 七個階段都在
+    assert_eq!(trace.stages.len(), 7);
+    assert!(!trace.neutralised_by_absolute_override, "這是通則，不是覆寫");
+}
+
+#[test]
+fn 絕對覆寫的_trace_標記中和且七階段仍在() {
+    let mut agent = BotAgent::new(
+        BaselineRules::engineering_placeholder(),
+        BotAgent::rankings(500),
+        vec![aggressive_config(); 6],
+        7_777,
+    );
+    agent.set_postflop_rules(user_override());
+    agent.enable_trace();
+    agent.choose(&flop_view("As Ks", "Ah 7d 3c", 0));
+
+    let trace = agent.last_trace().expect("已打開保留");
+    assert!(
+        trace.neutralised_by_absolute_override,
+        "沒有這個旗標，七個階段全部沒有變化會看起來像管線壞了"
+    );
+    assert_eq!(trace.stages.len(), 7, "trace 結構必須與一般決策一致");
+}
+
+#[test]
+fn 翻前決策沒有翻後脈絡() {
+    let mut agent = agent_with(engineering_rules());
+    agent.enable_trace();
+    let mut preflop = flop_view("As Ks", "Ah 7d 3c", 10);
+    preflop.street = Street::Preflop;
+    preflop.board.clear();
+    agent.choose(&preflop);
+
+    let trace = agent.last_trace().expect("已打開保留");
+    assert!(trace.postflop.is_none());
 }

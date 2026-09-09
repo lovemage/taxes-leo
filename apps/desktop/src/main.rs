@@ -168,7 +168,7 @@ fn preview_power(hand_limit: u64, players: usize) -> Vec<PowerPreviewView> {
 
 // ── Bot 設定（面板 B／C）─────────────────────────────────────────────
 
-/// 21 個 Bot 參數的規格。前端據此渲染欄位，不自行抄一份範圍
+/// 20 個 Bot 參數的規格。前端據此渲染欄位，不自行抄一份範圍
 #[tauri::command(async)]
 fn list_bot_params() -> Vec<poker_ipc::ParamSpecView> {
     poker_ipc::bots::all_specs()
