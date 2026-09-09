@@ -20,11 +20,24 @@ import type {
   CellOverrideView,
   ChartRowView,
   MatrixCellView,
+  PostflopHandPreviewView,
+  PostflopNodesView,
+  PostflopOverridesView,
+  PostflopRuleQuery,
+  PostflopRuleView,
+  PostflopStaticCoverageView,
   PostflopStrategyView,
   RangeMatrixView,
   StrategyMetaView,
 } from '../../../../packages/poker-types/src/index';
-import { postflopStrategy, strategyMatrix, strategyMeta } from '../api';
+import {
+  classifyPostflopHand,
+  postflopNodes,
+  postflopRule,
+  postflopStrategy,
+  strategyMatrix,
+  strategyMeta,
+} from '../api';
 import { cellTone, FULL } from '../components/matrixTone';
 import type { StrategySelection } from './StrategyNav';
 
@@ -33,11 +46,15 @@ export function Strategy({
   selection,
   overrides,
   onOverridesChange,
+  postflopOverrides,
+  onPostflopOverridesChange,
   locked,
 }: {
   selection: StrategySelection;
   overrides: CellOverrideView[];
   onOverridesChange: (overrides: CellOverrideView[]) => void;
+  postflopOverrides: PostflopOverridesView;
+  onPostflopOverridesChange: (next: PostflopOverridesView) => void;
   /** run 進行中不得修改策略：內容是 RunManifest 快照的一部分 */
   locked: boolean;
 }) {
@@ -290,9 +307,11 @@ export function Strategy({
 
       {selection.stage !== 'preflop' && (
         <PostflopRules
-          view={postflop}
           stage={selection.stage}
           situationKey={selection.situation}
+          overrides={postflopOverrides}
+          onOverridesChange={onPostflopOverridesChange}
+          locked={locked}
         />
       )}
     </div>
@@ -300,15 +319,95 @@ export function Strategy({
 }
 
 function PostflopRules({
-  view,
   stage,
   situationKey,
+  overrides,
+  onOverridesChange,
+  locked,
 }: {
-  view: PostflopStrategyView | null;
   stage: string;
   situationKey: string;
+  overrides: PostflopOverridesView;
+  onOverridesChange: (next: PostflopOverridesView) => void;
+  locked: boolean;
 }) {
-  if (!view) {
+  const [nodes, setNodes] = useState<PostflopNodesView | null>(null);
+  const [rule, setRule] = useState<PostflopRuleView | null>(null);
+  const [line, setLine] = useState('cbet-chance');
+  const [surface, setSurface] = useState('rainbow');
+  const [connectivity, setConnectivity] = useState('dry');
+  const [handStrength, setHandStrength] = useState('strong-made');
+  const [facingSize, setFacingSize] = useState('none');
+  /** 未儲存的草稿。null 代表畫的就是引擎回傳的值 */
+  const [draft, setDraft] = useState<Record<string, number> | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  /** 覆寫清單的歷史。恢復與一般編輯共用同一個 stack（計劃 §5.2） */
+  const [undoStack, setUndoStack] = useState<PostflopOverridesView[]>([]);
+  /** 批次恢復的二次確認。null 代表沒有待確認的操作 */
+  const [pendingBatch, setPendingBatch] = useState<BatchScope | null>(null);
+
+  useEffect(() => {
+    postflopNodes(stage, overrides)
+      .then((view) => {
+        setNodes(view);
+        setFailure(null);
+      })
+      .catch((error: unknown) => setFailure(String(error)));
+  }, [stage, overrides]);
+
+  // 下注狀態換了之後，線路與面對尺度必須跟著換到合法值——
+  // 「面對 c-bet」不存在於無人下注，留著會查出一個不可達的節點
+  useEffect(() => {
+    if (!nodes) return;
+    const allowed = nodes.lines.filter((item) => item.situation === situationKey);
+    if (!allowed.some((item) => item.key === line)) {
+      setLine(allowed[0]?.key ?? 'cbet-chance');
+    }
+    if (situationKey === 'no-bet') {
+      setFacingSize('none');
+    } else if (facingSize === 'none') {
+      setFacingSize('two-thirds');
+    }
+  }, [nodes, situationKey, line, facingSize]);
+
+  // 牌力組清單依街別過濾：河牌只有五組
+  useEffect(() => {
+    if (!nodes) return;
+    if (!nodes.handStrengths.some((item) => item.key === handStrength)) {
+      setHandStrength(nodes.handStrengths[0]?.key ?? 'strong-made');
+    }
+  }, [nodes, handStrength]);
+
+  const query: PostflopRuleQuery = {
+    street: stage,
+    situation: situationKey,
+    line,
+    surface,
+    connectivity,
+    handStrength,
+    facingSize,
+  };
+  const queryKey = JSON.stringify(query);
+
+  // 回應可能亂序抵達。只採用最後一次發出的請求
+  const issued = useRef(0);
+  useEffect(() => {
+    const ticket = ++issued.current;
+    postflopRule(JSON.parse(queryKey) as PostflopRuleQuery, overrides)
+      .then((view) => {
+        if (ticket !== issued.current) return;
+        setRule(view);
+        setDraft(null);
+        setFailure(null);
+      })
+      .catch((error: unknown) => {
+        if (ticket !== issued.current) return;
+        setRule(null);
+        setFailure(String(error));
+      });
+  }, [queryKey, overrides]);
+
+  if (!nodes) {
     return (
       <section style={{ ...cardStyle, maxWidth: 420 }}>
         <SectionTitle>載入中</SectionTitle>
@@ -317,127 +416,424 @@ function PostflopRules({
     );
   }
 
-  const street = view.streets.find((item) => item.key === stage);
-  const situation =
-    view.situations.find((item) => item.key === situationKey) ?? view.situations[0];
-  if (!street || !situation) return <Banner tone="negative">找不到指定的翻後節點。</Banner>;
-
-  // 外觀與順子結構是兩個獨立的軸，一個牌面節點是兩者的組合——
-  // 「彩虹面」與「濕潤面」不是同一層的選項，混在一張清單裡列會讓
-  // 使用者以為它們互斥
-  const boardNodes = view.surfaces.flatMap((surface) =>
-    view.connectivities.map((connectivity) => ({
-      key: `${surface.key}+${connectivity.key}`,
-      label: `${surface.label}＋${connectivity.label}`,
-      description: `${surface.description}；${connectivity.description}`,
-    })),
+  const lines = nodes.lines.filter((item) => item.situation === situationKey);
+  const facingSizes = nodes.facingSizes.filter((item) =>
+    situationKey === 'no-bet' ? item.key === 'none' : item.key !== 'none',
   );
+  const nodeKey = rule?.nodeKey ?? '';
+  const current: Record<string, number> =
+    draft ?? Object.fromEntries((rule?.weights ?? []).map((weight) => [weight.kind, weight.myriad]));
+  const total = (rule?.weights ?? [])
+    .filter((weight) => weight.available)
+    .reduce((sum, weight) => sum + (current[weight.kind] ?? 0), 0);
+  const dirty = draft !== null;
+  const canSave = !locked && dirty && total === FULL;
+
+  const setWeight = (kind: string, myriad: number) =>
+    setDraft({ ...current, [kind]: Math.max(0, Math.min(FULL, myriad)) });
+
+  /** 每一次改動都先把現況推進歷史，恢復與一般編輯因此共用同一個 undo */
+  const apply = (next: PostflopOverridesView) => {
+    setUndoStack((stack) => [...stack.slice(-19), overrides]);
+    setPendingBatch(null);
+    onOverridesChange(next);
+  };
+
+  const undo = () => {
+    const previous = undoStack.at(-1);
+    if (!previous) return;
+    setUndoStack((stack) => stack.slice(0, -1));
+    setPendingBatch(null);
+    onOverridesChange(previous);
+  };
+
+  const save = () => {
+    const weights = (rule?.weights ?? [])
+      .filter((weight) => weight.available)
+      .map((weight) => ({ kind: weight.kind, myriad: current[weight.kind] ?? 0 }));
+    apply({
+      ...overrides,
+      nodes: [
+        ...overrides.nodes.filter((item) => item.nodeKey !== nodeKey),
+        { nodeKey, weights },
+      ],
+    });
+  };
+
+  const restore = () =>
+    apply({
+      ...overrides,
+      nodes: overrides.nodes.filter((item) => item.nodeKey !== nodeKey),
+    });
+
+  /** 批次恢復的範圍判定。節點鍵的欄位順序見引擎的 `PostflopNode::key` */
+  const inScope = (scope: BatchScope, key: string): boolean => {
+    const parts = key.split('|');
+    if (parts.length !== 7) return false;
+    switch (scope) {
+      case 'street':
+        return parts[0] === stage;
+      case 'line':
+        return parts[0] === stage && parts[2] === line;
+      case 'hand-strength':
+        return parts[5] === handStrength;
+      default:
+        return false;
+    }
+  };
+
+  const batchCount = (scope: BatchScope) =>
+    overrides.nodes.filter((item) => inScope(scope, item.nodeKey)).length;
+
+  const batchRestore = (scope: BatchScope) => {
+    if (pendingBatch !== scope) {
+      // 第一次點只是要求確認：批次恢復可能一次清掉數十筆
+      setPendingBatch(scope);
+      return;
+    }
+    apply({
+      ...overrides,
+      nodes: overrides.nodes.filter((item) => !inScope(scope, item.nodeKey)),
+    });
+  };
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
-      <Banner tone="warning">
-        {view.note} 版本：<span style={{ fontFamily: 'var(--font-mono)' }}>{view.version}</span>
-      </Banner>
+      {failure && <Banner tone="negative">{failure}</Banner>}
+      {!nodes.consultantApproved && <Banner tone="warning">{nodes.note}</Banner>}
 
-      <section style={{ ...cardStyle, overflowX: 'auto' }}>
-        <div style={{ display: 'flex', gap: 24, marginBottom: 14, flexWrap: 'wrap' }}>
-          <Stat label="階段" value={street.label} />
-          <Stat label="下注狀態" value={situation.label} />
-          <Stat
-            label="牌面節點"
-            value={`${view.surfaces.length} 外觀 × ${view.connectivities.length} 結構`}
+      {/* ── 導覽：線路 → 牌面兩軸 → 牌力組 → 面對尺度 ── */}
+      <section style={{ ...cardStyle, display: 'grid', gap: 12 }}>
+        <OptionRow
+          label="牌局線路"
+          options={lines.map((item) => ({ key: item.key, label: item.label }))}
+          value={line}
+          onChange={setLine}
+        />
+        <OptionRow
+          label="牌面外觀"
+          options={nodes.surfaces.map((item) => ({
+            key: item.key,
+            label: item.label,
+            title: item.description,
+          }))}
+          value={surface}
+          onChange={setSurface}
+        />
+        <OptionRow
+          label="順子結構"
+          options={nodes.connectivities.map((item) => ({
+            key: item.key,
+            label: item.label,
+            title: item.description,
+          }))}
+          value={connectivity}
+          onChange={setConnectivity}
+        />
+        <OptionRow
+          label="牌力組"
+          options={nodes.handStrengths.map((item) => ({
+            key: item.key,
+            label: item.label,
+            title: item.description,
+          }))}
+          value={handStrength}
+          onChange={setHandStrength}
+        />
+        {situationKey === 'facing-bet' && (
+          <OptionRow
+            label="面對尺度"
+            options={facingSizes.map((item) => ({ key: item.key, label: item.label }))}
+            value={facingSize}
+            onChange={setFacingSize}
           />
-          <Stat label="內容簽核" value={view.consultantApproved ? '已簽核' : '未簽核'} />
-        </div>
-
-        <div
-          style={{
-            minWidth: 860,
-            display: 'grid',
-            gridTemplateColumns: '150px repeat(6, minmax(110px, 1fr))',
-            borderTop: '1px solid var(--border)',
-            borderLeft: '1px solid var(--border)',
-          }}
-        >
-          <GridCell strong>牌面</GridCell>
-          {situation.actions.map((action) => (
-            <GridCell key={action.key} strong>
-              {action.label}
-            </GridCell>
-          ))}
-
-          {boardNodes.map(({ key, label, description }) => (
-            <FragmentRow key={key}>
-              <GridCell strong title={description}>
-                <div>{label}</div>
-              </GridCell>
-              {situation.actions.map((action) => (
-                <GridCell key={`${key}-${action.key}`} muted={!action.available}>
-                  {action.available ? '可用' : '不成立'}
-                  {!action.available && action.unavailableReason && (
-                    <div className="dim" style={{ fontSize: 9, marginTop: 2 }}>
-                      {action.unavailableReason}
-                    </div>
-                  )}
-                </GridCell>
-              ))}
-            </FragmentRow>
-          ))}
-        </div>
+        )}
       </section>
 
-      <div className="dim" style={{ fontSize: 11, lineHeight: 1.6 }}>
-        無人下注時可過牌或下注，跟注與蓋牌不成立；面對下注時不可過牌。
-        實際牌局仍會依最小加注額、有效籌碼與全下狀態套用引擎合法行動遮罩。
+      {/* ── 頻率編輯器 ── */}
+      {rule && (
+        <section style={{ ...cardStyle, display: 'grid', gap: 12, maxWidth: 720 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+            <div>
+              <SectionTitle>行動頻率</SectionTitle>
+              <div className="dim" style={{ fontSize: 10, fontFamily: 'var(--font-mono)' }}>
+                {rule.nodeKey}
+              </div>
+            </div>
+            <div style={{ textAlign: 'right', fontSize: 11 }}>
+              <div>
+                來源：<strong>{rule.sourceLabel}</strong>
+                {rule.ruleId && (
+                  <span className="dim" style={{ marginLeft: 6 }}>{rule.ruleId}</span>
+                )}
+              </div>
+              <div className="dim">
+                {rule.consultantApproved ? '已由顧問簽核' : '未簽核內容'}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gap: 6 }}>
+            {rule.weights.map((weight) => (
+              <div
+                key={weight.kind}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '150px 90px 1fr',
+                  alignItems: 'center',
+                  gap: 10,
+                  opacity: weight.available ? 1 : 0.45,
+                }}
+              >
+                <span style={{ fontSize: 12 }}>{weight.label}</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  disabled={!weight.available || locked}
+                  value={Math.round((current[weight.kind] ?? 0) / 100)}
+                  onChange={(event) =>
+                    setWeight(weight.kind, Math.round(Number(event.target.value) * 100))
+                  }
+                  style={{
+                    width: 72,
+                    padding: '4px 6px',
+                    fontSize: 12,
+                    fontFamily: 'var(--font-mono)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-control)',
+                    background: 'var(--bg-surface)',
+                    color: 'inherit',
+                  }}
+                />
+                <span className="dim" style={{ fontSize: 10 }}>
+                  {weight.available ? '%' : `不成立——${weight.unavailableReason ?? ''}`}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12 }}>
+              合計{' '}
+              <strong style={{ color: total === FULL ? 'inherit' : 'var(--negative)' }}>
+                {pct(total)}
+              </strong>
+            </span>
+            {total !== FULL && (
+              <span className="dim" style={{ fontSize: 11 }}>
+                合計必須是 100% 才能儲存
+              </span>
+            )}
+            <Chip disabled={!canSave} onClick={save}>
+              儲存這個節點
+            </Chip>
+            <Chip disabled={!dirty} onClick={() => setDraft(null)}>
+              放棄修改
+            </Chip>
+            <Chip disabled={!rule.restore.enabled || locked} onClick={restore}>
+              恢復繼承值
+            </Chip>
+          </div>
+
+          <div className="dim" style={{ fontSize: 11, lineHeight: 1.6 }}>
+            {rule.restore.reason}
+          </div>
+
+          {/* 批次恢復：執行前顯示受影響節點數，並要求二次確認 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span className="dim" style={{ fontSize: 11 }}>
+              批次恢復
+            </span>
+            {(
+              [
+                ['line', '這條線路'],
+                ['street', '整街'],
+                ['hand-strength', '這個牌力組'],
+              ] as [BatchScope, string][]
+            ).map(([scope, label]) => {
+              const count = batchCount(scope);
+              const confirming = pendingBatch === scope;
+              return (
+                <Chip
+                  key={scope}
+                  disabled={locked || count === 0}
+                  onClick={() => batchRestore(scope)}
+                >
+                  {confirming ? `再按一次清除 ${count} 筆` : `${label}（${count}）`}
+                </Chip>
+              );
+            })}
+            <Chip disabled={undoStack.length === 0} onClick={undo}>
+              復原（{undoStack.length}）
+            </Chip>
+          </div>
+
+          {/* 計劃 §6.1：覆寫目前只活在這次開啟的視窗裡。不做本機持久化
+              的話必須明白告知，不能留白讓使用者以為存下來了 */}
+          <div className="dim" style={{ fontSize: 10, lineHeight: 1.6 }}>
+            覆寫目前只保存在這次開啟的視窗，<strong>關掉重開會清空</strong>；
+            策略庫（命名存檔、複製、匯出）是另一個功能，尚未實作。
+            進行中的 run 已在開始時凍結快照，這裡的修改不影響它。
+          </div>
+        </section>
+      )}
+
+      {/* ── 完整度與分類預覽 ── */}
+      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        <CoverageCard coverage={nodes.coverage} />
+        <HandPreviewCard />
       </div>
     </div>
   );
 }
 
-function FragmentRow({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
-}
+/** 批次恢復的範圍。整條線路／整街／整個牌力組（計劃 §5.2）。 */
+type BatchScope = 'line' | 'street' | 'hand-strength';
 
-function GridCell({
-  children,
-  strong,
-  muted,
-  title,
+/** 一列可選項。作用中用整格背景填滿＋文字加深，不用左側強調邊框。 */
+function OptionRow({
+  label,
+  options,
+  value,
+  onChange,
 }: {
-  children: React.ReactNode;
-  strong?: boolean;
-  muted?: boolean;
-  title?: string;
+  label: string;
+  options: { key: string; label: string; title?: string }[];
+  value: string;
+  onChange: (key: string) => void;
 }) {
   return (
-    <div
-      title={title}
-      style={{
-        minHeight: 48,
-        padding: '8px 10px',
-        borderRight: '1px solid var(--border)',
-        borderBottom: '1px solid var(--border)',
-        background: muted ? 'var(--bg-base)' : 'var(--bg-surface)',
-        color: muted ? 'var(--text-tertiary)' : 'var(--text-secondary)',
-        fontSize: 10,
-        fontWeight: strong ? 600 : 400,
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-      }}
-    >
-      {children}
+    <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: 10, alignItems: 'start' }}>
+      <span className="dim" style={{ fontSize: 11, paddingTop: 4 }}>
+        {label}
+      </span>
+      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+        {options.map((option) => {
+          const active = option.key === value;
+          return (
+            <button
+              key={option.key}
+              type="button"
+              title={option.title}
+              onClick={() => onChange(option.key)}
+              style={{
+                padding: '4px 10px',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-control)',
+                background: active ? 'var(--bg-raised)' : 'transparent',
+                color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
+                fontWeight: active ? 600 : 400,
+                fontSize: 11,
+                fontFamily: 'inherit',
+                cursor: 'pointer',
+              }}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
-/**
- * 一格。
- *
- * 顏色沿用顧問校準工作台：100% 主動為深綠、混合以綠色透明度表示比例、
- * 純跟注為藍、其餘為底色。同一份範圍在兩個工具裡換色，對照時會以為
- * 看到的是不同內容。
- */
+/** 靜態節點覆蓋。與報表的執行期覆蓋是兩個不同的指標，因此標題講清楚。 */
+function CoverageCard({ coverage }: { coverage: PostflopStaticCoverageView }) {
+  const rows: [string, number][] = [
+    ['你的覆寫', coverage.user],
+    ['官方內容', coverage.official],
+    ['同組通則', coverage.generic],
+    ['工程 fallback', coverage.fallback],
+  ];
+  return (
+    <section style={{ ...cardStyle, flex: '1 1 280px', maxWidth: 360 }}>
+      <SectionTitle>節點覆蓋</SectionTitle>
+      <div className="dim" style={{ fontSize: 10, marginBottom: 8 }}>
+        分母是可達節點數（{coverage.totalNodes}），與報表的「執行期決策次數」
+        是兩個不同的指標。節點集合版本 {coverage.nodeSetVersion}
+      </div>
+      {rows.map(([label, count]) => (
+        <Row
+          key={label}
+          label={label}
+          value={`${count}（${pct(
+            coverage.totalNodes === 0
+              ? 0
+              : Math.round((count * FULL) / Number(coverage.totalNodes)),
+          )}）`}
+        />
+      ))}
+      <Row label="你的完整度" value={pct(coverage.completenessMyriad)} />
+    </section>
+  );
+}
+
+/** 指定底牌的分類預覽。節點編輯器只顯示牌力組，單手資料放這裡。 */
+function HandPreviewCard() {
+  const [hole, setHole] = useState('As Ts');
+  const [board, setBoard] = useState('Ah 7s 3s');
+  const [preview, setPreview] = useState<PostflopHandPreviewView | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    classifyPostflopHand(hole, board)
+      .then((view) => {
+        setPreview(view);
+        setError(null);
+      })
+      .catch((failure: unknown) => {
+        setPreview(null);
+        setError(String(failure));
+      });
+  }, [hole, board]);
+
+  const field: React.CSSProperties = {
+    padding: '4px 6px',
+    fontSize: 12,
+    fontFamily: 'var(--font-mono)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-control)',
+    background: 'var(--bg-surface)',
+    color: 'inherit',
+    width: 120,
+  };
+
+  return (
+    <section style={{ ...cardStyle, flex: '1 1 320px', maxWidth: 420 }}>
+      <SectionTitle>指定底牌分類預覽</SectionTitle>
+      <div style={{ display: 'flex', gap: 8, margin: '8px 0 10px', flexWrap: 'wrap' }}>
+        <input style={field} value={hole} onChange={(event) => setHole(event.target.value)} />
+        <input style={field} value={board} onChange={(event) => setBoard(event.target.value)} />
+      </div>
+      {error && (
+        <div className="dim" style={{ fontSize: 11, color: 'var(--negative)' }}>
+          {error}
+        </div>
+      )}
+      {preview && (
+        <>
+          <Row label="牌力組" value={preview.handStrengthLabel} />
+          <Row label="牌面" value={`${preview.surface}＋${preview.connectivity}`} />
+          <Row label="百分位" value={pct(preview.percentileMyriad)} />
+          <Row
+            label="有效補牌"
+            value={`${(preview.effectiveOutsCenti / 100).toFixed(2)} 張（其中聽牌 ${(
+              preview.drawOutsCenti / 100
+            ).toFixed(2)}）`}
+          />
+          <Row label="改善公共牌" value={preview.improvesBoard ? '是' : '否'} />
+          <div className="dim" style={{ fontSize: 10, marginTop: 8, lineHeight: 1.6 }}>
+            對手模型：{preview.opponentModel}（對單一對手的牌力序位，均勻隨機合法組合）。
+            門檻{preview.consultantApproved ? '已' : '尚未'}經顧問簽核。
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
 function Cell({
   cell,
   picked,

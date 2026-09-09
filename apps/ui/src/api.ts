@@ -17,6 +17,11 @@ import type {
   HandView,
   HoleCardVisibility,
   ParamSpecView,
+  PostflopHandPreviewView,
+  PostflopNodesView,
+  PostflopOverridesView,
+  PostflopRuleQuery,
+  PostflopRuleView,
   PostflopStrategyView,
   PowerPreviewView,
   RangeMatrixView,
@@ -56,6 +61,8 @@ export interface RunRequest {
   bots: BotSeatConfig[];
   /** 面板 D 的自身策略逐格覆寫。只裝在使用者座位上 */
   heroOverrides: CellOverrideView[];
+  /** 翻後的稀疏覆寫。run 開始時以值凍結，之後怎麼改都不影響進行中的 run */
+  heroPostflopOverrides: PostflopOverridesView;
 }
 
 interface TauriGlobal {
@@ -76,6 +83,22 @@ export function isDesktop(): boolean {
 
 async function http<T>(path: string): Promise<T> {
   const response = await fetch(path);
+  if (!response.ok) throw new Error(`IPC ${path} 失敗：${response.status}`);
+  return (await response.json()) as T;
+}
+
+/**
+ * 帶 JSON body 的查詢。
+ *
+ * 翻後的覆寫清單塞不進查詢字串（一份可能有數百筆），因此走 body。
+ * dev server 只認 `Content-Length`，`fetch` 送 JSON 時會自己帶上。
+ */
+async function httpPost<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
   if (!response.ok) throw new Error(`IPC ${path} 失敗：${response.status}`);
   return (await response.json()) as T;
 }
@@ -305,4 +328,54 @@ export function getHand(index: number, visibility: HoleCardVisibility): Promise<
   const bridge = tauri();
   if (bridge) return bridge.core.invoke<HandView>('get_hand', { index, revealAll });
   return http<HandView>(`/api/hand?index=${index}${revealAll ? '&revealAll=1' : ''}`);
+}
+
+// ── 面板 D：翻後策略（0907 計劃 §6.1）────────────────────────────────
+//
+// 三支都是純函式：覆寫清單整份送進去，後端不保存任何可變狀態。
+// 少了這個約束，「畫面上看到的」與「run 實際用的」會在兩個地方各自演化。
+
+/** 導覽選項與靜態完整度。牌力組依街別過濾——河牌只有五組。 */
+export function postflopNodes(
+  street: string,
+  overrides: PostflopOverridesView,
+): Promise<PostflopNodesView> {
+  const bridge = tauri();
+  if (bridge) return bridge.core.invoke<PostflopNodesView>('postflop_nodes', { street, overrides });
+  return httpPost<PostflopNodesView>(
+    `/api/postflop/nodes?street=${encodeURIComponent(street)}`,
+    overrides,
+  );
+}
+
+/** 單一節點的頻率、來源層級與恢復語意。 */
+export function postflopRule(
+  query: PostflopRuleQuery,
+  overrides: PostflopOverridesView,
+): Promise<PostflopRuleView> {
+  const bridge = tauri();
+  if (bridge) return bridge.core.invoke<PostflopRuleView>('postflop_rule', { query, overrides });
+  const search = new URLSearchParams({
+    street: query.street,
+    situation: query.situation,
+    line: query.line,
+    surface: query.surface,
+    connectivity: query.connectivity,
+    handStrength: query.handStrength,
+    facingSize: query.facingSize,
+  });
+  return httpPost<PostflopRuleView>(`/api/postflop/rule?${search.toString()}`, overrides);
+}
+
+/** 指定底牌的牌力分類預覽。節點編輯器只顯示牌力組，單手資料走這裡。 */
+export function classifyPostflopHand(
+  hole: string,
+  board: string,
+): Promise<PostflopHandPreviewView> {
+  const bridge = tauri();
+  if (bridge) {
+    return bridge.core.invoke<PostflopHandPreviewView>('classify_postflop_hand', { hole, board });
+  }
+  const search = new URLSearchParams({ hole, board });
+  return http<PostflopHandPreviewView>(`/api/postflop/classify?${search.toString()}`);
 }

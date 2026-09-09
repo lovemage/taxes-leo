@@ -10,7 +10,7 @@
 //! 用 std 手寫最小 HTTP/1.1 而不引入 HTTP 框架：這只是開發鷹架，
 //! 不值得為它增加會進入 Cargo.lock 的相依。
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 
 use poker_engine::bot::{BotAgent, BotConfig};
@@ -163,6 +163,10 @@ fn serve(mut stream: TcpStream, handler: &IpcHandler, run_id: i64) -> std::io::R
     let target = request_line.split_whitespace().nth(1).unwrap_or("/");
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
 
+    // 面板 D 的翻後查詢要把整份覆寫清單送進來，塞不進查詢字串，
+    // 因此這裡多讀一個 JSON body。沒有 body 的請求照舊
+    let body = read_body(&mut reader)?;
+
     let body = match path {
         "/api/run" => handler
             .get_run(run_id)
@@ -208,6 +212,39 @@ fn serve(mut stream: TcpStream, handler: &IpcHandler, run_id: i64) -> std::io::R
         "/api/runtime" => serde_json::to_string(&poker_ipc::runtime::status()).ok(),
         "/api/bots/params" => serde_json::to_string(&poker_ipc::bots::all_specs()).ok(),
         "/api/bots/presets" => serde_json::to_string(&poker_ipc::bots::demo_presets()).ok(),
+
+        // ── 面板 D：翻後策略（0907 計劃 §6.1）─────────────────────
+        //
+        // 三條都是純函式：覆寫清單由 body 整份送進來，後端不保存狀態
+        "/api/postflop/nodes" => {
+            let overrides = parse_postflop_overrides(&body);
+            let street = text_param(query, "street").unwrap_or_else(|| "flop".to_owned());
+            serde_json::to_string(&poker_ipc::postflop::postflop_nodes(&street, &overrides)).ok()
+        }
+        "/api/postflop/rule" => {
+            let overrides = parse_postflop_overrides(&body);
+            let query = poker_ipc::postflop::PostflopRuleQuery {
+                street: text_param(query, "street").unwrap_or_else(|| "flop".to_owned()),
+                situation: text_param(query, "situation").unwrap_or_else(|| "no-bet".to_owned()),
+                line: text_param(query, "line").unwrap_or_else(|| "cbet-chance".to_owned()),
+                surface: text_param(query, "surface").unwrap_or_else(|| "rainbow".to_owned()),
+                connectivity: text_param(query, "connectivity")
+                    .unwrap_or_else(|| "dry".to_owned()),
+                hand_strength: text_param(query, "handStrength")
+                    .unwrap_or_else(|| "strong-made".to_owned()),
+                facing_size: text_param(query, "facingSize").unwrap_or_else(|| "none".to_owned()),
+            };
+            poker_ipc::postflop::postflop_rule(&query, &overrides)
+                .ok()
+                .and_then(|view| serde_json::to_string(&view).ok())
+        }
+        "/api/postflop/classify" => {
+            let hole = text_param(query, "hole").unwrap_or_default();
+            let board = text_param(query, "board").unwrap_or_default();
+            poker_ipc::postflop::classify_postflop_hand(&hole, &board)
+                .ok()
+                .and_then(|view| serde_json::to_string(&view).ok())
+        }
 
         // ── 面板 D：策略 ───────────────────────────────────────────
         //
@@ -315,6 +352,41 @@ fn parse_overrides(
             })
         })
         .collect()
+}
+
+/// 解析 body 裡的覆寫清單。空 body 或格式錯誤時回傳空清單——
+/// 開發鷹架不做嚴格驗證，正式驗證在 IPC 層。
+fn parse_postflop_overrides(body: &str) -> poker_ipc::postflop::PostflopOverridesView {
+    serde_json::from_str(body).unwrap_or_default()
+}
+
+/// 讀取 `Content-Length` 指定長度的請求 body。
+///
+/// 只認 `Content-Length`，不處理 chunked——這是開發鷹架，前端 `fetch`
+/// 送的 JSON 一律帶長度。
+fn read_body(reader: &mut BufReader<TcpStream>) -> std::io::Result<String> {
+    let mut length = 0usize;
+    loop {
+        let mut line = String::new();
+        if reader.read_line(&mut line)? == 0 {
+            break;
+        }
+        let trimmed = line.trim_end();
+        if trimmed.is_empty() {
+            break;
+        }
+        if let Some((key, value)) = trimmed.split_once(':') {
+            if key.eq_ignore_ascii_case("content-length") {
+                length = value.trim().parse().unwrap_or(0);
+            }
+        }
+    }
+    if length == 0 {
+        return Ok(String::new());
+    }
+    let mut buffer = vec![0u8; length];
+    reader.read_exact(&mut buffer)?;
+    Ok(String::from_utf8_lossy(&buffer).into_owned())
 }
 
 /// 查詢字串裡的文字欄位。位置與情境鍵含 `+`，因此要還原百分號編碼。

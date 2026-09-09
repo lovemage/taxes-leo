@@ -16,6 +16,7 @@ pub mod bots;
 pub mod frames;
 pub mod handler;
 pub mod log;
+pub mod postflop;
 pub mod rankings;
 pub mod report;
 pub mod run;
@@ -32,6 +33,12 @@ pub use bots::{all_specs, BotSeatConfig, ParamSpecView};
 pub use strategy::{
     BucketOptionView, CellOverrideView, MatrixCellView, RangeMatrixView, ScenarioOptionView,
     StrategyMetaView, StrategyNodesView,
+};
+pub use postflop::{
+    classify_postflop_hand, postflop_nodes, postflop_rule, PostflopHandPreviewView,
+    PostflopLineOptionView, PostflopNodeOverrideView, PostflopNodesView, PostflopOptionView,
+    PostflopOverridesView, PostflopRestoreView, PostflopRuleOverrideView, PostflopRuleQuery,
+    PostflopRuleView, PostflopStaticCoverageView, PostflopWeightInput, PostflopWeightView,
 };
 pub use report::{
     EndReasonView, EstimateView, OverallView, PositionRowView, ProportionView, ReportScopeView,

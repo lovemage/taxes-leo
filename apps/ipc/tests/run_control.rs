@@ -7,7 +7,7 @@
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
-use poker_ipc::run::{execute, RunControl, RunPhase, RunProgress, RunRequest};
+use poker_ipc::run::{execute, HeroStrategy, RunControl, RunPhase, RunProgress, RunRequest};
 use poker_storage::Store;
 
 fn request() -> RunRequest {
@@ -29,6 +29,7 @@ fn request() -> RunRequest {
         hero_seat: 0,
         bots: Vec::new(),
         hero_overrides: Vec::new(),
+        hero_postflop_overrides: Default::default(),
     }
 }
 
@@ -115,7 +116,7 @@ fn run_with(control: Arc<RunControl>, hand_limit: u64) -> (Vec<RunProgress>, u64
 
     let updates = Arc::new(Mutex::new(Vec::new()));
     let sink = Arc::clone(&updates);
-    execute(&config, &[], &[], &store, &control, 1_771_200_000, move |progress| {
+    execute(&config, &[], HeroStrategy::none(), &store, &control, 1_771_200_000, move |progress| {
         sink.lock().expect("鎖").push(progress);
     })
     .expect("執行");
@@ -196,7 +197,7 @@ fn 準備階段在一秒內完成() {
     let started = std::time::Instant::now();
     let first_at = Arc::new(Mutex::new(None::<std::time::Duration>));
     let sink = Arc::clone(&first_at);
-    execute(&config, &[], &[], &store, &control, 1_771_200_000, move |progress| {
+    execute(&config, &[], HeroStrategy::none(), &store, &control, 1_771_200_000, move |progress| {
         if progress.phase == RunPhase::PreparingStrategy {
             *sink.lock().expect("鎖") = Some(started.elapsed());
             control_for_thread.cancelled.store(true, Ordering::Relaxed);
@@ -405,7 +406,7 @@ fn 執行中維持佔用() {
 
     let control_for_probe = Arc::clone(&control);
     let sink = Arc::clone(&observed);
-    execute(&config, &[], &[], &store, &control, 1_771_200_000, move |progress| {
+    execute(&config, &[], HeroStrategy::none(), &store, &control, 1_771_200_000, move |progress| {
         // 在進度回呼裡檢查，此時執行緒確實還在 execute 內。
         // 準備階段同樣算執行中——執行權在那時就已經被佔住了
         if !progress.finished {
@@ -434,7 +435,7 @@ fn 未指定_bot_時_manifest_仍記下實際使用的九組設定() {
 
     let store = Arc::new(Mutex::new(Store::open_in_memory().expect("資料庫")));
     let control = Arc::new(RunControl::default());
-    let run_id = execute(&config, &request.bots, &[], &store, &control, 1_771_200_000, |_| {})
+    let run_id = execute(&config, &request.bots, HeroStrategy::none(), &store, &control, 1_771_200_000, |_| {})
         .expect("執行");
 
     let manifest = store
@@ -468,7 +469,7 @@ fn manifest_保存全部參數生效值與完整基準內容() {
 
     let store = Arc::new(Mutex::new(Store::open_in_memory().expect("資料庫")));
     let control = Arc::new(RunControl::default());
-    let run_id = execute(&config, &request.bots, &[], &store, &control, 1_771_200_000, |_| {})
+    let run_id = execute(&config, &request.bots, HeroStrategy::none(), &store, &control, 1_771_200_000, |_| {})
         .expect("執行");
     let manifest = store
         .lock()
@@ -529,7 +530,7 @@ fn 未指定的座位以座位序命名() {
 
     let store = Arc::new(Mutex::new(Store::open_in_memory().expect("資料庫")));
     let control = Arc::new(RunControl::default());
-    let run_id = execute(&config, &request.bots, &[], &store, &control, 1_771_200_000, |_| {})
+    let run_id = execute(&config, &request.bots, HeroStrategy::none(), &store, &control, 1_771_200_000, |_| {})
         .expect("執行");
     let manifest = store
         .lock()
@@ -571,7 +572,10 @@ fn 自身策略的覆寫寫進_manifest_且不影響_bot_快照() {
     let run_id = execute(
         &config,
         &request.bots,
-        &request.hero_overrides,
+        HeroStrategy {
+            preflop_overrides: &request.hero_overrides,
+            postflop_overrides: &request.hero_postflop_overrides,
+        },
         &store,
         &control,
         1_771_200_000,
@@ -619,7 +623,10 @@ fn 不合法的覆寫讓執行直接失敗() {
     let result = execute(
         &config,
         &request.bots,
-        &request.hero_overrides,
+        HeroStrategy {
+            preflop_overrides: &request.hero_overrides,
+            postflop_overrides: &request.hero_postflop_overrides,
+        },
         &store,
         &control,
         1_771_200_000,
@@ -634,7 +641,10 @@ fn 不合法的覆寫讓執行直接失敗() {
     assert!(execute(
         &config,
         &request.bots,
-        &[bad_node],
+        HeroStrategy {
+            preflop_overrides: &[bad_node],
+            postflop_overrides: &Default::default(),
+        },
         &store,
         &control,
         1_771_200_000,

@@ -25,6 +25,7 @@ export const DEFAULT_REQUEST: RunRequest = {
   heroSeat: 0,
   bots: [],
   heroOverrides: [],
+  heroPostflopOverrides: { nodes: [], rules: [] },
 };
 
 /** 手數以 1K 為單位，範圍 1K–100K（核心規格 2.1）。 */

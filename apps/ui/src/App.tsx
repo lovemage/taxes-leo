@@ -20,7 +20,10 @@ import {
   type RunProgress,
   type RunRequest,
 } from './api';
-import type { CellOverrideView } from '../../../packages/poker-types/src/index';
+import type {
+  CellOverrideView,
+  PostflopOverridesView,
+} from '../../../packages/poker-types/src/index';
 import { AppHeader, type ReplayHeadline, type RunMode } from './components/AppHeader';
 import { useMinimumVisible } from './motion';
 import { IconRail, type RailItem } from './components/IconRail';
@@ -146,6 +149,14 @@ export function App() {
     [],
   );
 
+  // 翻後覆寫與翻前覆寫一起住在 request 裡：run 開始時整份以值凍結，
+  // 之後怎麼改都不影響進行中的那一次（計劃 §6.2）
+  const setPostflopOverrides = useCallback(
+    (heroPostflopOverrides: PostflopOverridesView) =>
+      setRequest((current) => ({ ...current, heroPostflopOverrides })),
+    [],
+  );
+
   const handleStart = useCallback(() => {
     setFailure(null);
     setProgress(null);
@@ -266,6 +277,8 @@ export function App() {
                   selection={node}
                   overrides={request.heroOverrides}
                   onOverridesChange={setOverrides}
+                  postflopOverrides={request.heroPostflopOverrides}
+                  onPostflopOverridesChange={setPostflopOverrides}
                   locked={busy}
                 />
               )}

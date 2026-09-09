@@ -75,9 +75,15 @@ pub struct RunRequest {
     /// 逐座 Bot 設定（面板 B／C）。長度不足時以預設補齊
     #[serde(default)]
     pub bots: Vec<crate::bots::BotSeatConfig>,
-    /// 面板 D 的自身策略逐格覆寫。**只裝在使用者座位上**
+    /// 面板 D 的自身策略逐格覆寫（翻前）。**只裝在使用者座位上**
     #[serde(default)]
     pub hero_overrides: Vec<crate::strategy::CellOverrideView>,
+    /// 翻後的稀疏覆寫（節點覆寫與規則覆寫）。
+    ///
+    /// 以值傳入並在 run 開始時凍結：後端不保存可變策略，UI 之後怎麼改
+    /// 都不影響進行中的 run（計劃 §6.2）
+    #[serde(default)]
+    pub hero_postflop_overrides: crate::postflop::PostflopOverridesView,
 }
 
 impl RunRequest {
@@ -272,10 +278,34 @@ pub const WRITE_BATCH_HANDS: usize = 500;
 
 /// `on_progress` 由呼叫端節流後推送給前端；核心規格要求進度更新
 /// 不得逐手觸發，否則 UI 執行緒會被重繪吃滿。
+/// run 要用的使用者策略。
+///
+/// 翻前逐格覆寫與翻後稀疏覆寫包在一起：兩者都是「使用者親手訂的內容」，
+/// 而且都在 run 開始時以值凍結。分成兩個參數傳的話，呼叫端很容易只更新
+/// 其中一個。
+#[derive(Debug, Clone, Copy)]
+pub struct HeroStrategy<'a> {
+    pub preflop_overrides: &'a [crate::strategy::CellOverrideView],
+    pub postflop_overrides: &'a crate::postflop::PostflopOverridesView,
+}
+
+impl HeroStrategy<'static> {
+    /// 完全沒有覆寫。測試與「跑官方基準」的路徑用。
+    #[must_use]
+    pub fn none() -> Self {
+        static EMPTY: std::sync::OnceLock<crate::postflop::PostflopOverridesView> =
+            std::sync::OnceLock::new();
+        Self {
+            preflop_overrides: &[],
+            postflop_overrides: EMPTY.get_or_init(crate::postflop::PostflopOverridesView::default),
+        }
+    }
+}
+
 pub fn execute(
     config: &SessionConfig,
     bots: &[crate::bots::BotSeatConfig],
-    hero_overrides: &[crate::strategy::CellOverrideView],
+    strategy: HeroStrategy<'_>,
     store: &Arc<Mutex<Store>>,
     control: &Arc<RunControl>,
     created_at: i64,
@@ -305,7 +335,7 @@ pub fn execute(
     let bot_configs = crate::bots::to_bot_configs(bots, config.players)?;
     // 面板 D 的逐格覆寫。驗證在這裡就做完，不合法的覆寫不該等到跑起來
     // 才被靜默忽略——使用者以為改了一格，實際上引擎照舊走參數
-    let hero_overrides = crate::strategy::to_cell_overrides(hero_overrides)?;
+    let hero_overrides = crate::strategy::to_cell_overrides(strategy.preflop_overrides)?;
     // 快照必須是**使用者實際用的那份策略**，因此帶著覆寫；Bot 用的是
     // 沒有覆寫的基準規則，兩者分開存才讀得回當初到底跑了什麼
     let mut hero_rules = rules.clone();
@@ -355,6 +385,9 @@ pub fn execute(
     // 覆寫在 rangeWidth 縮放之後才裝上：覆寫是絕對頻率，被人格參數
     // 再乘一次就不是使用者寫下的那個數字了
     agent.set_seat_overrides(hero, hero_overrides);
+    // 翻後規則以值凍結：這一份是 run 開始那一刻的快照，
+    // UI 後續的修改不會滲進來
+    agent.set_postflop_rules(crate::postflop::to_rule_set(strategy.postflop_overrides));
 
     let summary = run_session(config, &mut agent, |played| {
         if aborted || !control.checkpoint() {

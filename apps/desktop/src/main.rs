@@ -72,6 +72,8 @@ fn start_run(
     // 使用者會以為 run 已經帶著他改的策略跑起來了
     let hero_overrides = request.hero_overrides.clone();
     poker_ipc::strategy::to_cell_overrides(&hero_overrides)?;
+    // 翻後覆寫同樣先驗證再送進背景執行緒
+    let hero_postflop_overrides = request.hero_postflop_overrides.clone();
 
     // 已有 run 在跑時拒絕啟動，避免兩個 run 同時寫入。
     //
@@ -100,7 +102,10 @@ fn start_run(
         let result = run::execute(
             &config,
             &bots,
-            &hero_overrides,
+            run::HeroStrategy {
+                preflop_overrides: &hero_overrides,
+                postflop_overrides: &hero_postflop_overrides,
+            },
             &store,
             &control,
             created_at,
@@ -211,6 +216,35 @@ fn postflop_strategy() -> poker_ipc::strategy::PostflopStrategyView {
 #[tauri::command(async)]
 fn strategy_nodes(seated: u8, hero: String) -> StrategyNodesView {
     poker_ipc::strategy::nodes(seated, &hero)
+}
+
+/// 翻後的導覽選項與靜態完整度（0907 計劃 §6.1）。
+///
+/// 純函式：覆寫清單整份傳入，後端不保存狀態
+#[tauri::command(async)]
+fn postflop_nodes(
+    street: String,
+    overrides: poker_ipc::postflop::PostflopOverridesView,
+) -> poker_ipc::postflop::PostflopNodesView {
+    poker_ipc::postflop::postflop_nodes(&street, &overrides)
+}
+
+/// 單一翻後節點的頻率、來源層級與恢復語意
+#[tauri::command(async)]
+fn postflop_rule(
+    query: poker_ipc::postflop::PostflopRuleQuery,
+    overrides: poker_ipc::postflop::PostflopOverridesView,
+) -> CommandResult<poker_ipc::postflop::PostflopRuleView> {
+    poker_ipc::postflop::postflop_rule(&query, &overrides)
+}
+
+/// 指定底牌的牌力分類預覽
+#[tauri::command(async)]
+fn classify_postflop_hand(
+    hole: String,
+    board: String,
+) -> CommandResult<poker_ipc::postflop::PostflopHandPreviewView> {
+    poker_ipc::postflop::classify_postflop_hand(&hole, &board)
 }
 
 /// 一個節點的 13×13 範圍矩陣。頻率由引擎算，UI 只負責畫
@@ -364,6 +398,9 @@ fn main() {
             postflop_strategy,
             strategy_nodes,
             strategy_matrix,
+            postflop_nodes,
+            postflop_rule,
+            classify_postflop_hand,
             bot_strategy_matrix,
             get_run,
             get_report,
