@@ -1251,6 +1251,11 @@ impl PostflopIntentDistribution {
             }
         }
 
+        // canonical 順序：分布是集合，順序不該有意義。不排的話，同一份
+        // 內容經過 JSON round-trip 之後會變成「不相等」，而快照的
+        // content hash 正是靠這個相等性
+        merged.sort_by_key(|(kind, _)| *kind);
+
         let total: u64 = merged.iter().map(|(_, w)| u64::from(*w)).sum();
         if total != u64::from(FULL) {
             return Err(DistributionError::NotNormalised {

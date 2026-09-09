@@ -353,6 +353,122 @@ fn intent(intent: &PostflopIntentDistribution) -> Value {
     Value::Object(weights)
 }
 
+/// 由快照內容重建翻後規則集。
+///
+/// 驗收條件 15：「每次 run 預設可只靠 manifest 內的完整翻後內容與 hash
+/// 還原策略」。存了內容卻沒有讀回來的路徑，那句話就只是宣稱——
+/// `快照可以完整重建回規則集` 測試走的就是這一支。
+///
+/// 回傳 `None` 代表快照結構不對；個別規則解析不出來時**整份失敗**，
+/// 不做部分還原：少了一條規則的規則集會安靜地打出不一樣的牌。
+#[must_use]
+pub fn rebuild_postflop(snapshot: &Value) -> Option<RuleSet> {
+    let entries = snapshot.get("rules")?.as_array()?;
+    let fallback_version = snapshot.get("fallbackVersion")?.as_str()?.to_owned();
+
+    let mut rules = Vec::with_capacity(entries.len());
+    for entry in entries {
+        rules.push(rebuild_rule(entry)?);
+    }
+    Some(RuleSet::new(rules, fallback_version))
+}
+
+fn rebuild_rule(entry: &Value) -> Option<poker_engine::strategy::postflop::PostflopRule> {
+    use poker_engine::strategy::postflop::{PostflopRule, RuleSource};
+
+    let source = match entry.get("source")?.as_str()? {
+        "user-override" => RuleSource::UserOverride,
+        "official" => RuleSource::Official,
+        "generic" => RuleSource::Generic,
+        "engineering-fallback" => RuleSource::EngineeringFallback,
+        _ => return None,
+    };
+
+    let weights: Vec<_> = entry
+        .get("intent")?
+        .as_object()?
+        .iter()
+        .map(|(kind, myriad)| {
+            Some((
+                crate::postflop::parse_action_kind(kind)?,
+                u32::try_from(myriad.as_u64()?).ok()?,
+            ))
+        })
+        .collect::<Option<_>>()?;
+
+    Some(PostflopRule {
+        id: entry.get("id")?.as_str()?.to_owned(),
+        name: entry.get("name")?.as_str()?.to_owned(),
+        condition: rebuild_condition(entry.get("condition")?)?,
+        intent: PostflopIntentDistribution::new(weights).ok()?,
+        source,
+        version: entry.get("version")?.as_str()?.to_owned(),
+        consultant_approved: entry.get("consultantApproved")?.as_bool()?,
+    })
+}
+
+fn rebuild_condition(value: &Value) -> Option<PostflopCondition> {
+    let map = value.as_object()?;
+    let text = |key: &str| map.get(key).and_then(Value::as_str);
+    let range = |key: &str| -> Option<std::ops::RangeInclusive<u8>> {
+        let pair = map.get(key)?.as_array()?;
+        Some(u8::try_from(pair.first()?.as_u64()?).ok()?..=u8::try_from(pair.get(1)?.as_u64()?).ok()?)
+    };
+
+    Some(PostflopCondition {
+        street: text("street").and_then(crate::postflop::parse_street),
+        situation: text("situation").and_then(crate::postflop::parse_situation),
+        board_surface: text("boardSurface").and_then(crate::postflop::parse_surface),
+        board_connectivity: text("boardConnectivity")
+            .and_then(crate::postflop::parse_connectivity),
+        hand_strength: text("handStrength").and_then(crate::postflop::parse_hand_strength),
+        facing_size: text("facingSize").and_then(crate::postflop::parse_facing_size),
+        active_players: range("activePlayers"),
+        opponents_behind: range("opponentsBehind"),
+        spr_centi: map.get("sprCenti").and_then(|pair| {
+            let pair = pair.as_array()?;
+            let start = u32::try_from(pair.first()?.as_u64()?).ok()?;
+            let end = u32::try_from(pair.get(1)?.as_u64()?).ok()?;
+            Some(start..=end)
+        }),
+        line: rebuild_line(map.get("line")),
+        ..PostflopCondition::default()
+    })
+}
+
+fn rebuild_line(value: Option<&Value>) -> PostflopLineCondition {
+    use poker_engine::strategy::postflop::{AggressorRole, RelativeAggressorOrder};
+
+    let Some(map) = value.and_then(Value::as_object) else {
+        return PostflopLineCondition::default();
+    };
+    let role = |key: &str| {
+        map.get(key)
+            .and_then(Value::as_str)
+            .and_then(|text| AggressorRole::ALL.into_iter().find(|role| role.key() == text))
+    };
+    let range = |key: &str| -> Option<std::ops::RangeInclusive<u8>> {
+        let pair = map.get(key)?.as_array()?;
+        Some(u8::try_from(pair.first()?.as_u64()?).ok()?..=u8::try_from(pair.get(1)?.as_u64()?).ok()?)
+    };
+
+    PostflopLineCondition {
+        previous_street_aggressor: role("previousStreetAggressor"),
+        last_aggressor_before_current_street: role("lastAggressorBeforeCurrentStreet"),
+        relative_aggressor_order: map
+            .get("relativeAggressorOrder")
+            .and_then(Value::as_str)
+            .and_then(|text| {
+                RelativeAggressorOrder::ALL
+                    .into_iter()
+                    .find(|order| order.key() == text)
+            }),
+        hero_checked_this_street: map.get("heroCheckedThisStreet").and_then(Value::as_bool),
+        current_street_bet_count: range("currentStreetBetCount"),
+        current_street_raise_count: range("currentStreetRaiseCount"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -466,6 +582,59 @@ mod tests {
             size < 80_000,
             "翻後規則列 {size} 位元組偏大——與翻前共用同一個 80 KB 閘門"
         );
+    }
+
+    #[test]
+    fn 快照可以完整重建回規則集() {
+        // 驗收條件 15：只靠 manifest 內的內容就要還原得出當次策略。
+        // 存了內容卻沒有讀回來的路徑，那句話就只是宣稱
+        let overrides = crate::postflop::PostflopOverridesView {
+            nodes: vec![crate::postflop::PostflopNodeOverrideView {
+                node_key: "turn|facing-bet|facing-cbet|rainbow|wet|bluff-catcher|two-thirds"
+                    .to_owned(),
+                weights: vec![
+                    crate::postflop::PostflopWeightInput {
+                        kind: "call".to_owned(),
+                        myriad: 4_000,
+                    },
+                    crate::postflop::PostflopWeightInput {
+                        kind: "fold".to_owned(),
+                        myriad: 6_000,
+                    },
+                ],
+            }],
+            rules: Vec::new(),
+        };
+        let original = crate::postflop::to_rule_set(&overrides);
+
+        let rebuilt = rebuild_postflop(&postflop(&original)).expect("重建");
+
+        assert_eq!(rebuilt.rules().len(), original.rules().len());
+        for (before, after) in original.rules().iter().zip(rebuilt.rules()) {
+            assert_eq!(before.id, after.id);
+            assert_eq!(before.source, after.source);
+            assert_eq!(before.consultant_approved, after.consultant_approved);
+            assert_eq!(
+                before.condition, after.condition,
+                "條件必須逐欄還原，否則重建出來的規則會命中不同的節點"
+            );
+            assert_eq!(before.intent, after.intent);
+        }
+
+        // 重建後再存一次應該得到同一份內容——hash 才有意義
+        assert_eq!(postflop(&original), postflop(&rebuilt));
+    }
+
+    #[test]
+    fn 快照結構不對時整份失敗而不是部分還原() {
+        // 少了一條規則的規則集會安靜地打出不一樣的牌
+        let mut snapshot = postflop(&crate::postflop::to_rule_set(
+            &crate::postflop::PostflopOverridesView::default(),
+        ));
+        snapshot["rules"][3]["intent"] = json!({ "notAnAction": 10_000 });
+        assert!(rebuild_postflop(&snapshot).is_none());
+
+        assert!(rebuild_postflop(&json!({ "rules": [] })).is_none(), "缺欄位");
     }
 
     #[test]

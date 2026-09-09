@@ -893,7 +893,7 @@ const fn street_label(street: Street) -> &'static str {
     }
 }
 
-fn parse_street(key: &str) -> Option<Street> {
+pub(crate) fn parse_street(key: &str) -> Option<Street> {
     match key {
         "flop" => Some(Street::Flop),
         "turn" => Some(Street::Turn),
@@ -902,38 +902,38 @@ fn parse_street(key: &str) -> Option<Street> {
     }
 }
 
-fn parse_situation(key: &str) -> Option<PostflopSituation> {
+pub(crate) fn parse_situation(key: &str) -> Option<PostflopSituation> {
     PostflopSituation::ALL
         .into_iter()
         .find(|situation| situation.key() == key)
 }
 
-fn parse_line(key: &str) -> Option<PostflopLineName> {
+pub(crate) fn parse_line(key: &str) -> Option<PostflopLineName> {
     PostflopLineName::NO_BET
         .into_iter()
         .chain(PostflopLineName::FACING_BET)
         .find(|line| line.key() == key)
 }
 
-fn parse_surface(key: &str) -> Option<BoardSurface> {
+pub(crate) fn parse_surface(key: &str) -> Option<BoardSurface> {
     BoardSurface::ALL
         .into_iter()
         .find(|surface| surface.key() == key)
 }
 
-fn parse_connectivity(key: &str) -> Option<BoardConnectivity> {
+pub(crate) fn parse_connectivity(key: &str) -> Option<BoardConnectivity> {
     BoardConnectivity::ALL
         .into_iter()
         .find(|connectivity| connectivity.key() == key)
 }
 
-fn parse_hand_strength(key: &str) -> Option<HandStrength> {
+pub(crate) fn parse_hand_strength(key: &str) -> Option<HandStrength> {
     HandStrength::ALL
         .into_iter()
         .find(|strength| strength.key() == key)
 }
 
-fn parse_action_kind(key: &str) -> Option<PostflopActionKind> {
+pub(crate) fn parse_action_kind(key: &str) -> Option<PostflopActionKind> {
     PostflopActionKind::ALL
         .into_iter()
         .find(|kind| kind.key() == key)
@@ -953,7 +953,7 @@ const fn facing_size_key(size: FacingSize) -> &'static str {
     }
 }
 
-fn parse_facing_size(key: &str) -> Option<FacingSize> {
+pub(crate) fn parse_facing_size(key: &str) -> Option<FacingSize> {
     [
         FacingSize::None,
         FacingSize::Quarter,
