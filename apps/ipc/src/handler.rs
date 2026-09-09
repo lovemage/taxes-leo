@@ -5,6 +5,7 @@
 
 use poker_storage::db::{StorageError, Store};
 
+use crate::report::ReportView;
 use crate::view::{HandSummaryView, HandView, HoleCardVisibility, RunView};
 
 #[derive(Debug)]
@@ -61,6 +62,17 @@ impl IpcHandler {
         visibility: HoleCardVisibility,
     ) -> Result<HandView, IpcError> {
         crate::views::hand_view(&self.store, run_id, hand_index, visibility)
+    }
+
+    /// 面板 F 的報表。
+    ///
+    /// `include_dead` 只作用於逐位置切片；整體卡不排除 dead 手
+    /// （UI 規格 F.4）。
+    ///
+    /// # Errors
+    /// run 不存在、讀取或解碼失敗時回傳錯誤。
+    pub fn report(&self, run_id: i64, include_dead: bool) -> Result<ReportView, IpcError> {
+        crate::report::report(&self.store, run_id, include_dead)
     }
 
     /// 分頁取得逐手摘要（面板 G 的列表）。

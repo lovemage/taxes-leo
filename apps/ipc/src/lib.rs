@@ -17,6 +17,7 @@ pub mod frames;
 pub mod handler;
 pub mod log;
 pub mod rankings;
+pub mod report;
 pub mod run;
 pub mod runtime;
 pub mod snapshot;
@@ -31,6 +32,10 @@ pub use bots::{all_specs, BotSeatConfig, ParamSpecView};
 pub use strategy::{
     BucketOptionView, CellOverrideView, MatrixCellView, RangeMatrixView, ScenarioOptionView,
     StrategyMetaView, StrategyNodesView,
+};
+pub use report::{
+    EndReasonView, EstimateView, OverallView, PositionRowView, ProportionView, ReportScopeView,
+    ReportView, TablesView,
 };
 pub use view::{
     ActionView, FrameView, HandSummaryView, HandView, HoleCardVisibility, PowerPreviewView, RunView,

@@ -34,7 +34,7 @@ use std::sync::{Arc, Mutex};
 use poker_ipc::run::{self, RunControl, RunRequest};
 use poker_ipc::{
     CellOverrideView, HandSummaryView, HandView, HoleCardVisibility, PowerPreviewView,
-    RangeMatrixView, RunView, StrategyMetaView, StrategyNodesView,
+    RangeMatrixView, ReportView, RunView, StrategyMetaView, StrategyNodesView,
 };
 use poker_storage::Store;
 use tauri::{Emitter, Manager, State};
@@ -238,6 +238,23 @@ fn get_run(state: State<'_, AppState>) -> CommandResult<RunView> {
     poker_ipc::views::run_view(&store, run_id).map_err(|e| format!("取得 run 失敗：{e:?}"))
 }
 
+/// 面板 F 的報表。
+///
+/// `include_dead` 只作用於逐位置切片；整體卡不排除 dead 手（UI 規格
+/// F.4）——那些手照樣是使用者打過的手，從總體結論裡拿掉會讓總盈虧
+/// 與逐手 log 對不起來。
+#[tauri::command(async)]
+fn get_report(state: State<'_, AppState>, include_dead: bool) -> CommandResult<ReportView> {
+    let run_id = state
+        .current_run
+        .lock()
+        .map_err(|_| "狀態鎖已毀損")?
+        .ok_or("尚未執行任何 run")?;
+    let store = state.store.lock().map_err(|_| "資料庫鎖已毀損")?;
+    poker_ipc::report::report(&store, run_id, include_dead)
+        .map_err(|e| format!("取得報表失敗：{e:?}"))
+}
+
 #[tauri::command(async)]
 fn list_hands(
     state: State<'_, AppState>,
@@ -349,6 +366,7 @@ fn main() {
             strategy_matrix,
             bot_strategy_matrix,
             get_run,
+            get_report,
             list_hands,
             get_hand
         ])

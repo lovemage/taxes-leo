@@ -168,6 +168,15 @@ fn serve(mut stream: TcpStream, handler: &IpcHandler, run_id: i64) -> std::io::R
             .get_run(run_id)
             .ok()
             .and_then(|view| serde_json::to_string(&view).ok()),
+        // 面板 F 的報表。`includeDead=1` 才把 dead button／dead small blind
+        // 手納入逐位置切片；整體卡兩種情形都不排除（UI 規格 F.4）
+        "/api/report" => {
+            let include_dead = param(query, "includeDead") == Some(1);
+            handler
+                .report(run_id, include_dead)
+                .ok()
+                .and_then(|view| serde_json::to_string(&view).ok())
+        }
         "/api/hands" => {
             let offset = param(query, "offset").unwrap_or(0);
             let limit = param(query, "limit").unwrap_or(50).min(500);
