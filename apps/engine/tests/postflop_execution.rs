@@ -51,8 +51,20 @@ fn acted(seat: usize, position: PositionLabel, street: Street, raised: bool, to:
 }
 
 /// 翻牌、英雄在 BTN、翻前是英雄加注：典型的 c-bet 機會。
+///
+/// `to_call > 0` 時，對手在翻牌下的那一注**也會寫進 history**，底池跟著
+/// 長大：30 是下注前的底池。少了這一步，fixture 等於宣稱「底池 30 裡面
+/// 已經含了對手那 10」，尺度分檔就會沿用「含了這注的底池」這個錯誤分母
+/// （見 `postflop_facing_size` 由引擎事件產生的那組測試）。
 fn flop_view(hole: &str, board: &str, to_call: u64) -> DecisionView {
     let hole_cards = cards(hole);
+    let mut history = vec![
+        acted(HERO, PositionLabel::Btn, Street::Preflop, true, 6),
+        acted(3, PositionLabel::Bb, Street::Preflop, false, 6),
+    ];
+    if to_call > 0 {
+        history.push(acted(3, PositionLabel::Bb, Street::Flop, true, to_call));
+    }
     DecisionView {
         seat: HERO,
         position: PositionLabel::Btn,
@@ -61,7 +73,7 @@ fn flop_view(hole: &str, board: &str, to_call: u64) -> DecisionView {
         board: cards(board),
         seated: 6,
         effective_stack_bucket: StackBucket::Deeper,
-        pot: Chips::new(30),
+        pot: Chips::new(30 + to_call),
         to_call: Chips::new(to_call),
         big_blind: Chips::new(2),
         legal: LegalActions {
@@ -75,10 +87,7 @@ fn flop_view(hole: &str, board: &str, to_call: u64) -> DecisionView {
             }),
             all_in_to: Some(Chips::new(400)),
         },
-        history: vec![
-            acted(HERO, PositionLabel::Btn, Street::Preflop, true, 6),
-            acted(3, PositionLabel::Bb, Street::Preflop, false, 6),
-        ],
+        history,
         opponents: vec![OpponentPublic {
             seat: 3,
             position: PositionLabel::Bb,
@@ -110,7 +119,8 @@ fn 翻前加注後的翻牌無人下注是_c_bet_機會() {
 
 #[test]
 fn 面對下注的尺度由跟注額與底池推導() {
-    // 底池 30、要跟 10 → 1/3 檔
+    // 下注前底池 30、對手下注 10 → 1/3 檔。分母是下注前的 30，
+    // 不是含了這注的 40
     let view = flop_view("As Ks", "Ah 7d 3c", 10);
     let node = postflop_node(&view, &HandStrengthConfig::ENGINEERING).expect("翻後節點");
     assert_eq!(node.context.situation(), PostflopSituation::FacingBet);
@@ -224,7 +234,7 @@ fn agent_with(rules: RuleSet) -> BotAgent {
         vec![SeatConfig::defaults("測試"); 6],
         4_242,
     );
-    agent.set_postflop_rules(rules);
+    agent.set_hero_postflop_rules(HERO, rules);
     agent
 }
 
@@ -434,7 +444,7 @@ fn 使用者覆寫的頻率不被非中性人格改寫() {
         vec![aggressive_config(); 6],
         7_777,
     );
-    agent.set_postflop_rules(user_override());
+    agent.set_hero_postflop_rules(HERO, user_override());
 
     let view = flop_view("As Ks", "Ah 7d 3c", 0);
     let mut checks = 0;
@@ -473,7 +483,7 @@ fn 官方與通則來源仍走一般管線() {
         vec![aggressive_config(); 6],
         7_777,
     );
-    agent.set_postflop_rules(generic);
+    agent.set_hero_postflop_rules(HERO, generic);
 
     let view = flop_view("As Ks", "Ah 7d 3c", 0);
     let mut checks = 0;
@@ -546,7 +556,15 @@ fn 覆蓋統計只記英雄座位() {
 
 #[test]
 fn 沒有指定英雄座位時完全不統計() {
-    let mut agent = agent_with(engineering_rules());
+    // 規則集與英雄座位是一起裝上的（`set_hero_postflop_rules`），
+    // 因此「沒有英雄」就是「沒裝過規則集」：預設的工程通則照樣要能打，
+    // 只是一次也不記
+    let mut agent = BotAgent::new(
+        BaselineRules::engineering_placeholder(),
+        BotAgent::rankings(500),
+        vec![SeatConfig::defaults("測試"); 6],
+        4_242,
+    );
     agent.choose(&flop_view("As Ks", "Ah 7d 3c", 0));
     assert_eq!(
         agent.postflop_coverage().total(),
@@ -563,8 +581,7 @@ fn 覆蓋統計依來源分層() {
         vec![SeatConfig::defaults("測試"); 6],
         4_242,
     );
-    agent.set_postflop_rules(user_override());
-    agent.set_hero_seat(HERO);
+    agent.set_hero_postflop_rules(HERO, user_override());
 
     let view = flop_view("As Ks", "Ah 7d 3c", 0);
     for _ in 0..10 {
@@ -597,6 +614,139 @@ fn 工程通則的命中不算進玩家完整度() {
         coverage.completeness_myriad(),
         Some(0),
         "十次都命中了規則，但沒有一次是使用者寫的"
+    );
+}
+
+// ── 座位隔離（核心規格 5.0）────────────────────────────────────
+
+/// 同一個節點上，使用者寫死「一律過牌」，同組通則寫死「一律下滿池」。
+///
+/// 兩條規則的條件相同，差別只在來源層。英雄應該照自己寫的打，對手應該
+/// 落到通則——分不開的話，這兩條規則會給出同一個行動。
+fn override_plus_generic() -> RuleSet {
+    RuleSet::new(
+        vec![
+            PostflopRule {
+                id: "U-check".to_owned(),
+                name: "我的節點覆寫：一律過牌".to_owned(),
+                condition: PostflopCondition {
+                    situation: Some(PostflopSituation::NoBet),
+                    ..PostflopCondition::default()
+                },
+                intent: PostflopIntentDistribution::new(vec![(Kind::Check, FULL)]).expect("意圖"),
+                source: RuleSource::UserOverride,
+                version: "user/v1".to_owned(),
+                consultant_approved: false,
+            },
+            PostflopRule {
+                id: "G-bet".to_owned(),
+                name: "同組通則：一律下滿池".to_owned(),
+                condition: PostflopCondition {
+                    situation: Some(PostflopSituation::NoBet),
+                    ..PostflopCondition::default()
+                },
+                intent: PostflopIntentDistribution::new(vec![(Kind::Pot, FULL)]).expect("意圖"),
+                source: RuleSource::Generic,
+                version: "generic/v1".to_owned(),
+                consultant_approved: false,
+            },
+        ],
+        "test/v1",
+    )
+}
+
+/// 同一個節點，換一個行動座位。
+fn seat_view(seat: usize) -> DecisionView {
+    let mut view = flop_view("As Ks", "Ah 7d 3c", 0);
+    view.seat = seat;
+    view.legal.seat = seat;
+    view
+}
+
+#[test]
+fn 英雄的覆寫不套用到對手座位() {
+    let mut agent = agent_with(override_plus_generic());
+
+    assert_eq!(
+        agent.choose(&seat_view(HERO)),
+        Action::Check,
+        "英雄照自己寫的絕對頻率打"
+    );
+
+    let opponent = agent.choose(&seat_view(3));
+    assert_ne!(
+        opponent,
+        Action::Check,
+        "對手被英雄的覆寫強制過牌的話，模擬同時改掉了雙方的策略"
+    );
+    assert!(
+        matches!(opponent, Action::RaiseTo(_)),
+        "對手應落到同組通則的滿池下注，實得 {opponent:?}"
+    );
+}
+
+#[test]
+fn 對手不走絕對覆寫的中和管線() {
+    let mut agent = agent_with(override_plus_generic());
+    agent.enable_trace();
+
+    agent.choose(&seat_view(HERO));
+    let (hero_neutralised, hero_rule) = {
+        let trace = agent.last_trace().expect("已打開保留");
+        (
+            trace.neutralised_by_absolute_override,
+            trace.postflop.as_ref().and_then(|p| p.rule_id.clone()),
+        )
+    };
+    assert!(hero_neutralised, "英雄填的是絕對頻率，管線必須中和");
+    assert_eq!(hero_rule.as_deref(), Some("U-check"));
+
+    agent.choose(&seat_view(3));
+    let (bot_neutralised, bot_rule) = {
+        let trace = agent.last_trace().expect("已打開保留");
+        (
+            trace.neutralised_by_absolute_override,
+            trace.postflop.as_ref().and_then(|p| p.rule_id.clone()),
+        )
+    };
+    assert!(
+        !bot_neutralised,
+        "對手命中的是通則。人格被中和的話，Bot 的參數在翻後就全成了裝飾品"
+    );
+    assert_eq!(
+        bot_rule.as_deref(),
+        Some("G-bet"),
+        "對手仍拿得到官方與通則層，只有使用者親手寫的那一層被拿掉"
+    );
+}
+
+#[test]
+fn 對手的分布不受使用者覆寫影響() {
+    // 覆寫是 70% 過牌 ／ 30% 下 1/3 池；通則層沒有內容，
+    // 對手因此退回 equity 基準。兩者的實際比例必須明顯不同
+    let ratio_of = |seat: usize| {
+        let mut agent = agent_with(user_override());
+        let view = seat_view(seat);
+        let mut checks = 0;
+        const ROUNDS: usize = 1_000;
+        for _ in 0..ROUNDS {
+            if agent.choose(&view) == Action::Check {
+                checks += 1;
+            }
+        }
+        checks * 10_000 / ROUNDS
+    };
+
+    let hero = ratio_of(HERO);
+    assert!(
+        (6_500..=7_500).contains(&hero),
+        "英雄寫的是 70% 過牌，實測 {}%",
+        hero / 100
+    );
+    assert_ne!(
+        hero / 500,
+        ratio_of(3) / 500,
+        "對手的過牌比例與英雄落在同一檔，代表覆寫仍然套到了全桌"
     );
 }
 
@@ -654,7 +804,7 @@ fn 絕對覆寫的_trace_標記中和且七階段仍在() {
         vec![aggressive_config(); 6],
         7_777,
     );
-    agent.set_postflop_rules(user_override());
+    agent.set_hero_postflop_rules(HERO, user_override());
     agent.enable_trace();
     agent.choose(&flop_view("As Ks", "Ah 7d 3c", 0));
 

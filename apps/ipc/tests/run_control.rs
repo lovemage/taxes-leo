@@ -129,6 +129,62 @@ fn run_with(control: Arc<RunControl>, hand_limit: u64) -> (Vec<RunProgress>, u64
     (updates, done)
 }
 
+// ── 啟動前的策略驗證 ──────────────────────────────────────────────────
+
+/// 非法的翻後覆寫必須在 run 開始**之前**被拒絕。
+///
+/// 不擋的話，那一筆會被靜默跳過、規則集退回工程通則，而使用者以為
+/// 自己設的頻率正在跑；更糟的是快照記下的也是被替換過的內容，
+/// 事後重播完全看不出來。
+#[test]
+fn 非法的翻後覆寫讓_run_直接拒絕啟動() {
+    let overrides = poker_ipc::postflop::PostflopOverridesView {
+        nodes: vec![poker_ipc::postflop::PostflopNodeOverrideView {
+            node_key: "flop|no-bet|cbet-chance|rainbow|dry|strong-made|none".to_owned(),
+            weights: vec![poker_ipc::postflop::PostflopWeightInput {
+                kind: "check".to_owned(),
+                myriad: 9_000,
+            }],
+        }],
+        rules: Vec::new(),
+    };
+    let strategy = HeroStrategy {
+        preflop_overrides: &[],
+        postflop_overrides: &overrides,
+    };
+
+    let mut request = request();
+    request.hand_limit = 10;
+    let config = request.to_session_config().expect("轉換");
+    let store = Arc::new(Mutex::new(Store::open_in_memory().expect("資料庫")));
+    let control = Arc::new(RunControl::default());
+
+    let outcome = execute(
+        &config,
+        &[],
+        strategy,
+        &store,
+        &control,
+        1_771_200_000,
+        |_| {},
+    );
+
+    let message = outcome.expect_err("合計 90% 的覆寫不得開跑");
+    assert!(
+        message.contains("翻後覆寫不合法"),
+        "錯誤訊息要說得出是哪一類問題：{message}"
+    );
+    assert!(
+        message.contains("9000"),
+        "訊息要帶著那一筆的實際內容：{message}"
+    );
+    assert_eq!(
+        control.hands_done.load(Ordering::Relaxed),
+        0,
+        "拒絕必須發生在發出任何一手之前"
+    );
+}
+
 // ── 準備階段（面板 E 的第一秒）────────────────────────────────────────
 //
 // 這一組守的是實機回報的「按下開始就假死」：舊版在桌面殼啟動時現算

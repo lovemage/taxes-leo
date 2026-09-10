@@ -36,7 +36,7 @@ pub use strategy::{
 };
 pub use postflop::{
     classify_postflop_hand, postflop_diagnostics, postflop_nodes, postflop_rule,
-    PostflopDiagnosticsView, PostflopHandPreviewView, PostflopIssueView,
+    PostflopDiagnosticsView, PostflopHandPreviewView, PostflopInputError, PostflopIssueView,
     PostflopLineOptionView, PostflopNodeOverrideView, PostflopNodesView, PostflopOptionView,
     PostflopOverridesView, PostflopRestoreView, PostflopRuleOverrideView, PostflopRuleQuery,
     PostflopRuleView, PostflopStaticCoverageView, PostflopWeightInput, PostflopWeightView,

@@ -357,7 +357,18 @@ pub fn execute(
 
     // 翻後規則以值凍結在這裡：manifest 與 agent 用的是同一份，
     // 兩邊各自建構的話，快照記的就不是實際跑的那一份
-    let postflop_rules = crate::postflop::to_rule_set(strategy.postflop_overrides);
+    // 非法的覆寫在這裡就擋下來，不留到跑起來才被靜默替換成工程通則：
+    // 使用者以為自己設的頻率生效了，快照卻記著另一份內容
+    let postflop_rules =
+        crate::postflop::to_rule_set(strategy.postflop_overrides).map_err(|errors| {
+            let detail = errors
+                .iter()
+                .map(|error| format!("{}：{}", error.id, error.message))
+                .collect::<Vec<_>>()
+                .join("；");
+            crate::log::error(&format!("run 無法啟動：翻後覆寫不合法 {detail}"));
+            format!("翻後覆寫不合法，run 未啟動——{detail}")
+        })?;
 
     let manifest = build_manifest(
         config,
@@ -392,9 +403,10 @@ pub fn execute(
     agent.set_seat_overrides(hero, hero_overrides);
     // 翻後規則以值凍結：這一份是 run 開始那一刻的快照，
     // UI 後續的修改不會滲進來
-    agent.set_postflop_rules(postflop_rules.clone());
-    // 只統計英雄座位的翻後命中（核心規格 5.0：統計主體只有使用者座位）
-    agent.set_hero_seat(hero);
+    // 規則集連同英雄座位一起裝：使用者的覆寫只屬於他自己那一座，
+    // 對手拿到的是去掉 UserOverride 層的同一份內容。順帶決定了翻後
+    // 命中只統計英雄（核心規格 5.0：統計主體只有使用者座位）
+    agent.set_hero_postflop_rules(hero, postflop_rules.clone());
 
     let summary = run_session(config, &mut agent, |played| {
         if aborted || !control.checkpoint() {

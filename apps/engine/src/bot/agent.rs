@@ -80,9 +80,15 @@ pub struct BotAgent {
     /// 用序號而非手序，是因為 [`ActionProvider`] 拿不到手序。同一組設定
     /// 與 seed 會產生同一串決策，因此序號同樣可重現；暫停續跑也不影響
     decisions: u64,
-    /// 翻後規則集。預設是未簽核的工程通則，使用者覆寫由
-    /// [`BotAgent::set_postflop_rules`] 換上
-    postflop_rules: RuleSet,
+    /// **英雄座位**的翻後規則集。預設是未簽核的工程通則，使用者覆寫由
+    /// [`BotAgent::set_hero_postflop_rules`] 換上
+    hero_postflop_rules: RuleSet,
+    /// 對手座位的翻後規則集：同一份內容，但沒有使用者覆寫那一層。
+    ///
+    /// 兩份分開放，是因為規則解析是逐座位進行的，而使用者的絕對覆寫只
+    /// 屬於他自己那一座。共用一份的話，英雄設「這個情境 100% 過牌」會
+    /// 連對手一起改掉，跑出來的就不是在測自己的策略了
+    opponent_postflop_rules: RuleSet,
     /// 牌力分類的門檻。未簽核工程值，見 [`HandStrengthConfig`]
     hand_strength: HandStrengthConfig,
     /// 英雄座位的翻後規則命中統計，依來源分層。
@@ -147,7 +153,8 @@ impl BotAgent {
             seats,
             master_seed,
             decisions: 0,
-            postflop_rules: engineering_rules(),
+            hero_postflop_rules: engineering_rules(),
+            opponent_postflop_rules: engineering_rules(),
             hand_strength: HandStrengthConfig::ENGINEERING,
             postflop_coverage: CoverageStats::default(),
             hero_seat: None,
@@ -181,14 +188,34 @@ impl BotAgent {
         &self.postflop_coverage
     }
 
-    /// 換上翻後規則集。
+    /// 換上翻後規則集，並指明它屬於哪一座。
     ///
     /// 規則列必須依 `UserOverride → Official → Generic →
     /// EngineeringFallback` 排序；順序錯了的話使用者的覆寫會被官方通則
     /// 蓋掉，而畫面上完全看不出來（由 `RuleSet::analyse` 的
     /// `LayerOrderViolation` 偵測）。
-    pub fn set_postflop_rules(&mut self, rules: RuleSet) {
-        self.postflop_rules = rules;
+    ///
+    /// **座位是參數而不是另一支 setter**，因為規則集與英雄座位分開設定
+    /// 就一定會有人忘記設座位，而忘記的後果是使用者的覆寫套到全桌。
+    /// 對手拿到的是同一份內容去掉 `UserOverride` 層——官方內容與通則對
+    /// 全桌都成立，只有使用者親手寫的頻率不是。
+    pub fn set_hero_postflop_rules(&mut self, seat: usize, rules: RuleSet) {
+        self.set_hero_seat(seat);
+        self.opponent_postflop_rules = rules.without_user_overrides();
+        self.hero_postflop_rules = rules;
+    }
+
+    /// 這個座位該用哪一份翻後規則集。
+    ///
+    /// 英雄座位沒設定時一律回對手那一份：漏設座位的後果應該是「使用者的
+    /// 覆寫沒生效」，而不是「連對手都被改掉」。前者跑報表時看得出來
+    /// （完整度是 0），後者看不出來。
+    fn postflop_rules_for(&self, seat: usize) -> &RuleSet {
+        if self.hero_seat == Some(seat) {
+            &self.hero_postflop_rules
+        } else {
+            &self.opponent_postflop_rules
+        }
     }
 
     /// 以 `samples` 次取樣建立所需的 equity 排序。
@@ -249,9 +276,11 @@ impl BotAgent {
         let Some(node) = postflop_node(view, &self.hand_strength) else {
             return (None, None);
         };
-        let (matched, distribution) =
-            self.postflop_rules
-                .resolve(&node.context, node.sizing, &legality(&view.legal));
+        let (matched, distribution) = self.postflop_rules_for(view.seat).resolve(
+            &node.context,
+            node.sizing,
+            &legality(&view.legal),
+        );
 
         // 分母界定：只算英雄座位、只算他真的有選擇的節點。已全下或沒有
         // 合法選項的節點根本不會走到這裡
@@ -260,7 +289,7 @@ impl BotAgent {
         }
 
         let rule = match &matched {
-            Matched::Rule { index, .. } => self.postflop_rules.rules().get(*index),
+            Matched::Rule { index, .. } => self.postflop_rules_for(view.seat).rules().get(*index),
             Matched::Fallback(_) => None,
         };
         let trace = self.trace_enabled.then(|| pipeline::PostflopTrace {

@@ -486,6 +486,142 @@ fn 使用者自己的問題排在工程通則之前() {
     );
 }
 
+// ── 非法輸入（計劃 §5.3）────────────────────────────────────────
+
+/// 合計 90% 的節點覆寫在轉換時就被跳過，`analyse()` 因此看不到它。
+/// 沒有專門收這一類的話，診斷會回 `can_save = true`，使用者以為策略
+/// 生效了，實際跑的是工程通則。
+#[test]
+fn 合計不到百分之百的節點覆寫是阻擋保存的錯誤() {
+    let diagnostics = postflop_diagnostics(&PostflopOverridesView {
+        nodes: vec![PostflopNodeOverrideView {
+            node_key: "flop|no-bet|cbet-chance|rainbow|dry|strong-made|none".to_owned(),
+            weights: weights(&[("check", 9_000)]),
+        }],
+        rules: Vec::new(),
+    });
+
+    let issue = diagnostics
+        .issues
+        .iter()
+        .find(|issue| issue.kind == "invalid-input")
+        .unwrap_or_else(|| panic!("應標為非法輸入：{:?}", diagnostics.issues));
+    assert_eq!(issue.severity, "error");
+    assert_eq!(
+        issue.rule_id, "flop|no-bet|cbet-chance|rainbow|dry|strong-made|none",
+        "訊息要指得回是哪一筆，只說「有錯」等於要使用者自己一條條找"
+    );
+    assert!(issue.message.contains("9000"), "訊息應寫出實際合計");
+    assert!(!diagnostics.can_save, "被靜默替換成工程通則的內容不得保存");
+}
+
+#[test]
+fn 未知的動作名稱是錯誤而不是忽略那一欄() {
+    // 丟掉 `raise` 之後剩下的剛好合計 10000，規則會靜靜地少一個動作
+    let diagnostics = postflop_diagnostics(&PostflopOverridesView {
+        nodes: vec![PostflopNodeOverrideView {
+            node_key: "flop|no-bet|cbet-chance|rainbow|dry|strong-made|none".to_owned(),
+            weights: weights(&[("check", 10_000), ("raise", 5_000)]),
+        }],
+        rules: Vec::new(),
+    });
+
+    assert!(
+        diagnostics
+            .issues
+            .iter()
+            .any(|issue| issue.kind == "invalid-input" && issue.message.contains("raise")),
+        "{:?}",
+        diagnostics.issues
+    );
+    assert!(!diagnostics.can_save);
+}
+
+#[test]
+fn 打錯的條件字串是錯誤而不是萬用() {
+    let mut broken = user_rule("R-typo");
+    broken.hand_strength = Some("strong-mades".to_owned());
+
+    let diagnostics = postflop_diagnostics(&PostflopOverridesView {
+        nodes: Vec::new(),
+        rules: vec![broken],
+    });
+
+    let issue = diagnostics
+        .issues
+        .iter()
+        .find(|issue| issue.kind == "invalid-input")
+        .unwrap_or_else(|| panic!("應標為非法輸入：{:?}", diagnostics.issues));
+    assert_eq!(issue.rule_id, "R-typo");
+    assert!(
+        issue.message.contains("strong-mades"),
+        "要指出是哪個字打錯了：{}",
+        issue.message
+    );
+    assert!(
+        !diagnostics.can_save,
+        "打錯的牌力組會讓規則從「只管強成牌」擴張成「什麼牌都管」"
+    );
+}
+
+#[test]
+fn 不可達的節點鍵是錯誤() {
+    let diagnostics = postflop_diagnostics(&PostflopOverridesView {
+        nodes: vec![PostflopNodeOverrideView {
+            node_key: "flop|no-bet|cbet-chance|rainbow|dry|strong-made".to_owned(),
+            weights: weights(&[("check", 10_000)]),
+        }],
+        rules: Vec::new(),
+    });
+
+    assert!(
+        diagnostics
+            .issues
+            .iter()
+            .any(|issue| issue.kind == "invalid-input"),
+        "{:?}",
+        diagnostics.issues
+    );
+    assert!(!diagnostics.can_save);
+}
+
+#[test]
+fn 非法輸入不會讓導覽與逐節點查詢整頁失敗() {
+    // 使用者還在編輯時清單裡就有半成品。查詢是唯讀的，
+    // 閘門在保存前的診斷與 run，不在這裡
+    let overrides = PostflopOverridesView {
+        nodes: vec![PostflopNodeOverrideView {
+            node_key: "flop|no-bet|cbet-chance|rainbow|dry|strong-made|none".to_owned(),
+            weights: weights(&[("check", 9_000)]),
+        }],
+        rules: Vec::new(),
+    };
+
+    let nodes = postflop_nodes("flop", &overrides);
+    assert!(nodes.coverage.total_nodes > 0);
+    let view = postflop_rule(&query(), &overrides).expect("查詢仍要畫得出來");
+    assert_ne!(
+        view.source, "user-node-override",
+        "那一筆沒有進規則集，畫面上就不該說它是使用者覆寫"
+    );
+}
+
+#[test]
+fn 合法的覆寫組得出規則集() {
+    let overrides = PostflopOverridesView {
+        nodes: vec![PostflopNodeOverrideView {
+            node_key: "flop|no-bet|cbet-chance|rainbow|dry|strong-made|none".to_owned(),
+            weights: weights(&[("check", 10_000)]),
+        }],
+        rules: vec![user_rule("R-ok")],
+    };
+    let rules = poker_ipc::postflop::to_rule_set(&overrides).expect("兩筆都合法");
+    assert!(
+        rules.rules().len() >= 2,
+        "兩筆使用者覆寫都要排在工程通則之前"
+    );
+}
+
 #[test]
 fn 診斷_dto_序列化為_camel_case() {
     let mut broken = user_rule("R-broken");

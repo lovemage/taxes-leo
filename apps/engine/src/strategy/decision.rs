@@ -66,6 +66,19 @@ impl StackBucket {
         }
     }
 
+    /// 全部分檔。序列化的還原端靠它反查 [`Self::as_str`]。
+    pub const ALL: [Self; 9] = [
+        Self::VeryShort,
+        Self::Short,
+        Self::Medium,
+        Self::Deep,
+        Self::Deeper,
+        Self::Deepest,
+        Self::VeryDeep,
+        Self::UltraDeep,
+        Self::Unbounded,
+    ];
+
     /// 策略內容的欄位鍵。
     #[must_use]
     pub const fn as_str(self) -> &'static str {

@@ -48,6 +48,22 @@ impl PositionLabel {
         }
     }
 
+    /// 全部位置標籤。序列化的還原端靠它反查 [`Self::as_str`]，
+    /// 因此新增位置時這裡漏了會讓快照讀不回來。
+    pub const ALL: [Self; 11] = [
+        Self::Utg,
+        Self::Utg1,
+        Self::Utg2,
+        Self::Utg3,
+        Self::Utg4,
+        Self::Lj,
+        Self::Hj,
+        Self::Co,
+        Self::Btn,
+        Self::Sb,
+        Self::Bb,
+    ];
+
     /// 策略內容與 log 使用的唯一字串。
     #[must_use]
     pub const fn as_str(self) -> &'static str {

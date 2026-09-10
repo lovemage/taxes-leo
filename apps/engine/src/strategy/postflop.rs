@@ -469,6 +469,23 @@ pub enum PotType {
     FourBet,
 }
 
+impl PotType {
+    pub const ALL: [Self; 3] = [Self::SingleRaised, Self::ThreeBet, Self::FourBet];
+
+    /// 序列化用的唯一字串。
+    ///
+    /// 存的是這個鍵而不是 `Debug` 名稱：快照要能在改名之後照樣讀回來，
+    /// 而 `Debug` 是給人看的，改名不會有人想到它同時是儲存格式。
+    #[must_use]
+    pub const fn key(self) -> &'static str {
+        match self {
+            Self::SingleRaised => "single-raised",
+            Self::ThreeBet => "three-bet",
+            Self::FourBet => "four-bet",
+        }
+    }
+}
+
 /// 面對的下注尺度級距。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FacingSize {
@@ -1502,6 +1519,25 @@ impl RuleSet {
     #[must_use]
     pub fn rules(&self) -> &[PostflopRule] {
         &self.rules
+    }
+
+    /// 同一份規則集，但拿掉 [`RuleSource::UserOverride`] 那一層。
+    ///
+    /// 使用者填的頻率是**他自己座位**的策略。對手 Bot 照樣要用官方內容與
+    /// 通則，但套上使用者的覆寫就等於偷偷把對手也改成他寫的打法：同一個
+    /// 情境設 100% 過牌，對手也會被強制過牌，模擬出來的統計不再是在測
+    /// 自己的策略（核心規格 5.0）。
+    #[must_use]
+    pub fn without_user_overrides(&self) -> Self {
+        Self {
+            rules: self
+                .rules
+                .iter()
+                .filter(|rule| rule.source != RuleSource::UserOverride)
+                .cloned()
+                .collect(),
+            fallback_version: self.fallback_version.clone(),
+        }
     }
 
     /// 找出第一條命中的規則，並套用 legal mask。

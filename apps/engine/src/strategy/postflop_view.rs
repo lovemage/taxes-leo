@@ -5,6 +5,8 @@
 //! `DecisionView` 欄位——那個結構刻意沒有任何欄位能承載隱藏資訊，
 //! 每加一個欄位都要重新論證它依規則已公開。
 
+use std::collections::BTreeMap;
+
 use crate::hand::Street;
 use crate::strategy::decision::{DecisionView, PublicAction};
 use crate::strategy::hand_strength::{classify, HandStrengthConfig, HandStrengthSnapshot};
@@ -97,17 +99,27 @@ fn pot_type(view: &DecisionView) -> PotType {
 
 /// 面對的下注尺度級距。
 ///
-/// 以「要跟的金額 ÷ 目前底池」落檔。**不自行判定全下**：那需要知道對手
-/// 是不是真的推光了，而 `all_in` 旗標講的是對手的狀態，不是這次下注的
-/// 尺度；混起來會讓「短碼跟注」被當成 overbet。
+/// 分母是**這次進攻打進去之前的底池**，不是含了這注的當下底池。
+/// `DecisionView.pot` 已經包含對手剛投入的籌碼，直接拿 `to_call / pot`
+/// 分檔會把「底池 100、對手下注 100」算成 100/200＝50%，滿池下注因此
+/// 落到 Half；使用者編輯「面對滿池」的覆寫永遠命不中一般的滿池下注。
+///
+/// 基準由公開的 action history 還原：`PublicAction::committed_to` 是該座
+/// 在本街的累計投入，走一遍就能同時得到每一步的注額層級與跑動底池，
+/// 因此再加注、英雄已有投入、多人中途跟注都算得對，不必對所有情境硬套
+/// `pot - to_call`。
+///
+/// **不自行判定全下**：那需要知道對手是不是真的推光了，而 `all_in` 旗標
+/// 講的是對手的狀態，不是這次下注的尺度；混起來會讓「短碼跟注」被當成
+/// overbet。籌碼不足的全下不會把注額推高，引擎因此不標 `raised`，
+/// 在這裡也就不會被當成一次新的進攻。
 fn facing_size(view: &DecisionView) -> FacingSize {
-    let to_call = view.to_call.units();
-    if to_call == 0 {
+    if view.to_call.units() == 0 {
         return FacingSize::None;
     }
-    let pot = view.pot.units().max(1);
+    let (bet, pot_before) = facing_bet_basis(view);
     // 千分比，避免浮點進入規則比對
-    let ratio = to_call.saturating_mul(1_000) / pot;
+    let ratio = bet.saturating_mul(1_000) / pot_before.max(1);
     match ratio {
         0..=287 => FacingSize::Quarter,
         288..=400 => FacingSize::Third,
@@ -117,6 +129,55 @@ fn facing_size(view: &DecisionView) -> FacingSize {
         871..=1_150 => FacingSize::Pot,
         _ => FacingSize::Overbet,
     }
+}
+
+/// 還原「最後一次進攻加了多少」與「它下進去的底池有多大」。
+///
+/// 回傳 `(下注量, 基準底池)`：
+///
+/// - **下注量**是把注額層級由 `level` 推到 `committed_to` 的增量。開注時
+///   層級是 0，增量就是下注額；再加注時是加注的增量，不是加注到的總額。
+/// - **基準底池**是進攻者行動當下的底池，**加上他為了跟平前一手注所投入
+///   的部分**。這是「滿池加注」的定義：面對 50 的注、底池 150 時，滿池
+///   加注是先跟 50（底池 200）再加 200。在他之後才跟進的籌碼不算進基準
+///   ——那些錢在他決定尺度時還不在池子裡。
+///
+/// 本街沒有任何進攻紀錄時（歷史被截斷，或手寫 fixture 只填了 `to_call`）
+/// 退回 `to_call / (pot - to_call)`。那仍然是「下注前底池」的語意，
+/// 只是把英雄要跟的金額當成下注量，多人底池會偏小。
+fn facing_bet_basis(view: &DecisionView) -> (u64, u64) {
+    let current = view.current_street_history();
+
+    // 本街之前的底池：當下底池扣掉本街各座的累計投入。已棄牌者投入的
+    // 籌碼留在池子裡，因此以「每座最後一筆 committed_to」計算
+    let mut latest: BTreeMap<usize, u64> = BTreeMap::new();
+    for action in &current {
+        latest.insert(action.seat, action.committed_to.units());
+    }
+    let street_total: u64 = latest.values().sum();
+    let mut pot = view.pot.units().saturating_sub(street_total);
+
+    let mut committed: BTreeMap<usize, u64> = BTreeMap::new();
+    let mut level = 0u64;
+    let mut basis = None;
+    for action in &current {
+        let before = committed.get(&action.seat).copied().unwrap_or(0);
+        let after = action.committed_to.units();
+        if action.raised {
+            basis = Some((
+                after.saturating_sub(level),
+                pot.saturating_add(level.saturating_sub(before)),
+            ));
+        }
+        pot = pot.saturating_add(after.saturating_sub(before));
+        committed.insert(action.seat, after);
+        level = level.max(after);
+    }
+
+    basis.unwrap_or_else(|| {
+        let to_call = view.to_call.units();
+        (to_call, view.pot.units().saturating_sub(to_call))
+    })
 }
 
 /// SPR × 100。

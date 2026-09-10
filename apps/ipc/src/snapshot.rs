@@ -268,7 +268,7 @@ pub fn postflop(rules: &RuleSet) -> Value {
 fn condition(condition: &PostflopCondition) -> Value {
     let mut map = Map::new();
     if let Some(street) = condition.street {
-        map.insert("street".to_owned(), json!(format!("{street:?}").to_lowercase()));
+        map.insert("street".to_owned(), json!(crate::postflop::street_key(street)));
     }
     if let Some(situation) = condition.situation {
         map.insert("situation".to_owned(), json!(situation.key()));
@@ -289,7 +289,7 @@ fn condition(condition: &PostflopCondition) -> Value {
         map.insert("effectiveStackBucket".to_owned(), json!(bucket.as_str()));
     }
     if let Some(pot) = condition.pot_type {
-        map.insert("potType".to_owned(), json!(format!("{pot:?}")));
+        map.insert("potType".to_owned(), json!(pot.key()));
     }
     if let Some(position) = condition.hero_position {
         map.insert("heroPosition".to_owned(), json!(position.as_str()));
@@ -366,6 +366,15 @@ pub fn rebuild_postflop(snapshot: &Value) -> Option<RuleSet> {
     let entries = snapshot.get("rules")?.as_array()?;
     let fallback_version = snapshot.get("fallbackVersion")?.as_str()?.to_owned();
 
+    // 節點集合版本是內容的一部分：沒有它就分不出這份規則是對哪一版節點
+    // 寫的，跨版本比較也失去意義
+    snapshot.get("nodeSetVersion")?.as_str()?;
+    // 筆數對不上代表清單被截斷或改過。少一條規則的規則集會安靜地打出
+    // 不一樣的牌，因此寧可拒絕還原
+    if snapshot.get("ruleCount")?.as_u64()? != u64::try_from(entries.len()).ok()? {
+        return None;
+    }
+
     let mut rules = Vec::with_capacity(entries.len());
     for entry in entries {
         rules.push(rebuild_rule(entry)?);
@@ -407,66 +416,114 @@ fn rebuild_rule(entry: &Value) -> Option<poker_engine::strategy::postflop::Postf
     })
 }
 
+/// 由快照重建一條規則的條件。
+///
+/// 兩件事都不能省：
+///
+/// 1. **每個可保存的欄位都要讀回來。** 少讀一個，原本只適用 3-bet pot、
+///    BTN、某個深度的規則還原後就變成萬用，適用範圍比使用者寫的更大，
+///    重播出來的策略也就不是當初跑的那一份。因此這裡逐欄列出、
+///    不寫 `..Default::default()`——條件多一個欄位就要編譯失敗。
+/// 2. **欄位缺席才是萬用；有值卻解析不出來是錯誤。** 兩者都收斂成同一個
+///    `None` 的話，`handStrength: "typo"` 會被讀成「不限牌力」，
+///    而 [`rebuild_postflop`] 宣告的是「個別規則解析不出來時整份失敗」。
 fn rebuild_condition(value: &Value) -> Option<PostflopCondition> {
     let map = value.as_object()?;
-    let text = |key: &str| map.get(key).and_then(Value::as_str);
-    let range = |key: &str| -> Option<std::ops::RangeInclusive<u8>> {
-        let pair = map.get(key)?.as_array()?;
-        Some(u8::try_from(pair.first()?.as_u64()?).ok()?..=u8::try_from(pair.get(1)?.as_u64()?).ok()?)
-    };
 
     Some(PostflopCondition {
-        street: text("street").and_then(crate::postflop::parse_street),
-        situation: text("situation").and_then(crate::postflop::parse_situation),
-        board_surface: text("boardSurface").and_then(crate::postflop::parse_surface),
-        board_connectivity: text("boardConnectivity")
-            .and_then(crate::postflop::parse_connectivity),
-        hand_strength: text("handStrength").and_then(crate::postflop::parse_hand_strength),
-        facing_size: text("facingSize").and_then(crate::postflop::parse_facing_size),
-        active_players: range("activePlayers"),
-        opponents_behind: range("opponentsBehind"),
-        spr_centi: map.get("sprCenti").and_then(|pair| {
-            let pair = pair.as_array()?;
-            let start = u32::try_from(pair.first()?.as_u64()?).ok()?;
-            let end = u32::try_from(pair.get(1)?.as_u64()?).ok()?;
-            Some(start..=end)
-        }),
-        line: rebuild_line(map.get("line")),
-        ..PostflopCondition::default()
+        street: enum_field(map, "street", crate::postflop::parse_street)?,
+        situation: enum_field(map, "situation", crate::postflop::parse_situation)?,
+        board_surface: enum_field(map, "boardSurface", crate::postflop::parse_surface)?,
+        board_connectivity: enum_field(
+            map,
+            "boardConnectivity",
+            crate::postflop::parse_connectivity,
+        )?,
+        hand_strength: enum_field(map, "handStrength", crate::postflop::parse_hand_strength)?,
+        active_players: range_field::<u8>(map, "activePlayers")?,
+        hero_position: enum_field(map, "heroPosition", crate::postflop::parse_position)?,
+        opponents_behind: range_field::<u8>(map, "opponentsBehind")?,
+        pot_type: enum_field(map, "potType", crate::postflop::parse_pot_type)?,
+        facing_size: enum_field(map, "facingSize", crate::postflop::parse_facing_size)?,
+        spr_centi: range_field::<u32>(map, "sprCenti")?,
+        effective_stack_bucket: enum_field(
+            map,
+            "effectiveStackBucket",
+            crate::postflop::parse_stack_bucket,
+        )?,
+        line: rebuild_line(map.get("line"))?,
     })
 }
 
-fn rebuild_line(value: Option<&Value>) -> PostflopLineCondition {
+/// 缺席（或 `null`）是萬用，回 `Some(None)`；有值但不是字串、或字串解析
+/// 不出來，回 `None` 讓整份還原失敗。
+fn enum_field<T>(
+    map: &Map<String, Value>,
+    key: &str,
+    parse: impl Fn(&str) -> Option<T>,
+) -> Option<Option<T>> {
+    match map.get(key) {
+        None | Some(Value::Null) => Some(None),
+        Some(value) => Some(Some(parse(value.as_str()?)?)),
+    }
+}
+
+fn bool_field(map: &Map<String, Value>, key: &str) -> Option<Option<bool>> {
+    match map.get(key) {
+        None | Some(Value::Null) => Some(None),
+        Some(value) => Some(Some(value.as_bool()?)),
+    }
+}
+
+/// 範圍必須是**恰好兩個**端點的陣列，兩端都要落在目標型別內。
+///
+/// 長度不檢查的話，`[3]` 會被讀成一個端點缺失的範圍，`[3, 4, 5]` 則會
+/// 安靜地丟掉第三個值——兩種都代表寫入端或檔案有問題，不該當成可還原。
+fn range_field<T: TryFrom<u64>>(
+    map: &Map<String, Value>,
+    key: &str,
+) -> Option<Option<std::ops::RangeInclusive<T>>> {
+    match map.get(key) {
+        None | Some(Value::Null) => Some(None),
+        Some(value) => {
+            let pair = value.as_array()?;
+            if pair.len() != 2 {
+                return None;
+            }
+            let start = T::try_from(pair[0].as_u64()?).ok()?;
+            let end = T::try_from(pair[1].as_u64()?).ok()?;
+            Some(Some(start..=end))
+        }
+    }
+}
+
+/// 線路條件。與 [`rebuild_condition`] 同樣的嚴格度：缺席是萬用，
+/// 有值卻解析不出來就整份失敗。
+fn rebuild_line(value: Option<&Value>) -> Option<PostflopLineCondition> {
     use poker_engine::strategy::postflop::{AggressorRole, RelativeAggressorOrder};
 
-    let Some(map) = value.and_then(Value::as_object) else {
-        return PostflopLineCondition::default();
+    let map = match value {
+        None | Some(Value::Null) => return Some(PostflopLineCondition::default()),
+        Some(value) => value.as_object()?,
     };
     let role = |key: &str| {
-        map.get(key)
-            .and_then(Value::as_str)
-            .and_then(|text| AggressorRole::ALL.into_iter().find(|role| role.key() == text))
-    };
-    let range = |key: &str| -> Option<std::ops::RangeInclusive<u8>> {
-        let pair = map.get(key)?.as_array()?;
-        Some(u8::try_from(pair.first()?.as_u64()?).ok()?..=u8::try_from(pair.get(1)?.as_u64()?).ok()?)
+        enum_field(map, key, |text| {
+            AggressorRole::ALL.into_iter().find(|role| role.key() == text)
+        })
     };
 
-    PostflopLineCondition {
-        previous_street_aggressor: role("previousStreetAggressor"),
-        last_aggressor_before_current_street: role("lastAggressorBeforeCurrentStreet"),
-        relative_aggressor_order: map
-            .get("relativeAggressorOrder")
-            .and_then(Value::as_str)
-            .and_then(|text| {
-                RelativeAggressorOrder::ALL
-                    .into_iter()
-                    .find(|order| order.key() == text)
-            }),
-        hero_checked_this_street: map.get("heroCheckedThisStreet").and_then(Value::as_bool),
-        current_street_bet_count: range("currentStreetBetCount"),
-        current_street_raise_count: range("currentStreetRaiseCount"),
-    }
+    Some(PostflopLineCondition {
+        previous_street_aggressor: role("previousStreetAggressor")?,
+        last_aggressor_before_current_street: role("lastAggressorBeforeCurrentStreet")?,
+        relative_aggressor_order: enum_field(map, "relativeAggressorOrder", |text| {
+            RelativeAggressorOrder::ALL
+                .into_iter()
+                .find(|order| order.key() == text)
+        })?,
+        hero_checked_this_street: bool_field(map, "heroCheckedThisStreet")?,
+        current_street_bet_count: range_field::<u8>(map, "currentStreetBetCount")?,
+        current_street_raise_count: range_field::<u8>(map, "currentStreetRaiseCount")?,
+    })
 }
 
 #[cfg(test)]
@@ -528,7 +585,8 @@ mod tests {
 
     #[test]
     fn 翻後快照存的是完整內容而不是版本指標() {
-        let rules = crate::postflop::to_rule_set(&crate::postflop::PostflopOverridesView::default());
+        let rules = crate::postflop::to_rule_set(&crate::postflop::PostflopOverridesView::default())
+            .expect("預設覆寫");
         let snapshot = postflop(&rules);
 
         let entries = snapshot["rules"].as_array().expect("規則列");
@@ -564,7 +622,7 @@ mod tests {
             }],
             rules: Vec::new(),
         };
-        let rules = crate::postflop::to_rule_set(&overrides);
+        let rules = crate::postflop::to_rule_set(&overrides).expect("覆寫合法");
         let snapshot = postflop(&rules);
         let entries = snapshot["rules"].as_array().expect("規則列");
 
@@ -576,7 +634,8 @@ mod tests {
 
     #[test]
     fn 翻後快照的體積留在預算內() {
-        let rules = crate::postflop::to_rule_set(&crate::postflop::PostflopOverridesView::default());
+        let rules = crate::postflop::to_rule_set(&crate::postflop::PostflopOverridesView::default())
+            .expect("預設覆寫");
         let size = postflop(&rules).to_string().len();
         assert!(
             size < 80_000,
@@ -605,7 +664,7 @@ mod tests {
             }],
             rules: Vec::new(),
         };
-        let original = crate::postflop::to_rule_set(&overrides);
+        let original = crate::postflop::to_rule_set(&overrides).expect("覆寫合法");
 
         let rebuilt = rebuild_postflop(&postflop(&original)).expect("重建");
 
@@ -628,9 +687,10 @@ mod tests {
     #[test]
     fn 快照結構不對時整份失敗而不是部分還原() {
         // 少了一條規則的規則集會安靜地打出不一樣的牌
-        let mut snapshot = postflop(&crate::postflop::to_rule_set(
-            &crate::postflop::PostflopOverridesView::default(),
-        ));
+        let mut snapshot = postflop(
+            &crate::postflop::to_rule_set(&crate::postflop::PostflopOverridesView::default())
+                .expect("預設覆寫"),
+        );
         snapshot["rules"][3]["intent"] = json!({ "notAnAction": 10_000 });
         assert!(rebuild_postflop(&snapshot).is_none());
 
@@ -638,8 +698,141 @@ mod tests {
     }
 
     #[test]
+    fn 每個可保存的條件欄位都還原得回來() {
+        // 存了卻沒讀回來的欄位會靜靜地把規則放寬：只適用 3-bet pot、BTN、
+        // 40–70BB 的一條規則，還原後變成「什麼情況都適用」
+        use poker_engine::hand::Street;
+        use poker_engine::position::PositionLabel;
+        use poker_engine::strategy::decision::StackBucket;
+        use poker_engine::strategy::postflop::{
+            AggressorRole, BoardConnectivity, BoardSurface, FacingSize, HandStrength,
+            PostflopIntentDistribution, PostflopRule, PostflopSituation, PotType,
+            RelativeAggressorOrder, RuleSource,
+        };
+
+        let condition = PostflopCondition {
+            street: Some(Street::Turn),
+            situation: Some(PostflopSituation::FacingBet),
+            board_surface: Some(BoardSurface::FlushDrawPaired),
+            board_connectivity: Some(BoardConnectivity::Wet),
+            hand_strength: Some(HandStrength::BluffCatcher),
+            active_players: Some(2..=3),
+            hero_position: Some(PositionLabel::Btn),
+            opponents_behind: Some(0..=1),
+            pot_type: Some(PotType::ThreeBet),
+            facing_size: Some(FacingSize::TwoThirds),
+            spr_centi: Some(150..=600),
+            effective_stack_bucket: Some(StackBucket::Deep),
+            line: PostflopLineCondition {
+                previous_street_aggressor: Some(AggressorRole::Hero),
+                last_aggressor_before_current_street: Some(AggressorRole::Opponent),
+                relative_aggressor_order: Some(RelativeAggressorOrder::HeroAfter),
+                hero_checked_this_street: Some(true),
+                current_street_bet_count: Some(1..=1),
+                current_street_raise_count: Some(0..=2),
+            },
+        };
+        let original = RuleSet::new(
+            vec![PostflopRule {
+                id: "U-full".to_owned(),
+                name: "每個欄位都填滿的覆寫".to_owned(),
+                condition: condition.clone(),
+                intent: PostflopIntentDistribution::new(vec![
+                    (poker_engine::strategy::postflop::PostflopActionKind::Call, 4_000),
+                    (poker_engine::strategy::postflop::PostflopActionKind::Fold, 6_000),
+                ])
+                .expect("意圖"),
+                source: RuleSource::UserOverride,
+                version: "user/rule".to_owned(),
+                consultant_approved: false,
+            }],
+            "test/v1",
+        );
+
+        let rebuilt = rebuild_postflop(&postflop(&original)).expect("重建");
+        assert_eq!(
+            rebuilt.rules()[0].condition,
+            condition,
+            "條件必須逐欄還原，否則重建出來的規則會命中不同的節點"
+        );
+        assert_eq!(postflop(&original), postflop(&rebuilt), "再存一次要一模一樣");
+    }
+
+    #[test]
+    fn 快照裡解析不出來的值是錯誤而不是萬用() {
+        let base = || {
+            postflop(
+                &crate::postflop::to_rule_set(&crate::postflop::PostflopOverridesView::default())
+                    .expect("預設覆寫"),
+            )
+        };
+
+        // 欄位存在但內容非法：`and_then` 會把它變成 None，於是這條規則
+        // 從「只管抓詐牌」擴張成「什麼牌力都管」
+        let mut typo = base();
+        typo["rules"][0]["condition"]["handStrength"] = json!("typo");
+        assert!(rebuild_postflop(&typo).is_none(), "未知的牌力組必須拒絕");
+
+        let mut bad_pot = base();
+        bad_pot["rules"][0]["condition"]["potType"] = json!("ThreeBet");
+        assert!(
+            rebuild_postflop(&bad_pot).is_none(),
+            "存的是 PotType::key，Debug 名稱不是合法輸入"
+        );
+
+        // 範圍要恰好兩個端點
+        let mut short_range = base();
+        short_range["rules"][0]["condition"]["activePlayers"] = json!([2]);
+        assert!(rebuild_postflop(&short_range).is_none(), "缺一個端點");
+
+        let mut long_range = base();
+        long_range["rules"][0]["condition"]["activePlayers"] = json!([2, 3, 4]);
+        assert!(rebuild_postflop(&long_range).is_none(), "多一個端點");
+
+        let mut bad_line = base();
+        bad_line["rules"][0]["condition"]["line"] = json!({ "previousStreetAggressor": "nobody" });
+        assert!(rebuild_postflop(&bad_line).is_none(), "未知的主動方");
+
+        let mut bad_flag = base();
+        bad_flag["rules"][0]["condition"]["line"] = json!({ "heroCheckedThisStreet": "yes" });
+        assert!(rebuild_postflop(&bad_flag).is_none(), "布林欄位不接受字串");
+    }
+
+    #[test]
+    fn 規則被截斷時整份拒絕() {
+        let mut snapshot = postflop(
+            &crate::postflop::to_rule_set(&crate::postflop::PostflopOverridesView::default())
+                .expect("預設覆寫"),
+        );
+        let count = snapshot["rules"].as_array().expect("規則列").len();
+        snapshot["rules"]
+            .as_array_mut()
+            .expect("規則列")
+            .truncate(count - 1);
+
+        assert!(
+            rebuild_postflop(&snapshot).is_none(),
+            "少一條規則的規則集會安靜地打出不一樣的牌，ruleCount 就是為了測出這件事"
+        );
+    }
+
+    #[test]
+    fn 缺少節點集合版本時拒絕還原() {
+        let mut snapshot = postflop(
+            &crate::postflop::to_rule_set(&crate::postflop::PostflopOverridesView::default())
+                .expect("預設覆寫"),
+        );
+        snapshot
+            .as_object_mut()
+            .expect("快照")
+            .remove("nodeSetVersion");
+        assert!(rebuild_postflop(&snapshot).is_none());
+    }
+
+    #[test]
     fn 條件只寫出有指定的欄位() {
-        let rules = crate::postflop::to_rule_set(&crate::postflop::PostflopOverridesView::default());
+        let rules = crate::postflop::to_rule_set(&crate::postflop::PostflopOverridesView::default())
+            .expect("預設覆寫");
         let snapshot = postflop(&rules);
         let condition = snapshot["rules"][0]["condition"]
             .as_object()

@@ -7,8 +7,8 @@
  */
 export type PostflopIssueView = { 
 /**
- * `overlap`／`shadowed`／`unreachable`／`impossible`／
- * `layer-order-violation`
+ * `invalid-input`／`overlap`／`shadowed`／`unreachable`／
+ * `impossible`／`layer-order-violation`
  */
 kind: string, 
 /**

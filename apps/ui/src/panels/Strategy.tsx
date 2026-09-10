@@ -15,7 +15,7 @@
 // 把「這一格改成多少」送回引擎，再把引擎重算的矩陣畫出來。UI 自己算的
 // 話，面板顯示的範圍會與 Bot 實際打的漂移，而且完全沒有徵兆。
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   CellOverrideView,
   ChartRowView,
@@ -373,11 +373,29 @@ function PostflopRules({
     }
   }, [nodes, situationKey, line, facingSize]);
 
+  // 診斷要看的是「按下儲存之後的那一份清單」，不是上一次套用的那一份。
+  // 只查已套用的覆寫，草稿裡的錯誤要等它存進去才會被指出來——
+  // 而那個時候它已經生效了
+  const candidate = useMemo<PostflopOverridesView>(() => {
+    if (!draft || !rule) return overrides;
+    const weights = rule.weights
+      .filter((weight) => weight.available)
+      .map((weight) => ({ kind: weight.kind, myriad: draft[weight.kind] ?? 0 }));
+    return {
+      ...overrides,
+      nodes: [
+        ...overrides.nodes.filter((item) => item.nodeKey !== rule.nodeKey),
+        { nodeKey: rule.nodeKey, weights },
+      ],
+    };
+  }, [overrides, draft, rule]);
+  const candidateKey = JSON.stringify(candidate);
+
   useEffect(() => {
-    postflopDiagnostics(overrides)
+    postflopDiagnostics(JSON.parse(candidateKey) as PostflopOverridesView)
       .then(setDiagnostics)
       .catch(() => setDiagnostics(null));
-  }, [overrides]);
+  }, [candidateKey]);
 
   // 牌力組清單依街別過濾：河牌只有五組
   useEffect(() => {
@@ -458,18 +476,8 @@ function PostflopRules({
     onOverridesChange(previous);
   };
 
-  const save = () => {
-    const weights = (rule?.weights ?? [])
-      .filter((weight) => weight.available)
-      .map((weight) => ({ kind: weight.kind, myriad: current[weight.kind] ?? 0 }));
-    apply({
-      ...overrides,
-      nodes: [
-        ...overrides.nodes.filter((item) => item.nodeKey !== nodeKey),
-        { nodeKey, weights },
-      ],
-    });
-  };
+  // 存的就是診斷剛剛驗過的那一份，兩邊各組一次的話會漂移
+  const save = () => apply(candidate);
 
   const restore = () =>
     apply({
@@ -639,7 +647,7 @@ function PostflopRules({
             )}
             {blocked && (
               <span style={{ fontSize: 11, color: 'var(--negative)' }}>
-                有 {diagnostics?.errorCount} 個必須修正的問題，先處理才能儲存
+                存下去會有 {diagnostics?.errorCount} 個必須修正的問題，先處理才能儲存
               </span>
             )}
             <Chip disabled={!canSave} onClick={save}>

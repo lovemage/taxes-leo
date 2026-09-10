@@ -16,7 +16,7 @@
 use poker_engine::card::Card;
 use poker_engine::chips::Chips;
 use poker_engine::hand::Street;
-use poker_engine::strategy::distribution::{Myriad, FULL};
+use poker_engine::strategy::distribution::{DistributionError, Myriad, FULL};
 use poker_engine::strategy::hand_strength::{classify, HandStrengthConfig};
 use poker_engine::strategy::postflop::{
     classify_board, enumerate_postflop_nodes, BoardConnectivity, BoardSurface, FacingSize,
@@ -233,8 +233,8 @@ pub struct PostflopRuleView {
 #[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
 #[serde(rename_all = "camelCase")]
 pub struct PostflopIssueView {
-    /// `overlap`／`shadowed`／`unreachable`／`impossible`／
-    /// `layer-order-violation`
+    /// `invalid-input`／`overlap`／`shadowed`／`unreachable`／
+    /// `impossible`／`layer-order-violation`
     pub kind: String,
     /// `error` 或 `warning`
     pub severity: String,
@@ -300,7 +300,9 @@ pub struct PostflopHandPreviewView {
 #[must_use]
 pub fn postflop_nodes(street: &str, overrides: &PostflopOverridesView) -> PostflopNodesView {
     let street_value = parse_street(street).unwrap_or(Street::Flop);
-    let rules = to_rule_set(overrides);
+    // 導覽是唯讀查詢：清單裡有半成品時照樣要畫得出來，
+    // 不合法那幾筆的定位由 `postflop_diagnostics` 回報
+    let (rules, _) = to_rule_set_lossy(overrides);
 
     PostflopNodesView {
         node_set_version: NODE_SET_VERSION.to_owned(),
@@ -370,7 +372,8 @@ pub fn postflop_rule(
     overrides: &PostflopOverridesView,
 ) -> Result<PostflopRuleView, String> {
     let node = parse_node(query)?;
-    let rules = to_rule_set(overrides);
+    // 同 `postflop_nodes`：查詢不因為別處有一筆壞覆寫就整頁失敗
+    let (rules, _) = to_rule_set_lossy(overrides);
     let situation = node.situation;
 
     // 換算金額用一個固定的參考底池：這裡要的是**頻率**，不是實際籌碼。
@@ -513,15 +516,21 @@ pub fn classify_postflop_hand(hole: &str, board: &str) -> Result<PostflopHandPre
 /// 只在這一支跑，不在每次編輯時跑。
 #[must_use]
 pub fn postflop_diagnostics(overrides: &PostflopOverridesView) -> PostflopDiagnosticsView {
-    let rules = to_rule_set(overrides);
+    // 先收非法輸入：它們在轉換時就被跳過了，後面的 `analyse()` 看不到
+    // 它們，也就無從報錯。少了這一段，「合計 90%」的節點覆寫會得到
+    // can_save = true，而使用者以為策略已經生效
+    let (rules, input_errors) = to_rule_set_lossy(overrides);
     let nodes = enumerate_postflop_nodes();
 
-    let mut issues: Vec<PostflopIssueView> = rules
-        .analyse()
-        .into_iter()
-        .chain(rules.analyse_reachability(&nodes))
-        .filter_map(|issue| to_issue_view(&rules, issue))
-        .collect();
+    let mut issues: Vec<PostflopIssueView> =
+        input_errors.iter().map(to_input_issue).collect();
+    issues.extend(
+        rules
+            .analyse()
+            .into_iter()
+            .chain(rules.analyse_reachability(&nodes))
+            .filter_map(|issue| to_issue_view(&rules, issue)),
+    );
 
     // 使用者自己的問題排前面：工程通則的警告對他來說是雜訊
     issues.sort_by_key(|issue| match issue.source.as_str() {
@@ -542,6 +551,24 @@ pub fn postflop_diagnostics(overrides: &PostflopOverridesView) -> PostflopDiagno
         error_count,
         warning_count,
         can_save: error_count == 0,
+    }
+}
+
+/// 非法輸入的診斷。**一律是 error**：那一筆根本沒有進規則集，
+/// 保存下去等於把使用者寫的東西換成工程通則。
+fn to_input_issue(error: &PostflopInputError) -> PostflopIssueView {
+    PostflopIssueView {
+        kind: "invalid-input".to_owned(),
+        severity: "error".to_owned(),
+        rule_id: error.id.clone(),
+        rule_name: if error.scope == "node" {
+            "你的節點覆寫".to_owned()
+        } else {
+            format!("你的規則 {}", error.id)
+        },
+        source: "user-override".to_owned(),
+        message: error.message.clone(),
+        related_rule_id: None,
     }
 }
 
@@ -603,21 +630,68 @@ fn to_issue_view(rules: &RuleSet, issue: RuleIssue) -> Option<PostflopIssueView>
     })
 }
 
+/// 一筆覆寫輸入本身不合法。
+///
+/// 帶著使用者看得懂的定位（節點鍵或規則 id），因為診斷要能指回他到底
+/// 哪一筆寫錯了；只回一句「有錯」等於要他自己一條一條找。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PostflopInputError {
+    /// `node` 或 `rule`
+    pub scope: &'static str,
+    /// 節點鍵或規則 id
+    pub id: String,
+    pub message: String,
+}
+
 /// 把兩份覆寫清單接到工程通則之前，組成完整的四層規則集。
 ///
 /// 順序固定：**節點覆寫 → 規則覆寫 → 官方 → 通則 → 工程 fallback**。
 /// 節點覆寫排在規則覆寫之前，因為它更具體；兩者同屬 `UserOverride` 層。
 /// 官方層目前沒有內容（顧問尚未交付），因此鏈上只有三段有東西。
+///
+/// # Errors
+/// 任何一筆覆寫的節點鍵、條件字串、動作名稱或頻率不合法時，回傳**全部**
+/// 錯誤而不是跳過那幾筆。靜默丟棄的話，使用者以為自己設的 90% 已經生效，
+/// 實際上跑的是工程通則，而快照記下的也是被替換過的內容。
+pub fn to_rule_set(
+    overrides: &PostflopOverridesView,
+) -> Result<RuleSet, Vec<PostflopInputError>> {
+    let (rules, errors) = to_rule_set_lossy(overrides);
+    if errors.is_empty() {
+        Ok(rules)
+    } else {
+        Err(errors)
+    }
+}
+
+/// 同上，但跳過不合法的覆寫並把它們回報出來。
+///
+/// 導覽與逐節點查詢走這一支：使用者還在編輯時，清單裡有一筆半成品不該
+/// 讓整頁查不出東西。**保存前的診斷與 run 走嚴格版**——那兩處才是閘門。
 #[must_use]
-pub fn to_rule_set(overrides: &PostflopOverridesView) -> RuleSet {
+pub fn to_rule_set_lossy(
+    overrides: &PostflopOverridesView,
+) -> (RuleSet, Vec<PostflopInputError>) {
     let mut rules: Vec<PostflopRule> = Vec::new();
+    let mut errors: Vec<PostflopInputError> = Vec::new();
 
     for node_override in &overrides.nodes {
+        let key = node_override.node_key.clone();
+        let fail = |message: String| PostflopInputError {
+            scope: "node",
+            id: key.clone(),
+            message,
+        };
         let Some(node) = parse_node_key(&node_override.node_key) else {
+            errors.push(fail("節點鍵不是可達節點的 canonical 鍵".to_owned()));
             continue;
         };
-        let Some(intent) = to_intent(&node_override.weights) else {
-            continue;
+        let intent = match to_intent(&node_override.weights) {
+            Ok(intent) => intent,
+            Err(message) => {
+                errors.push(fail(message));
+                continue;
+            }
         };
         rules.push(PostflopRule {
             id: format!("{NODE_OVERRIDE_PREFIX}{}", node_override.node_key),
@@ -631,13 +705,30 @@ pub fn to_rule_set(overrides: &PostflopOverridesView) -> RuleSet {
     }
 
     for rule_override in &overrides.rules {
-        let Some(intent) = to_intent(&rule_override.weights) else {
-            continue;
+        let id = rule_override.id.clone();
+        let fail = |message: String| PostflopInputError {
+            scope: "rule",
+            id: id.clone(),
+            message,
+        };
+        let condition = match to_condition(rule_override) {
+            Ok(condition) => condition,
+            Err(message) => {
+                errors.push(fail(message));
+                continue;
+            }
+        };
+        let intent = match to_intent(&rule_override.weights) {
+            Ok(intent) => intent,
+            Err(message) => {
+                errors.push(fail(message));
+                continue;
+            }
         };
         rules.push(PostflopRule {
             id: format!("{RULE_OVERRIDE_PREFIX}{}", rule_override.id),
             name: format!("你的規則 {}", rule_override.id),
-            condition: to_condition(rule_override),
+            condition,
             intent,
             source: RuleSource::UserOverride,
             version: "user/rule".to_owned(),
@@ -647,7 +738,7 @@ pub fn to_rule_set(overrides: &PostflopOverridesView) -> RuleSet {
 
     let baseline = engineering_rules();
     rules.extend(baseline.rules().iter().cloned());
-    RuleSet::new(rules, baseline.fallback_version)
+    (RuleSet::new(rules, baseline.fallback_version), errors)
 }
 
 // ── 內部 ─────────────────────────────────────────────────────────────
@@ -780,29 +871,65 @@ fn unavailable_reason(kind: PostflopActionKind, situation: PostflopSituation) ->
     }
 }
 
-fn to_intent(weights: &[PostflopWeightInput]) -> Option<PostflopIntentDistribution> {
-    let parsed: Vec<(PostflopActionKind, Myriad)> = weights
-        .iter()
-        .filter_map(|weight| Some((parse_action_kind(&weight.kind)?, weight.myriad)))
-        .collect();
-    PostflopIntentDistribution::new(parsed).ok()
+/// 使用者輸入的頻率列 → 意圖分布。
+///
+/// 未知的動作名稱是**錯誤**，不是「忽略那一欄」：`filter_map` 丟掉它之後
+/// 剩下的權重剛好合計 10000 的話，規則會靜靜地少一個動作。
+fn to_intent(weights: &[PostflopWeightInput]) -> Result<PostflopIntentDistribution, String> {
+    let mut parsed: Vec<(PostflopActionKind, Myriad)> = Vec::with_capacity(weights.len());
+    for weight in weights {
+        let kind = parse_action_kind(&weight.kind)
+            .ok_or_else(|| format!("未知的動作 {}", weight.kind))?;
+        parsed.push((kind, weight.myriad));
+    }
+    PostflopIntentDistribution::new(parsed).map_err(|error| match error {
+        DistributionError::Empty => "沒有填任何頻率".to_owned(),
+        DistributionError::NotNormalised { total } => {
+            format!("頻率合計 {total} 不是 10000（100%）")
+        }
+        DistributionError::AllWeightsMasked => "所有頻率都被遮蔽".to_owned(),
+    })
 }
 
-fn to_condition(rule: &PostflopRuleOverrideView) -> PostflopCondition {
-    PostflopCondition {
-        street: rule.street.as_deref().and_then(parse_street),
-        situation: rule.situation.as_deref().and_then(parse_situation),
-        board_surface: rule.surface.as_deref().and_then(parse_surface),
-        board_connectivity: rule.connectivity.as_deref().and_then(parse_connectivity),
-        hand_strength: rule.hand_strength.as_deref().and_then(parse_hand_strength),
-        facing_size: rule.facing_size.as_deref().and_then(parse_facing_size),
-        line: rule
-            .line
-            .as_deref()
-            .and_then(parse_line)
+/// 規則覆寫的條件。
+///
+/// 省略即萬用，**但寫了卻解析不出來是錯誤**。原本的 `and_then` 把兩者
+/// 收成同一個 `None`，於是打錯的牌力組會讓一條規則從「只管強成牌」
+/// 悄悄擴張成「什麼牌都管」。
+fn to_condition(rule: &PostflopRuleOverrideView) -> Result<PostflopCondition, String> {
+    Ok(PostflopCondition {
+        street: optional_field("街別", rule.street.as_deref(), parse_street)?,
+        situation: optional_field("下注狀態", rule.situation.as_deref(), parse_situation)?,
+        board_surface: optional_field("牌面外觀", rule.surface.as_deref(), parse_surface)?,
+        board_connectivity: optional_field(
+            "順子結構",
+            rule.connectivity.as_deref(),
+            parse_connectivity,
+        )?,
+        hand_strength: optional_field(
+            "牌力組",
+            rule.hand_strength.as_deref(),
+            parse_hand_strength,
+        )?,
+        facing_size: optional_field("面對尺度", rule.facing_size.as_deref(), parse_facing_size)?,
+        line: optional_field("線路", rule.line.as_deref(), parse_line)?
             .map(PostflopLineName::minimal_condition)
             .unwrap_or_default(),
         ..PostflopCondition::default()
+    })
+}
+
+/// 沒填是萬用；填了就必須解析得出來。
+fn optional_field<T>(
+    label: &str,
+    value: Option<&str>,
+    parse: impl Fn(&str) -> Option<T>,
+) -> Result<Option<T>, String> {
+    match value {
+        None => Ok(None),
+        Some(text) => parse(text)
+            .map(Some)
+            .ok_or_else(|| format!("未知的{label} {text}")),
     }
 }
 
@@ -875,7 +1002,7 @@ fn parse_cards(text: &str) -> Result<Vec<Card>, String> {
         .collect()
 }
 
-const fn street_key(street: Street) -> &'static str {
+pub(crate) const fn street_key(street: Street) -> &'static str {
     match street {
         Street::Preflop => "preflop",
         Street::Flop => "flop",
@@ -931,6 +1058,27 @@ pub(crate) fn parse_hand_strength(key: &str) -> Option<HandStrength> {
     HandStrength::ALL
         .into_iter()
         .find(|strength| strength.key() == key)
+}
+
+/// 底池類型。快照存的是 [`PotType::key`]，不是 `Debug` 名稱。
+pub(crate) fn parse_pot_type(key: &str) -> Option<poker_engine::strategy::postflop::PotType> {
+    poker_engine::strategy::postflop::PotType::ALL
+        .into_iter()
+        .find(|pot| pot.key() == key)
+}
+
+pub(crate) fn parse_position(key: &str) -> Option<poker_engine::position::PositionLabel> {
+    poker_engine::position::PositionLabel::ALL
+        .into_iter()
+        .find(|position| position.as_str() == key)
+}
+
+pub(crate) fn parse_stack_bucket(
+    key: &str,
+) -> Option<poker_engine::strategy::decision::StackBucket> {
+    poker_engine::strategy::decision::StackBucket::ALL
+        .into_iter()
+        .find(|bucket| bucket.as_str() == key)
 }
 
 pub(crate) fn parse_action_kind(key: &str) -> Option<PostflopActionKind> {
