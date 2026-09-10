@@ -139,8 +139,9 @@ fn main() {
     println!("equity 排序：{}（{}）", status.source, status.note);
 
     let (handler, run_id) = seed_run(rankings);
-    let listener = TcpListener::bind(ADDR).expect("綁定連接埠");
-    println!("dev server 已啟動：http://{ADDR}（run_id={run_id}）");
+    let addr = std::env::var("POKER_DEV_ADDR").unwrap_or_else(|_| ADDR.to_owned());
+    let listener = TcpListener::bind(&addr).expect("綁定連接埠");
+    println!("dev server 已啟動：http://{addr}（run_id={run_id}）");
 
     for stream in listener.incoming() {
         match stream {

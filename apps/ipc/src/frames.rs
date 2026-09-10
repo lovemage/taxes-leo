@@ -78,6 +78,23 @@ impl Ledger {
     }
 }
 
+/// 收街籌碼另成一幀，發公共牌前先完成收池。
+fn collect_bets(ledger: &mut Ledger, frames: &mut Vec<FrameView>) {
+    let has_bets = ledger.street.iter().any(|&n| n > 0);
+    ledger.advance_street();
+    if has_bets {
+        if let Some(previous) = frames.last() {
+            let mut collected = previous.clone();
+            collected.kind = "collect".to_owned();
+            collected.seat = None;
+            collected.to = None;
+            collected.street_bets = ledger.street.clone();
+            collected.collected_pot = ledger.pot();
+            frames.push(collected);
+        }
+    }
+}
+
 /// 把一手紀錄展開成逐幀狀態。
 ///
 /// 幀的順序即動畫的播放順序：強制下注 → 逐街（發牌 → 各座行動）→ 收池。
@@ -123,14 +140,30 @@ pub fn build(record: &HandRecord) -> Vec<FrameView> {
             committed: ledger.committed_all(),
             stacks: ledger.stacks(),
             folded: ledger.folded.clone(),
+            street_bets: ledger.street.clone(),
+            collected_pot: ledger.carried.iter().sum(),
         });
     }
+
+    frames.push(FrameView {
+        kind: "dealHole".to_owned(),
+        street: StreetView::Preflop,
+        seat: None,
+        to: None,
+        board: Vec::new(),
+        pot: ledger.pot(),
+        committed: ledger.committed_all(),
+        stacks: ledger.stacks(),
+        folded: ledger.folded.clone(),
+        street_bets: ledger.street.clone(),
+        collected_pot: ledger.carried.iter().sum(),
+    });
 
     // ── 逐街行動 ──
     for action in &record.actions {
         if action.street != street {
             street = action.street;
-            ledger.advance_street();
+            collect_bets(&mut ledger, &mut frames);
             let count = visible_cards(street).min(record.board.len());
             frames.push(FrameView {
                 kind: "deal".to_owned(),
@@ -142,6 +175,8 @@ pub fn build(record: &HandRecord) -> Vec<FrameView> {
                 committed: ledger.committed_all(),
                 stacks: ledger.stacks(),
                 folded: ledger.folded.clone(),
+                street_bets: ledger.street.clone(),
+                collected_pot: ledger.carried.iter().sum(),
             });
         }
 
@@ -169,10 +204,12 @@ pub fn build(record: &HandRecord) -> Vec<FrameView> {
             committed: ledger.committed_all(),
             stacks: ledger.stacks(),
             folded: ledger.folded.clone(),
+            street_bets: ledger.street.clone(),
+            collected_pot: ledger.carried.iter().sum(),
         });
     }
 
-    ledger.advance_street();
+    collect_bets(&mut ledger, &mut frames);
 
     // ── all-in 之後的 runout ──
     //
@@ -200,7 +237,25 @@ pub fn build(record: &HandRecord) -> Vec<FrameView> {
             committed: ledger.committed_all(),
             stacks: ledger.stacks(),
             folded: ledger.folded.clone(),
+            street_bets: ledger.street.clone(),
+            collected_pot: ledger.carried.iter().sum(),
         });
+    }
+
+    // 未跟注退回與勝利派彩分開演出，不將退回視為獲勝。
+    let refunds: u64 = record.refunds.iter().map(|c| c.units()).sum();
+    if refunds > 0 {
+        if let Some(previous) = frames.last() {
+            let mut refund = previous.clone();
+            refund.kind = "refund".to_owned();
+            refund.seat = None;
+            refund.to = None;
+            refund.collected_pot = ledger.pot() - refunds;
+            for (seat, stack) in refund.stacks.iter_mut().enumerate() {
+                *stack += record.refunds.get(seat).map_or(0, |c| c.units());
+            }
+            frames.push(refund);
+        }
     }
 
     // ── 收池 ──
@@ -214,8 +269,17 @@ pub fn build(record: &HandRecord) -> Vec<FrameView> {
         committed: ledger.committed_all(),
         stacks: ledger.stacks(),
         folded: ledger.folded.clone(),
+        street_bets: ledger.street.clone(),
+        collected_pot: ledger.carried.iter().sum(),
     });
 
+    if let Some(settle) = frames.last_mut() {
+        settle.collected_pot = 0;
+        for (seat, stack) in settle.stacks.iter_mut().enumerate() {
+            *stack += record.payouts.get(seat).map_or(0, |c| c.units())
+                + record.refunds.get(seat).map_or(0, |c| c.units());
+        }
+    }
     frames
 }
 

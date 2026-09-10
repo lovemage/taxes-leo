@@ -179,7 +179,7 @@ export function App() {
   }, []);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+    <div className="cockpit-app" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
       <AppHeader
         mode={mode}
         onModeChange={setMode}
@@ -229,7 +229,7 @@ export function App() {
         ) : (
           <>
             {/* 其他面板保留左側輸入、右側內容的既有工作方式 */}
-            <aside
+            {panel !== 'replay' && <aside
               style={{
                 width: 300,
                 flexShrink: 0,
@@ -261,7 +261,7 @@ export function App() {
               {panel !== 'bots' && panel !== 'strategy' && (
                 <TableSetup request={request} onChange={setRequest} locked={busy} />
               )}
-            </aside>
+            </aside>}
 
             <main style={{ flex: 1, overflow: 'auto', background: 'var(--bg-base)' }}>
               {panel === 'bots' && (

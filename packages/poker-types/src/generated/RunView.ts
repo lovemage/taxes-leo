@@ -3,7 +3,7 @@
 /**
  * run 層級的摘要。
  */
-export type RunView = { runId: number, handsPlayed: number, completed: boolean, players: number, heroSeat: number, 
+export type RunView = { runId: number, handsPlayed: number, completed: boolean, players: number, heroSeat: number, bigBlind: number, 
 /**
  * master seed 是完整 u64 值域，可能超過 JS 的安全整數上限，
  * 因此以字串傳遞。它只供顯示與重現設定，不參與前端運算

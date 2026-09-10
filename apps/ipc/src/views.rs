@@ -19,6 +19,7 @@ pub fn run_view(store: &Store, run_id: i64) -> Result<RunView, IpcError> {
     let manifest = store.load_manifest(run_id)?;
     Ok(RunView {
         run_id,
+        big_blind: manifest.big_blind,
         hands_played: manifest.instances.iter().map(|i| i.hands).sum(),
         completed: manifest.completed,
         players: u8::try_from(manifest.players).unwrap_or(u8::MAX),
@@ -48,10 +49,7 @@ pub fn hand_view(
     // 讓呼叫端傳等於開了一個「宣稱自己是別人」的入口
     let hero_seat = store.load_manifest(run_id)?.hero_seat;
     Ok(HandView::from_record(
-        &record,
-        &positions,
-        visibility,
-        hero_seat,
+        &record, &positions, visibility, hero_seat,
     ))
 }
 
@@ -74,8 +72,7 @@ pub fn hand_summaries(
         .map(|(record, hero_delta)| HandSummaryView {
             hand_index: record.hand_index,
             instance_index: record.instance_index,
-            seated: u8::try_from(record.occupied.iter().filter(|&&o| o).count())
-                .unwrap_or(u8::MAX),
+            seated: u8::try_from(record.occupied.iter().filter(|&&o| o).count()).unwrap_or(u8::MAX),
             hero_delta,
             board: record.board.iter().map(ToString::to_string).collect(),
         })

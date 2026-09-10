@@ -1,6 +1,6 @@
 // 面板 G — 逐手 Log 與重播。
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   HandView,
   HoleCardVisibility,
@@ -11,6 +11,7 @@ import type { ReplayHeadline } from '../components/AppHeader';
 import { ActionChip } from '../components/ActionChip';
 import { HandList } from '../components/HandList';
 import { frameCaption, ReplayControls, useReplayPlayer } from '../components/ReplayPlayer';
+import { ReplayAudio } from '../components/ReplayAudio';
 import { TableView } from '../components/TableView';
 
 /** 手牌未載入時的空幀，讓 hook 的呼叫順序不隨資料變動 */
@@ -23,7 +24,7 @@ const NO_FRAMES: never[] = [];
  */
 export function Replay({
   reloadToken,
-  bigBlind,
+  bigBlind: configuredBigBlind,
   onHeadline,
 }: {
   reloadToken: number;
@@ -33,6 +34,8 @@ export function Replay({
 }) {
   const [run, setRun] = useState<RunView | null>(null);
   const [selected, setSelected] = useState(0);
+  const lastHand = useRef<HandView | null>(null);
+  const [previousHand, setPreviousHand] = useState<HandView | null>(null);
   const [hand, setHand] = useState<HandView | null>(null);
   // 預設全部攤開（核心規格 2.4）。這是策略分析工具，複盤就是要看清楚
   // 每個位置手上是什麼；遮住等於讓工具失去意義。
@@ -44,24 +47,25 @@ export function Replay({
   const [listOpen, setListOpen] = useState(false);
   const [continuous, setContinuous] = useState(true);
 
+  const bigBlind = run?.bigBlind || configuredBigBlind;
   const total = run ? Number(run.handsPlayed) : 0;
 
   useEffect(() => {
-    setError(null);
-    getRun()
-      .then((runView) => {
-        setRun(runView);
-        setSelected(0);
-      })
-      .catch((e: unknown) => setError(String(e)));
+    let active = true;
+    setError(null); setRun(null); setHand(null); lastHand.current = null; setPreviousHand(null);
+    getRun().then(next => { if (active) { setRun(next); setSelected(0); } })
+      .catch((e: unknown) => { if (active) setError(String(e)); });
+    return () => { active = false; };
   }, [reloadToken]);
 
   useEffect(() => {
-    if (!run) return;
-    getHand(selected, visibility)
-      .then(setHand)
-      .catch((e: unknown) => setError(String(e)));
-  }, [selected, visibility, run]);
+    let active = true;
+    setHand(null); setError(null);
+    if (run && total > 0) getHand(selected, visibility)
+      .then(next => { if (active) { setPreviousHand(lastHand.current); lastHand.current = next; setHand(next); } })
+      .catch((e: unknown) => { if (active) setError(String(e)); });
+    return () => { active = false; };
+  }, [selected, visibility, run, total]);
 
   // 身分穩定，否則播放器的結束判定會每次 render 重跑
   const advance = useCallback(() => setSelected((current) => current + 1), []);
@@ -165,9 +169,10 @@ export function Replay({
             checked={visibility === 'revealedOnly'}
             onChange={(e) => setVisibility(e.target.checked ? 'revealedOnly' : 'all')}
           />
-          只顯示實際亮出的底牌
+          限制底牌（攤牌時揭露）
         </label>
       </header>
+      <ReplayAudio hand={hand} frame={frame} index={player.index} elapsed={player.elapsed} playing={player.playing} heroSeat={run?.heroSeat ?? 0} />
 
       {listOpen && (
         <div
@@ -217,8 +222,10 @@ export function Replay({
 
             <TableView
               hand={hand}
+              previousHand={previousHand}
               frame={frame}
               frameIndex={player.index}
+              elapsed={player.elapsed}
               heroSeat={run?.heroSeat ?? 0}
               bigBlind={bigBlind}
             />
@@ -282,7 +289,7 @@ export function Replay({
             </section>
           </>
         ) : (
-          <p className="dim">載入中…</p>
+          <p className="dim">{run && total === 0 ? "這次執行沒有可重播的手牌。" : "載入中…"}</p>
         )}
       </main>
     </div>

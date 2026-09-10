@@ -17,6 +17,6 @@ export default defineConfig({
   },
   server: {
     port: 5180,
-    proxy: { '/api': 'http://127.0.0.1:7801' },
+    proxy: { '/api': process.env.POKER_DEV_API ?? 'http://127.0.0.1:7801' },
   },
 });

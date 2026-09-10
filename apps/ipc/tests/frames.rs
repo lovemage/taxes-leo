@@ -3,12 +3,12 @@
 //! 幀的金額是**另一條**算路：引擎在打牌時算一次，`frames::build` 由
 //! log 事件再算一次。兩條必須對得起來，否則重播顯示的底池就是編出來的。
 
-use poker_engine::chips::Chips;
-use poker_engine::session::{run_session, SessionConfig};
-use poker_engine::strategy::DecisionView;
 use poker_engine::betting::Action;
+use poker_engine::chips::Chips;
 use poker_engine::hand::ActionProvider;
 use poker_engine::pot::RakeConfig;
+use poker_engine::session::{run_session, SessionConfig};
+use poker_engine::strategy::DecisionView;
 use poker_engine::table::{MuckPolicy, TableConfig};
 use poker_ipc::frames;
 use poker_storage::codec::HandRecord;
@@ -19,7 +19,10 @@ impl ActionProvider for Mixed {
     fn choose(&mut self, view: &DecisionView) -> Action {
         // 用手數當作偽隨機來源，讓 fold／call／raise 都出現，
         // 才驗得到跟注與加注兩種金額路徑
-        self.0 = self.0.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+        self.0 = self
+            .0
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1);
         let roll = (self.0 >> 33) % 10;
         let legal = &view.legal;
         if roll < 2 && !legal.can_check {
@@ -246,3 +249,59 @@ fn 幀涵蓋全部強制下注與行動且不重複() {
     }
 }
 
+#[test]
+fn 展示籌碼不重複且結算回到玩家() {
+    let rake = RakeConfig {
+        basis_points: 450,
+        cap: Chips::new(6),
+        no_flop_no_drop: true,
+    };
+    for record in collect(&config(rake, 300)) {
+        let built = frames::build(&record);
+        for frame in &built {
+            if frame.kind != "settle" && frame.kind != "refund" {
+                assert_eq!(
+                    frame.collected_pot + frame.street_bets.iter().sum::<u64>(),
+                    frame.pot
+                );
+                assert_eq!(
+                    frame.stacks.iter().sum::<u64>() + frame.pot,
+                    record
+                        .starting_stacks
+                        .iter()
+                        .map(|c| c.units())
+                        .sum::<u64>()
+                );
+            }
+        }
+        for frame in &built {
+            let removed = if frame.kind == "settle" { record.rake.units() } else { 0 };
+            assert_eq!(frame.stacks.iter().sum::<u64>() + frame.street_bets.iter().sum::<u64>()
+                + frame.collected_pot + removed,
+                record.starting_stacks.iter().map(|c| c.units()).sum::<u64>());
+        }
+        let end = built.last().unwrap();
+        assert_eq!(end.collected_pot, 0);
+        assert!(end.street_bets.iter().all(|&n| n == 0));
+        for seat in 0..record.occupied.len() {
+            assert_eq!(
+                end.stacks[seat],
+                record.starting_stacks[seat].units() - end.committed[seat]
+                    + record.payouts[seat].units()
+                    + record.refunds[seat].units()
+            );
+        }
+        assert_eq!(
+            end.stacks.iter().sum::<u64>() + record.rake.units(),
+            record
+                .starting_stacks
+                .iter()
+                .map(|c| c.units())
+                .sum::<u64>()
+        );
+        let deal = built.iter().position(|f| f.kind == "dealHole").unwrap();
+        assert!(built[..deal]
+            .iter()
+            .all(|f| ["ante", "smallBlind", "bigBlind", "straddle"].contains(&f.kind.as_str())));
+    }
+}

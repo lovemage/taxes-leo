@@ -10,3 +10,5 @@ createRoot(root).render(
     <App />
   </StrictMode>,
 );
+
+import './cockpit.css';

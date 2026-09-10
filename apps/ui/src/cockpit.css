@@ -1,0 +1,63 @@
+:root {
+  --bg-base:#0b1117; --bg-surface:#141d26; --bg-raised:#202d38; --bg-hover:#293d49;
+  --border:#354650; --text-primary:#e4edf1; --text-secondary:#a8bac4; --text-tertiary:#8297a4;
+  --accent:#7dc9c5; --accent-hover:#a0e0d8; --range-accent:#7dc9c5;
+  --radius-control:3px; --radius-panel:5px; --radius-container:8px;
+}
+.cockpit-app { background: radial-gradient(ellipse at top,#26343e,#0b1117 65%); }
+.cockpit-app > header, .cockpit-app aside, .run-workspace__setup, .run-workspace__status {
+  background-image:linear-gradient(#111c26e8,#111c26ed),url('../../../assets/ui/cockpit/graphite-brushed-v1.png');
+  background-size:auto,600px; box-shadow:inset 0 1px #ffffff0a;
+}
+button { transition:filter 120ms,box-shadow 120ms; box-shadow:inset 0 1px #ffffff12,0 2px 3px #0003; }
+button:not(:disabled):hover { filter:brightness(1.2); }
+button:not(:disabled):active { box-shadow:inset 0 2px 5px #0008; }
+button:disabled { cursor:not-allowed; }
+:where(button,input,select,textarea):focus-visible { outline:2px solid #b8e8df; outline-offset:3px; }
+input[type=number], select, textarea { box-shadow:inset 0 2px 5px #0006; font-variant-numeric:tabular-nums; }
+input[type=number] { font-family:var(--font-mono); }
+input[type=checkbox] { appearance:none; width:28px; height:16px; border:1px solid var(--border); border-radius:2px; background:#080e13; vertical-align:middle; position:relative; flex-shrink:0; cursor:pointer; }
+input[type=checkbox]::after { content:''; position:absolute; width:9px; height:10px; top:2px; left:3px; background:#6d8390; }
+input[type=checkbox]:checked { background:#244f51; border-color:#7dc9c5; }
+input[type=checkbox]:checked::after { left:14px; background:#bde9df; }
+input[type=checkbox]:disabled { opacity:.4; cursor:not-allowed; }
+input[type=range] { height:7px; box-shadow:inset 0 2px 3px #0008; }
+input[type=range]::-webkit-slider-thumb { width:13px; height:21px; border-radius:2px; background:linear-gradient(90deg,#7eaaa9,#d1e5df,#5e8285); border:1px solid #91bbb8; box-shadow:0 2px 4px #0008; }
+.table-stage { position:relative; height:clamp(420px,59vh,650px); min-width:680px; overflow:hidden; isolation:isolate; border:1px solid #465b67; border-radius:8px; background:radial-gradient(ellipse at center,#253847 0%,#141f2a 63%,#0a1118 100%); box-shadow:inset 0 0 65px #0009,0 12px 30px #0005; }
+.table-felt { position:absolute; inset:17% 12%; border-radius:48%; border:12px solid #293743; background:radial-gradient(ellipse,#244846,#122c30); box-shadow:0 0 0 2px #536470,inset 0 0 0 2px #65958a44,inset 0 0 50px #071a20,0 16px 28px #0007; }
+.table-felt::after { content:''; position:absolute; inset:12px; border:1px solid #89b7ab30; border-radius:48%; }
+.table-coordinate,.table-footer { position:absolute; left:18px; right:18px; color:#8ba3b3; font:10px var(--font-mono); letter-spacing:1.5px; }
+.table-coordinate { top:15px; }.table-footer { bottom:13px; letter-spacing:.5px; }.table-footer span { float:right; }
+.table-center { position:absolute; left:50%; top:47%; transform:translate(-50%,-50%); text-align:center; }
+.street-label { font:10px var(--font-mono); letter-spacing:3px; color:#9ab5b2; margin-bottom:12px; }
+.board-cards { display:flex; gap:7px; }.playing-card,.card-slot { display:inline-flex; width:43px; height:59px; border-radius:4px; }
+.playing-card { flex-direction:column; align-items:center; justify-content:center; background:linear-gradient(130deg,#fffef3,#d7dedb); border:1px solid #e8e5cf; color:#202b34; box-shadow:0 2px 0 #a4ada8,0 5px 9px #0007; font-family:Georgia,serif; transform-origin:50% 80%; }
+.playing-card b { font-size:21px; line-height:1; }.playing-card > span { font-size:23px; line-height:1.2; }
+.suit-h { color:#a82e40; }.suit-d { color:#2468aa; }.suit-c { color:#267654; }
+.card-slot { border:1px solid #8eafa226; background:#10262866; }
+.card-back { background:repeating-linear-gradient(45deg,#385d70 0 2px,#1a364c 2px 5px); border:3px solid #bbc9c9; }
+.pot-readout { margin-top:12px; display:flex; gap:10px; align-items:baseline; justify-content:center; }.pot-readout small { color:#a4bcb8; font-size:10px; }.pot-readout strong { font:23px var(--font-mono); color:#e4dfbf; }.pot-readout em { font-size:11px; font-style:normal; color:#94aca8; }
+.central-chips { margin:15px auto 0; height:10px; }.settlement-note { display:block; margin-top:8px; color:#b6c5c1; font-size:10px; }
+.deck { position:absolute; left:49%; top:18%; transform:rotate(-12deg) scale(.65); }.deck .card-back { box-shadow:2px 2px #acbaba,4px 4px #4d6771,6px 6px #acbaba; }.deck > span:last-child { position:absolute; left:0; top:-18px; color:#7c9caa; font:9px var(--font-mono); letter-spacing:2px; }
+.player-seat { position:absolute; width:112px; transform:translate(-50%,-50%); border:1px solid #415665; border-radius:5px; background:linear-gradient(#22333f,#111d28); box-shadow:0 6px 14px #0008,inset 0 1px #ffffff12; text-align:center; padding:6px 7px; z-index:2; }
+.hero-seat { background:linear-gradient(#2b454a,#152b31); border-color:#76b2ad; }.acting { outline:2px solid #ccbc84; outline-offset:3px; }
+.seat-label { display:flex; align-items:center; justify-content:space-between; gap:3px; font-size:11px; color:#e5edf0; }.seat-label small { color:#92adb9; font:8px var(--font-mono); }
+.hole-cards { display:flex; justify-content:center; height:42px; margin-top:4px; gap:3px; }.hole-cards .playing-card { width:29px; height:39px; }.hole-cards b { font-size:15px; }.hole-cards .playing-card > span { font-size:17px; }
+.seat-stack { display:flex; justify-content:center; align-items:center; gap:6px; padding-top:6px; }.seat-stack strong { font:14px var(--font-mono); }.seat-stack small { font-size:8px; color:#8aa0ad; }
+.seat-status { min-height:14px; margin-top:5px; color:#a3b7c2; font:9px var(--font-mono); }.winner-label { color:#dfcb8b; font-weight:700; }.folded-seat { border-color:#293742; }.folded-seat .seat-label { opacity:.55; }
+.empty-seat { background:#101b2380; border-style:dashed; color:#6a8494; box-shadow:none; }.vacant-label { padding:20px 0; font-size:11px; }
+.dealer-button { position:absolute; right:-10px; top:-10px; width:22px; height:22px; border:2px solid #bcb9a7; border-radius:50%; background:#e7e6d9; color:#25323b; font:bold 12px/18px var(--font-mono); box-shadow:0 3px 4px #0007; }
+.chip-stack { display:inline-block; position:relative; width:23px; height:14px; flex-shrink:0; }.chip-stack i,.transfer-chip { position:absolute; width:22px; height:9px; border-radius:50%; background:repeating-conic-gradient(#c8b176 0deg 38deg,#f5e4ac 38deg 54deg); border:1px solid #ead7a1; box-shadow:0 2px 0 #72613d,0 3px 4px #0007; left:0; }
+.seat-bet { position:absolute; transform:translate(-50%,-50%); display:flex; align-items:center; gap:4px; color:#e7d3a0; font:10px var(--font-mono); z-index:1; }.transfer-chip { z-index:4; pointer-events:none; transform:translate(-50%,-50%); }
+.audio-controls { display:flex; justify-content:flex-end; align-items:center; gap:10px; margin:8px 16px 0; font-size:11px; color:var(--text-secondary); }.audio-controls button { background:var(--bg-raised); color:var(--text-primary); border:1px solid var(--border); padding:5px 10px; border-radius:3px; }.audio-controls label { display:flex; align-items:center; gap:7px; }.audio-controls input { width:70px; }
+@media (prefers-reduced-motion:reduce) { button { transition:none; }.transfer-chip { display:none; }.playing-card { transform:none!important; opacity:1!important; }.folded-seat .hole-cards { visibility:hidden; } }
+
+@media (max-height:800px), (max-width:1150px) {
+  .player-seat { padding:4px 6px; width:104px; }
+  .hole-cards { height:34px; margin-top:3px; }
+  .hole-cards .playing-card { width:25px; height:33px; }
+  .hole-cards b { font-size:13px; }
+  .hole-cards .playing-card > span { font-size:14px; }
+  .seat-stack { padding-top:3px; }
+  .seat-status { margin-top:2px; min-height:11px; font-size:9px; }
+}

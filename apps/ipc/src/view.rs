@@ -136,6 +136,12 @@ pub struct FrameView {
     #[ts(type = "number[]")]
     pub stacks: Vec<u64>,
     pub folded: Vec<bool>,
+    /// 本街仍在各座面前的籌碼；與 collected_pot 不重複。
+    #[ts(type = "number[]")]
+    pub street_bets: Vec<u64>,
+    /// 已收至中央的籌碼；結算後為零。pot 保留本手總投入供分析。
+    #[ts(type = "number")]
+    pub collected_pot: u64,
 }
 
 /// 一手牌的可視化資料。
@@ -190,9 +196,8 @@ impl HandView {
                 // 使用者自己的底牌是例外，**恆可見**（UI 規格 G.2）。這不是
                 // 放寬遮蔽：牌本來就是發給他的，他在牌桌上一直看得到。
                 // 遮掉自己的牌反而讓重播對不上他當時的視角
-                let visible = matches!(visibility, HoleCardVisibility::All)
-                    || revealed
-                    || seat == hero_seat;
+                let visible =
+                    matches!(visibility, HoleCardVisibility::All) || revealed || seat == hero_seat;
                 let hole_cards = record
                     .hole_cards
                     .get(seat)
@@ -219,8 +224,7 @@ impl HandView {
         Self {
             hand_index: record.hand_index,
             instance_index: record.instance_index,
-            seated: u8::try_from(record.occupied.iter().filter(|&&o| o).count())
-                .unwrap_or(u8::MAX),
+            seated: u8::try_from(record.occupied.iter().filter(|&&o| o).count()).unwrap_or(u8::MAX),
             button: u8::try_from(positions.button).unwrap_or(u8::MAX),
             dead_button: positions.dead_button,
             dead_small_blind: positions.dead_small_blind,
@@ -262,6 +266,8 @@ pub struct RunView {
     pub completed: bool,
     pub players: u8,
     pub hero_seat: u8,
+    #[ts(type = "number")]
+    pub big_blind: u64,
     /// master seed 是完整 u64 值域，可能超過 JS 的安全整數上限，
     /// 因此以字串傳遞。它只供顯示與重現設定，不參與前端運算
     #[ts(type = "string")]

@@ -35,4 +35,12 @@ committed: number[],
 /**
  * 各座剩餘籌碼
  */
-stacks: number[], folded: Array<boolean>, };
+stacks: number[], folded: Array<boolean>, 
+/**
+ * 本街仍在各座面前的籌碼；與 collected_pot 不重複。
+ */
+streetBets: number[], 
+/**
+ * 已收至中央的籌碼；結算後為零。pot 保留本手總投入供分析。
+ */
+collectedPot: number, };

@@ -6,59 +6,53 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FrameView } from '../../../../packages/poker-types/src/index';
 
-/** 1x 時每幀停留的毫秒數。真人牌桌一個行動約一秒 */
-const BASE_MS = 900;
+import { advanceTime, frameDuration } from './replayClock';
 
-export function useReplayPlayer(
-  frames: FrameView[],
-  options: {
-    /** 播完一手是否自動接下一手 */
-    continuous: boolean;
-    /** 後面還有沒有手可以接 */
-    hasNext: boolean;
-    /** 要求切換到下一手 */
-    onAdvance: () => void;
-  },
-) {
-  const [index, setIndex] = useState(0);
+export function useReplayPlayer(frames: FrameView[], options: {
+  continuous: boolean; hasNext: boolean; onAdvance: () => void;
+}) {
+  const [index, updateIndex] = useState(0);
   const [playing, setPlaying] = useState(true);
-  const [speed, setSpeed] = useState(2);
-  // 用 ref 讀最新值，計時器才不必每次改速度就重建
-  const latest = useRef({ playing, speed, total: frames.length });
-  latest.current = { playing, speed, total: frames.length };
-
-  // 換手就從頭播。連續模式下這一步接住上一手的播放狀態，
-  // 於是一手接一手地放下去，而不是打完一手就停在收池畫面
+  const [speed, setSpeed] = useState(1);
+  const [elapsed, setElapsed] = useState(0);
+  const time = useRef(0);
+  const finished = useRef(false);
+  const latest = useRef({ index, playing, speed, options });
+  latest.current = { index, playing, speed, options };
+  const setIndex = (next: number) => {
+    time.current = next === 0 ? 0 : frameDuration(frames[next]?.kind ?? '');
+    setElapsed(time.current);
+    updateIndex(next);
+    finished.current = false;
+  };
   useEffect(() => {
-    setIndex(0);
-    setPlaying(true);
+    updateIndex(0); time.current = 0; setElapsed(0); finished.current = false;
   }, [frames]);
-
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      const { playing: on, total } = latest.current;
-      if (!on) return;
-      setIndex((current) => {
-        if (current >= total - 1) return current;
-        return current + 1;
-      });
-    }, BASE_MS / speed);
-    return () => window.clearInterval(timer);
-  }, [speed]);
-
-  const { continuous, hasNext, onAdvance } = options;
-
-  // 播到最後一幀：連續模式接下一手，否則停下來
-  useEffect(() => {
-    if (frames.length === 0 || index < frames.length - 1) return;
-    if (playing && continuous && hasNext) {
-      onAdvance();
-      return;
-    }
-    setPlaying(false);
-  }, [index, frames.length, playing, continuous, hasNext, onAdvance]);
-
-  return { index, setIndex, playing, setPlaying, speed, setSpeed };
+    let id: number;
+    let previous = performance.now();
+    const tick = (now: number) => {
+      const state = latest.current;
+      if (state.playing && frames.length && !finished.current) {
+        time.current = advanceTime(time.current, now - previous, state.speed, true);
+        if (time.current >= frameDuration(frames[state.index]?.kind ?? '')) {
+          if (state.index < frames.length - 1) {
+            time.current = 0; updateIndex(state.index + 1);
+          } else {
+            finished.current = true;
+            if (state.options.continuous && state.options.hasNext) state.options.onAdvance();
+            else setPlaying(false);
+          }
+        }
+        setElapsed(time.current);
+      }
+      previous = now;
+      id = requestAnimationFrame(tick);
+    };
+    id = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(id);
+  }, [frames]);
+  return { index, setIndex, playing, setPlaying, speed, setSpeed, elapsed };
 }
 
 export function ReplayControls({
@@ -129,6 +123,7 @@ export function ReplayControls({
 
       <input
         type="range"
+        aria-label="重播事件位置"
         min={0}
         max={last}
         value={index}
@@ -160,8 +155,9 @@ export function ReplayControls({
         <span className="dim">速度</span>
         <input
           type="range"
-          min={1}
-          max={10}
+          min={0.5}
+          step={0.5}
+          max={4}
           value={speed}
           onChange={(e) => setSpeed(Number(e.target.value))}
           style={{ width: 72 }}
@@ -188,6 +184,8 @@ export function frameCaption(frame: FrameView, positions: Array<string | null>, 
       return `${who} 下大盲 ${bb(frame.to ?? 0)} BB`;
     case 'straddle':
       return `${who} straddle ${bb(frame.to ?? 0)} BB`;
+    case 'dealHole':
+      return '依座位順序發底牌';
     case 'deal':
       return `發牌：${frame.board.slice(-1).join('')}`;
     case 'fold':
@@ -200,8 +198,12 @@ export function frameCaption(frame: FrameView, positions: Array<string | null>, 
       return `${who} 加注至 ${bb(frame.to ?? 0)} BB`;
     case 'allIn':
       return `${who} 全下 ${bb(frame.to ?? 0)} BB`;
+    case 'collect':
+      return '收取本街下注籌碼';
+    case 'refund':
+      return '退回未被跟注的籌碼';
     case 'settle':
-      return '收池';
+      return '結算與派彩（依紀錄合併顯示）';
     default:
       return frame.kind;
   }
