@@ -3,4 +3,8 @@
 /**
  * 查詢單一節點用的鍵。
  */
-export type PostflopRuleQuery = { street: string, situation: string, line: string, surface: string, connectivity: string, handStrength: string, facingSize: string, };
+export type PostflopRuleQuery = { 
+/**
+ * hero position / relative position / decision phase / continuation; * = unrestricted.
+ */
+scope: string, street: string, situation: string, line: string, surface: string, connectivity: string, handStrength: string, facingSize: string, };

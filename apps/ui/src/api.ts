@@ -357,6 +357,7 @@ export function postflopRule(
   const bridge = tauri();
   if (bridge) return bridge.core.invoke<PostflopRuleView>('postflop_rule', { query, overrides });
   const search = new URLSearchParams({
+    scope: query.scope,
     street: query.street,
     situation: query.situation,
     line: query.line,

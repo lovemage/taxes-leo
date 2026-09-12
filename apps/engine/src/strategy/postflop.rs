@@ -443,10 +443,9 @@ impl HandStrength {
     #[must_use]
     pub const fn reachable_on(self, street: Street) -> bool {
         match street {
-            Street::River => !matches!(
-                self,
-                Self::MadePlusDraw | Self::StrongDraw | Self::WeakDraw
-            ),
+            Street::River => {
+                !matches!(self, Self::MadePlusDraw | Self::StrongDraw | Self::WeakDraw)
+            }
             _ => true,
         }
     }
@@ -491,6 +490,11 @@ impl PotType {
 pub enum FacingSize {
     /// 無人下注
     None,
+    UpToThird,
+    ThirdToHalf,
+    HalfToTwoThirds,
+    TwoThirdsToPot,
+    PotOrMore,
     Quarter,
     Third,
     Half,
@@ -499,6 +503,80 @@ pub enum FacingSize {
     Pot,
     Overbet,
     AllIn,
+}
+
+/// 以仍可行動的對手順序判斷，非翻前位置名稱。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RelativePosition {
+    First,
+    Middle,
+    Last,
+    Alone,
+}
+impl RelativePosition {
+    pub const fn key(self) -> &'static str {
+        match self {
+            Self::First => "first",
+            Self::Middle => "middle",
+            Self::Last => "last",
+            Self::Alone => "alone",
+        }
+    }
+    pub fn parse(key: &str) -> Option<Self> {
+        [Self::First, Self::Middle, Self::Last, Self::Alone]
+            .into_iter()
+            .find(|v| v.key() == key)
+    }
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DecisionPhase {
+    Unacted,
+    Checked,
+    BetRaised,
+}
+impl DecisionPhase {
+    pub const fn key(self) -> &'static str {
+        match self {
+            Self::Unacted => "unacted",
+            Self::Checked => "checked",
+            Self::BetRaised => "bet-raised",
+        }
+    }
+    pub fn parse(key: &str) -> Option<Self> {
+        [Self::Unacted, Self::Checked, Self::BetRaised]
+            .into_iter()
+            .find(|v| v.key() == key)
+    }
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Continuation {
+    FlopCbet,
+    DoubleBarrel,
+    TripleBarrel,
+    DelayedCbet,
+    Other,
+}
+impl Continuation {
+    pub const fn key(self) -> &'static str {
+        match self {
+            Self::FlopCbet => "flop-cbet",
+            Self::DoubleBarrel => "double-barrel",
+            Self::TripleBarrel => "triple-barrel",
+            Self::DelayedCbet => "delayed-cbet",
+            Self::Other => "other",
+        }
+    }
+    pub fn parse(key: &str) -> Option<Self> {
+        [
+            Self::FlopCbet,
+            Self::DoubleBarrel,
+            Self::TripleBarrel,
+            Self::DelayedCbet,
+            Self::Other,
+        ]
+        .into_iter()
+        .find(|v| v.key() == key)
+    }
 }
 
 /// 主動方是誰。
@@ -906,10 +984,8 @@ impl PostflopLineCondition {
         ) && option_matches(
             self.last_aggressor_before_current_street,
             line.last_aggressor_before_current_street,
-        ) && option_matches(
-            self.relative_aggressor_order,
-            line.relative_aggressor_order,
-        ) && option_matches(self.hero_checked_this_street, line.hero_checked_this_street)
+        ) && option_matches(self.relative_aggressor_order, line.relative_aggressor_order)
+            && option_matches(self.hero_checked_this_street, line.hero_checked_this_street)
             && range_matches(
                 self.current_street_bet_count.as_ref(),
                 line.current_street_bet_count,
@@ -975,7 +1051,12 @@ impl PostflopLineCondition {
 }
 
 impl FacingSize {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 14] = [
+        Self::UpToThird,
+        Self::ThirdToHalf,
+        Self::HalfToTwoThirds,
+        Self::TwoThirdsToPot,
+        Self::PotOrMore,
         Self::None,
         Self::Quarter,
         Self::Third,
@@ -991,6 +1072,11 @@ impl FacingSize {
     pub const fn key(self) -> &'static str {
         match self {
             Self::None => "none",
+            Self::UpToThird => "up-to-third",
+            Self::ThirdToHalf => "third-to-half",
+            Self::HalfToTwoThirds => "half-to-two-thirds",
+            Self::TwoThirdsToPot => "two-thirds-to-pot",
+            Self::PotOrMore => "pot-or-more",
             Self::Quarter => "quarter",
             Self::Third => "third",
             Self::Half => "half",
@@ -1006,6 +1092,11 @@ impl FacingSize {
 /// 決策節點的實際狀態，供條件比對。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PostflopContext {
+    /// v1 approximate bucket, retained for old snapshot rules.
+    pub legacy_facing_size: FacingSize,
+    pub relative_position: RelativePosition,
+    pub decision_phase: DecisionPhase,
+    pub continuation: Continuation,
     pub street: Street,
     pub board_textures: BoardTextures,
     pub hand_strength: HandStrength,
@@ -1043,6 +1134,9 @@ impl PostflopContext {
 /// 規則條件。`None` 代表萬用（不限制該欄位）。
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PostflopCondition {
+    pub relative_position: Option<RelativePosition>,
+    pub decision_phase: Option<DecisionPhase>,
+    pub continuation: Option<Continuation>,
     pub street: Option<Street>,
     /// 無人下注或面對下注。
     ///
@@ -1071,7 +1165,10 @@ impl PostflopCondition {
     /// 條件是否成立於該節點。
     #[must_use]
     pub fn matches(&self, context: &PostflopContext) -> bool {
-        option_matches(self.street, context.street)
+        option_matches(self.relative_position, context.relative_position)
+            && option_matches(self.decision_phase, context.decision_phase)
+            && option_matches(self.continuation, context.continuation)
+            && option_matches(self.street, context.street)
             && option_matches(self.situation, context.situation())
             && option_matches(self.board_surface, context.board_textures.surface())
             && option_matches(
@@ -1083,12 +1180,21 @@ impl PostflopCondition {
             && option_matches(self.hero_position, context.hero_position)
             && range_matches(self.opponents_behind.as_ref(), context.opponents_behind)
             && option_matches(self.pot_type, context.pot_type)
-            && option_matches(self.facing_size, context.facing_size)
+            && self.facing_size.is_none_or(|size| match size {
+                FacingSize::Quarter
+                | FacingSize::Third
+                | FacingSize::Half
+                | FacingSize::TwoThirds
+                | FacingSize::ThreeQuarters
+                | FacingSize::Pot
+                | FacingSize::Overbet
+                | FacingSize::AllIn => {
+                    size == context.legacy_facing_size || size == context.facing_size
+                }
+                _ => size == context.facing_size,
+            })
             && range_matches(self.spr_centi.as_ref(), context.spr_centi)
-            && option_matches(
-                self.effective_stack_bucket,
-                context.effective_stack_bucket,
-            )
+            && option_matches(self.effective_stack_bucket, context.effective_stack_bucket)
             && self.line.matches(context.line)
     }
 
@@ -1116,7 +1222,10 @@ impl PostflopCondition {
     /// 若涵蓋者排在前面，被涵蓋者永遠輪不到——這就是遮蔽。
     #[must_use]
     pub fn contains(&self, other: &Self) -> bool {
-        option_contains(self.street, other.street)
+        option_contains(self.relative_position, other.relative_position)
+            && option_contains(self.decision_phase, other.decision_phase)
+            && option_contains(self.continuation, other.continuation)
+            && option_contains(self.street, other.street)
             && option_contains(self.situation, other.situation)
             && option_contains(self.board_surface, other.board_surface)
             && option_contains(self.board_connectivity, other.board_connectivity)
@@ -1130,17 +1239,17 @@ impl PostflopCondition {
             && option_contains(self.pot_type, other.pot_type)
             && option_contains(self.facing_size, other.facing_size)
             && range_contains(self.spr_centi.as_ref(), other.spr_centi.as_ref())
-            && option_contains(
-                self.effective_stack_bucket,
-                other.effective_stack_bucket,
-            )
+            && option_contains(self.effective_stack_bucket, other.effective_stack_bucket)
             && self.line.contains(&other.line)
     }
 
     /// 兩條件是否有交集。
     #[must_use]
     pub fn intersects(&self, other: &Self) -> bool {
-        option_intersects(self.street, other.street)
+        option_intersects(self.relative_position, other.relative_position)
+            && option_intersects(self.decision_phase, other.decision_phase)
+            && option_intersects(self.continuation, other.continuation)
+            && option_intersects(self.street, other.street)
             && option_intersects(self.situation, other.situation)
             && option_intersects(self.board_surface, other.board_surface)
             && option_intersects(self.board_connectivity, other.board_connectivity)
@@ -1154,10 +1263,7 @@ impl PostflopCondition {
             && option_intersects(self.pot_type, other.pot_type)
             && option_intersects(self.facing_size, other.facing_size)
             && range_intersects(self.spr_centi.as_ref(), other.spr_centi.as_ref())
-            && option_intersects(
-                self.effective_stack_bucket,
-                other.effective_stack_bucket,
-            )
+            && option_intersects(self.effective_stack_bucket, other.effective_stack_bucket)
             && self.line.intersects(&other.line)
     }
 }
@@ -1320,8 +1426,7 @@ impl PostflopIntentDistribution {
                 PostflopActionKind::Call => Action::Call,
                 PostflopActionKind::Fold => Action::Fold,
                 sized => {
-                    let (numerator, denominator) =
-                        sized.pot_fraction().unwrap_or((1, 1));
+                    let (numerator, denominator) = sized.pot_fraction().unwrap_or((1, 1));
                     Action::RaiseTo(postflop_raise_to(sizing, numerator, denominator))
                 }
             };
@@ -1682,14 +1787,19 @@ impl RuleSet {
 /// 節點集合會隨階段擴充（facing size、SPR、位置、有效籌碼逐項加入），
 /// 同一份覆寫的完整度會在不同版本間暴跌。UI、報表與 manifest 都要帶
 /// 這個字串，否則跨 run 比較沒有意義（計劃 §5.3）。
-pub const NODE_SET_VERSION: &str = "postflop-nodes/v1";
+pub const NODE_SET_VERSION: &str = "postflop/v2-position-size-ranges";
 
 /// 第一版面對下注時提供的尺度檔位。
 ///
 /// 完整的 [`FacingSize`] 仍保留在引擎條件層——UI 少列幾檔是內容決策，
 /// 引擎少支援幾檔就沒辦法描述真實牌局了（計劃 §十 待確認 5）。
-pub const FACING_SIZES_V1: [FacingSize; 3] =
-    [FacingSize::Third, FacingSize::TwoThirds, FacingSize::Pot];
+pub const FACING_SIZES_V1: [FacingSize; 5] = [
+    FacingSize::UpToThird,
+    FacingSize::ThirdToHalf,
+    FacingSize::HalfToTwoThirds,
+    FacingSize::TwoThirdsToPot,
+    FacingSize::PotOrMore,
+];
 
 /// 一個可編輯的翻後策略節點。
 ///
@@ -1855,7 +1965,9 @@ pub fn node_count_report() -> NodeCountReport {
 
     let streets = 3;
     let situations = PostflopSituation::ALL.len();
-    let lines = PostflopLineName::NO_BET.len().max(PostflopLineName::FACING_BET.len());
+    let lines = PostflopLineName::NO_BET
+        .len()
+        .max(PostflopLineName::FACING_BET.len());
     let cartesian = streets
         * situations
         * lines

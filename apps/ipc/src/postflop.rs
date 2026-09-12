@@ -176,6 +176,9 @@ pub struct PostflopNodesView {
 #[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
 #[serde(rename_all = "camelCase")]
 pub struct PostflopRuleQuery {
+    /// hero position / relative position / decision phase / continuation; * = unrestricted.
+    #[serde(default)]
+    pub scope: String,
     pub street: String,
     pub situation: String,
     pub line: String,
@@ -327,7 +330,15 @@ pub fn postflop_nodes(street: &str, overrides: &PostflopOverridesView) -> Postfl
             .chain(PostflopLineName::FACING_BET)
             .map(|line| PostflopLineOptionView {
                 key: line.key().to_owned(),
-                label: line.label().to_owned(),
+                label: match (street_value, line) {
+                    (Street::Turn | Street::River, PostflopLineName::CbetChance) => {
+                        "前街進攻者延續下注機會".to_owned()
+                    }
+                    (Street::Turn | Street::River, PostflopLineName::FacingCbet) => {
+                        "面對前街進攻者延續下注".to_owned()
+                    }
+                    _ => line.label().to_owned(),
+                },
                 situation: line.situation().key().to_owned(),
             })
             .collect(),
@@ -358,8 +369,7 @@ pub fn postflop_nodes(street: &str, overrides: &PostflopOverridesView) -> Postfl
         facing_sizes: facing_size_options(),
         coverage: static_coverage(&rules),
         consultant_approved: false,
-        note: "翻後內容目前由未簽核的工程通則與 equity 基準產生，不是顧問簽核的策略。"
-            .to_owned(),
+        note: "翻後內容目前由未簽核的工程通則與 equity 基準產生，不是顧問簽核的策略。".to_owned(),
     }
 }
 
@@ -372,8 +382,26 @@ pub fn postflop_rule(
     overrides: &PostflopOverridesView,
 ) -> Result<PostflopRuleView, String> {
     let node = parse_node(query)?;
+    let scoped = scoped_condition(&node, &query.scope)?;
     // 同 `postflop_nodes`：查詢不因為別處有一筆壞覆寫就整頁失敗
     let (rules, _) = to_rule_set_lossy(overrides);
+    // A broad editor query must not borrow a narrower rule from its representative seat.
+    let rules = RuleSet::new(
+        rules
+            .rules()
+            .iter()
+            .filter(|rule| {
+                let c = &rule.condition;
+                (c.hero_position.is_none() || c.hero_position == scoped.hero_position)
+                    && (c.relative_position.is_none()
+                        || c.relative_position == scoped.relative_position)
+                    && (c.decision_phase.is_none() || c.decision_phase == scoped.decision_phase)
+                    && (c.continuation.is_none() || c.continuation == scoped.continuation)
+            })
+            .cloned()
+            .collect(),
+        rules.fallback_version.clone(),
+    );
     let situation = node.situation;
 
     // 換算金額用一個固定的參考底池：這裡要的是**頻率**，不是實際籌碼。
@@ -382,7 +410,8 @@ pub fn postflop_rule(
         pot: Chips::new(100),
         to_call: Chips::new(0),
     };
-    let context = representative_context(&node);
+    let mut context = representative_context(&node);
+    apply_scope_context(&mut context, &scoped);
     let (matched, _) = rules.resolve(&context, sizing, &|_| true);
 
     let (rule_index, source) = match matched {
@@ -412,7 +441,10 @@ pub fn postflop_rule(
         source.key()
     };
 
-    let restore = if is_node_override {
+    let owns_node_override = rule.is_some_and(|rule| {
+        rule.id == format!("{NODE_OVERRIDE_PREFIX}{}", scoped_key(&node, &query.scope))
+    });
+    let restore = if owns_node_override {
         PostflopRestoreView {
             enabled: true,
             kind: "node-override".to_owned(),
@@ -444,7 +476,7 @@ pub fn postflop_rule(
     };
 
     Ok(PostflopRuleView {
-        node_key: node.key(),
+        node_key: scoped_key(&node, &query.scope),
         weights,
         total_myriad,
         source: source_key.to_owned(),
@@ -471,10 +503,7 @@ pub fn classify_postflop_hand(hole: &str, board: &str) -> Result<PostflopHandPre
         return Err(format!("底牌必須是 2 張，收到 {}", hole_cards.len()));
     }
     if !(3..=5).contains(&board_cards.len()) {
-        return Err(format!(
-            "公共牌必須是 3～5 張，收到 {}",
-            board_cards.len()
-        ));
+        return Err(format!("公共牌必須是 3～5 張，收到 {}", board_cards.len()));
     }
     let mut all = board_cards.clone();
     all.extend_from_slice(&hole_cards);
@@ -522,8 +551,7 @@ pub fn postflop_diagnostics(overrides: &PostflopOverridesView) -> PostflopDiagno
     let (rules, input_errors) = to_rule_set_lossy(overrides);
     let nodes = enumerate_postflop_nodes();
 
-    let mut issues: Vec<PostflopIssueView> =
-        input_errors.iter().map(to_input_issue).collect();
+    let mut issues: Vec<PostflopIssueView> = input_errors.iter().map(to_input_issue).collect();
     issues.extend(
         rules
             .analyse()
@@ -574,7 +602,12 @@ fn to_input_issue(error: &PostflopInputError) -> PostflopIssueView {
 
 fn to_issue_view(rules: &RuleSet, issue: RuleIssue) -> Option<PostflopIssueView> {
     let rule = rules.rules().get(issue.rule())?;
-    let related = |index: usize| rules.rules().get(index).map(|other| strip_prefix(&other.id));
+    let related = |index: usize| {
+        rules
+            .rules()
+            .get(index)
+            .map(|other| strip_prefix(&other.id))
+    };
 
     let (kind, message, related_rule_id) = match issue {
         RuleIssue::Overlap { with, .. } => (
@@ -653,9 +686,7 @@ pub struct PostflopInputError {
 /// 任何一筆覆寫的節點鍵、條件字串、動作名稱或頻率不合法時，回傳**全部**
 /// 錯誤而不是跳過那幾筆。靜默丟棄的話，使用者以為自己設的 90% 已經生效，
 /// 實際上跑的是工程通則，而快照記下的也是被替換過的內容。
-pub fn to_rule_set(
-    overrides: &PostflopOverridesView,
-) -> Result<RuleSet, Vec<PostflopInputError>> {
+pub fn to_rule_set(overrides: &PostflopOverridesView) -> Result<RuleSet, Vec<PostflopInputError>> {
     let (rules, errors) = to_rule_set_lossy(overrides);
     if errors.is_empty() {
         Ok(rules)
@@ -669,13 +700,24 @@ pub fn to_rule_set(
 /// 導覽與逐節點查詢走這一支：使用者還在編輯時，清單裡有一筆半成品不該
 /// 讓整頁查不出東西。**保存前的診斷與 run 走嚴格版**——那兩處才是閘門。
 #[must_use]
-pub fn to_rule_set_lossy(
-    overrides: &PostflopOverridesView,
-) -> (RuleSet, Vec<PostflopInputError>) {
+pub fn to_rule_set_lossy(overrides: &PostflopOverridesView) -> (RuleSet, Vec<PostflopInputError>) {
     let mut rules: Vec<PostflopRule> = Vec::new();
     let mut errors: Vec<PostflopInputError> = Vec::new();
 
-    for node_override in &overrides.nodes {
+    let mut nodes: Vec<_> = overrides.nodes.iter().collect();
+    // More specific node overrides precede shared defaults regardless of edit order.
+    nodes.sort_by_key(|n| {
+        std::cmp::Reverse(
+            n.node_key
+                .split('|')
+                .nth(7)
+                .unwrap_or("")
+                .split('/')
+                .filter(|p| !p.is_empty() && *p != "*")
+                .count(),
+        )
+    });
+    for node_override in nodes {
         let key = node_override.node_key.clone();
         let fail = |message: String| PostflopInputError {
             scope: "node",
@@ -685,6 +727,14 @@ pub fn to_rule_set_lossy(
         let Some(node) = parse_node_key(&node_override.node_key) else {
             errors.push(fail("節點鍵不是可達節點的 canonical 鍵".to_owned()));
             continue;
+        };
+        let scope = node_override.node_key.split('|').nth(7).unwrap_or("");
+        let condition = match scoped_condition(&node, scope) {
+            Ok(condition) => condition,
+            Err(message) => {
+                errors.push(fail(message));
+                continue;
+            }
         };
         let intent = match to_intent(&node_override.weights) {
             Ok(intent) => intent,
@@ -696,7 +746,7 @@ pub fn to_rule_set_lossy(
         rules.push(PostflopRule {
             id: format!("{NODE_OVERRIDE_PREFIX}{}", node_override.node_key),
             name: format!("你的節點覆寫（{}）", node.hand_strength.label()),
-            condition: node.condition(),
+            condition,
             intent,
             source: RuleSource::UserOverride,
             version: "user/node".to_owned(),
@@ -745,6 +795,23 @@ pub fn to_rule_set_lossy(
 
 /// 逐節點掃過整個節點集合，統計每個節點會落到哪一層。
 fn static_coverage(rules: &RuleSet) -> PostflopStaticCoverageView {
+    // Completeness of shared base nodes only. Scoped slices are not whole nodes.
+    let common = RuleSet::new(
+        rules
+            .rules()
+            .iter()
+            .filter(|rule| {
+                let c = &rule.condition;
+                c.hero_position.is_none()
+                    && c.relative_position.is_none()
+                    && c.decision_phase.is_none()
+                    && c.continuation.is_none()
+            })
+            .cloned()
+            .collect(),
+        rules.fallback_version.clone(),
+    );
+    let rules = &common;
     let nodes = enumerate_postflop_nodes();
     let sizing = PostflopSizing {
         pot: Chips::new(100),
@@ -802,12 +869,18 @@ fn affected_node_count(rules: &RuleSet, index: Option<usize>) -> u64 {
 /// 節點沒有指定位置、人數、SPR 這些「更多條件」維度，因此填入一組不會
 /// 被通則排除的中性值。規則若在那些維度上加了條件，就不會命中這個
 /// 代表值——那正是「更多條件」的意思。
-fn representative_context(node: &PostflopNode) -> poker_engine::strategy::postflop::PostflopContext {
+fn representative_context(
+    node: &PostflopNode,
+) -> poker_engine::strategy::postflop::PostflopContext {
     use poker_engine::position::PositionLabel;
     use poker_engine::strategy::decision::StackBucket;
     use poker_engine::strategy::postflop::{BoardTextures, PostflopContext, PotType};
 
     PostflopContext {
+        legacy_facing_size: node.facing_size,
+        relative_position: poker_engine::strategy::postflop::RelativePosition::Last,
+        decision_phase: poker_engine::strategy::postflop::DecisionPhase::Unacted,
+        continuation: poker_engine::strategy::postflop::Continuation::Other,
         street: node.street,
         board_textures: BoardTextures::new(node.surface, node.connectivity),
         hand_strength: node.hand_strength,
@@ -878,8 +951,8 @@ fn unavailable_reason(kind: PostflopActionKind, situation: PostflopSituation) ->
 fn to_intent(weights: &[PostflopWeightInput]) -> Result<PostflopIntentDistribution, String> {
     let mut parsed: Vec<(PostflopActionKind, Myriad)> = Vec::with_capacity(weights.len());
     for weight in weights {
-        let kind = parse_action_kind(&weight.kind)
-            .ok_or_else(|| format!("未知的動作 {}", weight.kind))?;
+        let kind =
+            parse_action_kind(&weight.kind).ok_or_else(|| format!("未知的動作 {}", weight.kind))?;
         parsed.push((kind, weight.myriad));
     }
     PostflopIntentDistribution::new(parsed).map_err(|error| match error {
@@ -935,7 +1008,8 @@ fn optional_field<T>(
 
 fn parse_node(query: &PostflopRuleQuery) -> Result<PostflopNode, String> {
     let node = PostflopNode {
-        street: parse_street(&query.street).ok_or_else(|| format!("未知的街別 {}", query.street))?,
+        street: parse_street(&query.street)
+            .ok_or_else(|| format!("未知的街別 {}", query.street))?,
         situation: parse_situation(&query.situation)
             .ok_or_else(|| format!("未知的下注狀態 {}", query.situation))?,
         line: parse_line(&query.line).ok_or_else(|| format!("未知的線路 {}", query.line))?,
@@ -958,7 +1032,7 @@ fn parse_node(query: &PostflopRuleQuery) -> Result<PostflopNode, String> {
 
 fn parse_node_key(key: &str) -> Option<PostflopNode> {
     let parts: Vec<&str> = key.split('|').collect();
-    if parts.len() != 7 {
+    if parts.len() != 7 && parts.len() != 8 {
         return None;
     }
     let node = PostflopNode {
@@ -983,9 +1057,11 @@ fn strip_prefix(id: &str) -> String {
 fn facing_size_options() -> Vec<PostflopOptionView> {
     [
         (FacingSize::None, "無人下注"),
-        (FacingSize::Third, "1/3 底池"),
-        (FacingSize::TwoThirds, "2/3 底池"),
-        (FacingSize::Pot, "1 個底池"),
+        (FacingSize::UpToThird, "1/3 池或以下"),
+        (FacingSize::ThirdToHalf, "超過 1/3～1/2 池"),
+        (FacingSize::HalfToTwoThirds, "超過 1/2～2/3 池"),
+        (FacingSize::TwoThirdsToPot, "超過 2/3、未滿 1 池"),
+        (FacingSize::PotOrMore, "1 池或以上"),
     ]
     .into_iter()
     .map(|(size, label)| PostflopOptionView {
@@ -1088,33 +1164,11 @@ pub(crate) fn parse_action_kind(key: &str) -> Option<PostflopActionKind> {
 }
 
 const fn facing_size_key(size: FacingSize) -> &'static str {
-    match size {
-        FacingSize::None => "none",
-        FacingSize::Quarter => "quarter",
-        FacingSize::Third => "third",
-        FacingSize::Half => "half",
-        FacingSize::TwoThirds => "two-thirds",
-        FacingSize::ThreeQuarters => "three-quarters",
-        FacingSize::Pot => "pot",
-        FacingSize::Overbet => "overbet",
-        FacingSize::AllIn => "all-in",
-    }
+    size.key()
 }
 
 pub(crate) fn parse_facing_size(key: &str) -> Option<FacingSize> {
-    [
-        FacingSize::None,
-        FacingSize::Quarter,
-        FacingSize::Third,
-        FacingSize::Half,
-        FacingSize::TwoThirds,
-        FacingSize::ThreeQuarters,
-        FacingSize::Pot,
-        FacingSize::Overbet,
-        FacingSize::AllIn,
-    ]
-    .into_iter()
-    .find(|size| facing_size_key(*size) == key)
+    FacingSize::ALL.into_iter().find(|size| size.key() == key)
 }
 
 fn source_label(source: &str) -> &'static str {
@@ -1124,5 +1178,103 @@ fn source_label(source: &str) -> &'static str {
         "official" => "官方內容",
         "generic" => "同組通則",
         _ => "工程 fallback",
+    }
+}
+
+fn scoped_key(node: &PostflopNode, scope: &str) -> String {
+    if scope.is_empty() || scope == "*/*/*/*" {
+        node.key()
+    } else {
+        format!("{}|{scope}", node.key())
+    }
+}
+fn scoped_condition(node: &PostflopNode, scope: &str) -> Result<PostflopCondition, String> {
+    use poker_engine::strategy::postflop::{Continuation, DecisionPhase, RelativePosition};
+    let mut c = node.condition();
+    if scope.is_empty() {
+        return Ok(c);
+    }
+    let parts: Vec<_> = scope.split('/').collect();
+    if parts.len() != 4 {
+        return Err("位置／歷史條件格式錯誤".into());
+    }
+    let optional = |s: &str| if s == "*" { None } else { Some(s.to_owned()) };
+    c.hero_position = optional_field("翻前位置", optional(parts[0]).as_deref(), parse_position)?;
+    c.relative_position = optional_field(
+        "翻後位置",
+        optional(parts[1]).as_deref(),
+        RelativePosition::parse,
+    )?;
+    c.decision_phase = optional_field(
+        "本街行動",
+        optional(parts[2]).as_deref(),
+        DecisionPhase::parse,
+    )?;
+    c.continuation = optional_field(
+        "持續下注歷史",
+        optional(parts[3]).as_deref(),
+        Continuation::parse,
+    )?;
+    if let Some(phase) = c.decision_phase {
+        if node.situation == PostflopSituation::NoBet && phase != DecisionPhase::Unacted {
+            return Err("已過牌／下注後的回應只能在面對下注時編輯".into());
+        }
+        let checked = phase == DecisionPhase::Checked;
+        if c.line
+            .hero_checked_this_street
+            .is_some_and(|required| required != checked)
+        {
+            return Err("本街行動與所選線路矛盾".into());
+        }
+    }
+    if let Some(kind) = c.continuation {
+        let valid = match kind {
+            Continuation::Other => true,
+            Continuation::DelayedCbet => matches!(
+                node.line,
+                PostflopLineName::DelayedCbetChance | PostflopLineName::FacingDelayedCbet
+            ),
+            _ => matches!(
+                node.line,
+                PostflopLineName::CbetChance | PostflopLineName::FacingCbet
+            ),
+        };
+        if !valid {
+            return Err("持續下注歷史與牌局線路不相符".into());
+        }
+    }
+    match (node.street, c.continuation) {
+        (
+            Street::Flop,
+            Some(
+                Continuation::DoubleBarrel | Continuation::TripleBarrel | Continuation::DelayedCbet,
+            ),
+        )
+        | (Street::Turn | Street::River, Some(Continuation::FlopCbet))
+        | (Street::Turn, Some(Continuation::TripleBarrel))
+        | (Street::River, Some(Continuation::DoubleBarrel)) => {
+            return Err("持續下注歷史不屬於這一街".into())
+        }
+        _ => {}
+    }
+    Ok(c)
+}
+fn apply_scope_context(
+    context: &mut poker_engine::strategy::postflop::PostflopContext,
+    c: &PostflopCondition,
+) {
+    if let Some(v) = c.hero_position {
+        context.hero_position = v;
+    }
+    if let Some(v) = c.relative_position {
+        context.relative_position = v;
+    }
+    if let Some(v) = c.decision_phase {
+        context.decision_phase = v;
+        context.line.hero_checked_this_street =
+            v == poker_engine::strategy::postflop::DecisionPhase::Checked;
+    }
+    if let Some(v) = c.continuation {
+        context.continuation = v;
     }
 }

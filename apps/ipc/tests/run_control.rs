@@ -737,7 +737,7 @@ fn run_結束時把翻後覆蓋寫進_manifest() {
         .postflop_coverage
         .expect("跑完的 run 必須帶著翻後覆蓋");
 
-    assert_eq!(coverage.node_set_version, "postflop-nodes/v1");
+    assert_eq!(coverage.node_set_version, poker_engine::strategy::postflop::NODE_SET_VERSION);
     assert!(
         coverage.total() > 0,
         "200 手裡總會有幾手走到翻後，統計不該是空的"

@@ -45,6 +45,10 @@ pub fn postflop_node(view: &DecisionView, config: &HandStrengthConfig) -> Option
     };
 
     let context = PostflopContext {
+        legacy_facing_size: legacy_facing_size(view),
+        relative_position: relative_position(view),
+        decision_phase: decision_phase(view),
+        continuation: continuation(view),
         street: view.street,
         board_textures,
         hand_strength: snapshot.group,
@@ -75,9 +79,7 @@ fn opponents_behind(view: &DecisionView) -> u8 {
         .opponents
         .iter()
         .filter(|opponent| {
-            !opponent.folded
-                && !opponent.all_in
-                && opponent.position.postflop_order() > hero_order
+            !opponent.folded && !opponent.all_in && opponent.position.postflop_order() > hero_order
         })
         .count();
     u8::try_from(count).unwrap_or(u8::MAX)
@@ -118,17 +120,7 @@ fn facing_size(view: &DecisionView) -> FacingSize {
         return FacingSize::None;
     }
     let (bet, pot_before) = facing_bet_basis(view);
-    // 千分比，避免浮點進入規則比對
-    let ratio = bet.saturating_mul(1_000) / pot_before.max(1);
-    match ratio {
-        0..=287 => FacingSize::Quarter,
-        288..=400 => FacingSize::Third,
-        401..=580 => FacingSize::Half,
-        581..=700 => FacingSize::TwoThirds,
-        701..=870 => FacingSize::ThreeQuarters,
-        871..=1_150 => FacingSize::Pot,
-        _ => FacingSize::Overbet,
-    }
+    facing_ratio(bet, pot_before.max(1))
 }
 
 /// 還原「最後一次進攻加了多少」與「它下進去的底池有多大」。
@@ -192,7 +184,12 @@ fn spr_centi(view: &DecisionView) -> u32 {
         .opponents
         .iter()
         .filter(|opponent| !opponent.folded)
-        .map(|opponent| opponent.stack.units().saturating_add(opponent.committed.units()))
+        .map(|opponent| {
+            opponent
+                .stack
+                .units()
+                .saturating_add(opponent.committed.units())
+        })
         .max()
         .unwrap_or(0);
     let effective = hero_ceiling.min(opponent_ceiling);
@@ -230,9 +227,9 @@ fn derive_line(view: &DecisionView) -> PostflopLine {
     };
 
     let current: Vec<&PublicAction> = view.current_street_history();
-    let hero_checked_this_street = current
-        .iter()
-        .any(|action| action.seat == hero && matches!(action.action, crate::betting::Action::Check));
+    let hero_checked_this_street = current.iter().any(|action| {
+        action.seat == hero && matches!(action.action, crate::betting::Action::Check)
+    });
     let aggressive_count = current.iter().filter(|action| action.raised).count();
 
     PostflopLine::new(
@@ -266,5 +263,118 @@ const fn role_of(seat: Option<usize>, hero: usize) -> AggressorRole {
         None => AggressorRole::None,
         Some(seat) if seat == hero => AggressorRole::Hero,
         Some(_) => AggressorRole::Opponent,
+    }
+}
+
+/// Exact interval comparisons, including values immediately around rational boundaries.
+#[must_use]
+pub fn facing_ratio(bet: u64, pot: u64) -> FacingSize {
+    let b = u128::from(bet);
+    let p = u128::from(pot.max(1));
+    if b * 3 <= p {
+        FacingSize::UpToThird
+    } else if b * 2 <= p {
+        FacingSize::ThirdToHalf
+    } else if b * 3 <= p * 2 {
+        FacingSize::HalfToTwoThirds
+    } else if b < p {
+        FacingSize::TwoThirdsToPot
+    } else {
+        FacingSize::PotOrMore
+    }
+}
+fn relative_position(view: &DecisionView) -> crate::strategy::postflop::RelativePosition {
+    use crate::strategy::postflop::RelativePosition as P;
+    let mut before = false;
+    let mut after = false;
+    for opponent in view.opponents.iter().filter(|o| !o.folded && !o.all_in) {
+        if opponent.position.postflop_order() < view.position.postflop_order() {
+            before = true;
+        } else {
+            after = true;
+        }
+    }
+    match (before, after) {
+        (false, true) => P::First,
+        (true, true) => P::Middle,
+        (true, false) => P::Last,
+        (false, false) => P::Alone,
+    }
+}
+fn decision_phase(view: &DecisionView) -> crate::strategy::postflop::DecisionPhase {
+    use crate::strategy::postflop::DecisionPhase as P;
+    match view
+        .history
+        .iter()
+        .rev()
+        .find(|a| a.street == view.street && a.seat == view.seat)
+    {
+        None => P::Unacted,
+        Some(a) if matches!(a.action, crate::betting::Action::Check) => P::Checked,
+        Some(_) => P::BetRaised,
+    }
+}
+/// Name the historical continuation of the *preflop* aggressor, not any later raiser.
+fn continuation(view: &DecisionView) -> crate::strategy::postflop::Continuation {
+    use crate::strategy::postflop::Continuation as C;
+    let aggressor = |street| {
+        view.history
+            .iter()
+            .rev()
+            .find(|a| a.street == street && a.raised)
+            .map(|a| a.seat)
+    };
+    let Some(pre) = aggressor(Street::Preflop) else {
+        return C::Other;
+    };
+    // At an unopened street name Hero's opportunity; facing action name its aggressor.
+    let actor = if view.to_call.units() == 0 {
+        Some(view.seat)
+    } else {
+        aggressor(view.street)
+    };
+    if actor != Some(pre) {
+        return C::Other;
+    }
+    let clean = |street| {
+        let raises: Vec<_> = view
+            .history
+            .iter()
+            .filter(|a| a.street == street && a.raised)
+            .collect();
+        !raises.is_empty() && raises.iter().all(|a| a.seat == pre)
+    };
+    if view
+        .history
+        .iter()
+        .any(|a| a.street == view.street && a.raised && a.seat != pre)
+    {
+        return C::Other;
+    }
+    let flop = aggressor(Street::Flop);
+    let turn = aggressor(Street::Turn);
+    match view.street {
+        Street::Flop => C::FlopCbet,
+        Street::Turn if clean(Street::Flop) => C::DoubleBarrel,
+        Street::River if clean(Street::Flop) && clean(Street::Turn) => C::TripleBarrel,
+        Street::Turn if flop.is_none() => C::DelayedCbet,
+        Street::River if flop.is_none() && turn.is_none() => C::DelayedCbet,
+        _ => C::Other,
+    }
+}
+
+fn legacy_facing_size(view: &DecisionView) -> FacingSize {
+    if view.to_call.units() == 0 {
+        return FacingSize::None;
+    }
+    let (bet, pot) = facing_bet_basis(view);
+    match u128::from(bet) * 1000 / u128::from(pot.max(1)) {
+        0..=287 => FacingSize::Quarter,
+        288..=400 => FacingSize::Third,
+        401..=580 => FacingSize::Half,
+        581..=700 => FacingSize::TwoThirds,
+        701..=870 => FacingSize::ThreeQuarters,
+        871..=1150 => FacingSize::Pot,
+        _ => FacingSize::Overbet,
     }
 }

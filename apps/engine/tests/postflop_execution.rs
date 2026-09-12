@@ -35,7 +35,13 @@ fn cards(text: &str) -> Vec<Card> {
     text.split_whitespace().map(card).collect()
 }
 
-fn acted(seat: usize, position: PositionLabel, street: Street, raised: bool, to: u64) -> PublicAction {
+fn acted(
+    seat: usize,
+    position: PositionLabel,
+    street: Street,
+    raised: bool,
+    to: u64,
+) -> PublicAction {
     PublicAction {
         street,
         seat,
@@ -126,7 +132,7 @@ fn 面對下注的尺度由跟注額與底池推導() {
     assert_eq!(node.context.situation(), PostflopSituation::FacingBet);
     assert_eq!(
         node.context.facing_size,
-        poker_engine::strategy::postflop::FacingSize::Third
+        poker_engine::strategy::postflop::FacingSize::UpToThird
     );
 }
 
@@ -142,11 +148,9 @@ fn 翻前節點不會被誤送進翻後路徑() {
 
 #[test]
 fn 意圖在決策當下才換算成籌碼() {
-    let intent = PostflopIntentDistribution::new(vec![
-        (Kind::Check, 5_000),
-        (Kind::ThirdPot, 5_000),
-    ])
-    .expect("意圖分佈");
+    let intent =
+        PostflopIntentDistribution::new(vec![(Kind::Check, 5_000), (Kind::ThirdPot, 5_000)])
+            .expect("意圖分佈");
 
     // 同一條規則，底池不同就下不同的注
     let small = intent
@@ -793,7 +797,10 @@ fn trace_記下牌力分組與命中規則() {
 
     // 七個階段都在
     assert_eq!(trace.stages.len(), 7);
-    assert!(!trace.neutralised_by_absolute_override, "這是通則，不是覆寫");
+    assert!(
+        !trace.neutralised_by_absolute_override,
+        "這是通則，不是覆寫"
+    );
 }
 
 #[test]

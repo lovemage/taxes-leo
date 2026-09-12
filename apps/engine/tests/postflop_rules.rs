@@ -8,14 +8,14 @@ use poker_engine::card::Card;
 use poker_engine::chips::Chips;
 use poker_engine::hand::Street;
 use poker_engine::position::PositionLabel;
-use poker_engine::strategy::distribution::FULL;
 use poker_engine::strategy::decision::StackBucket;
+use poker_engine::strategy::distribution::FULL;
 use poker_engine::strategy::postflop::{
     classify_board, classify_line, AggressorRole, BoardConnectivity, BoardSurface, CoverageStats,
     FacingSize, HandStrength, Matched, PostflopActionKind, PostflopCondition, PostflopContext,
     PostflopIntentDistribution, PostflopLine, PostflopLineCondition, PostflopLineName,
-    PostflopNode, PostflopRule, PostflopSituation, PostflopSizing, PotType,
-    RelativeAggressorOrder, RuleIssue, RuleSet, RuleSource,
+    PostflopNode, PostflopRule, PostflopSituation, PostflopSizing, PotType, RelativeAggressorOrder,
+    RuleIssue, RuleSet, RuleSource,
 };
 use poker_engine::strategy::postflop::{enumerate_postflop_nodes, node_count_report};
 
@@ -60,6 +60,10 @@ fn rule_from(source: RuleSource, name: &str, condition: PostflopCondition) -> Po
 
 fn context() -> PostflopContext {
     PostflopContext {
+        legacy_facing_size: poker_engine::strategy::postflop::FacingSize::None,
+        relative_position: poker_engine::strategy::postflop::RelativePosition::Last,
+        decision_phase: poker_engine::strategy::postflop::DecisionPhase::Unacted,
+        continuation: poker_engine::strategy::postflop::Continuation::Other,
         street: Street::Flop,
         board_textures: classify_board(&cards(&["As", "7d", "2c"])).expect("翻牌面"),
         hand_strength: HandStrength::StrongMade,
@@ -306,7 +310,8 @@ fn 遮蔽後權重歸零時走_fallback_而非任選() {
     );
 
     // 下注不合法時，該規則的全部權重都被遮蔽
-    let (matched, distribution) = set.resolve(&context(), sizing(), &|a| !matches!(a, Action::RaiseTo(_)));
+    let (matched, distribution) =
+        set.resolve(&context(), sizing(), &|a| !matches!(a, Action::RaiseTo(_)));
     assert!(
         matches!(matched, Matched::Fallback(_)),
         "剩餘權重為 0 必須走 fallback"
@@ -320,7 +325,8 @@ fn 遮蔽後仍有合法行動時重新正規化() {
         vec![rule("通則", PostflopCondition::default())],
         "baseline-v1",
     );
-    let (matched, distribution) = set.resolve(&context(), sizing(), &|a| !matches!(a, Action::RaiseTo(_)));
+    let (matched, distribution) =
+        set.resolve(&context(), sizing(), &|a| !matches!(a, Action::RaiseTo(_)));
 
     assert_eq!(
         matched,
@@ -714,10 +720,7 @@ fn 不適用的行動順序會被正規化而不是產生兩個分支() {
     let before = PostflopLine::new(Role::Hero, Role::Hero, Order::HeroBefore, false, 0, 0);
     let after = PostflopLine::new(Role::Hero, Role::Hero, Order::HeroAfter, false, 0, 0);
     assert_eq!(before, after, "同一個牌局狀態必須只有一個 canonical 表示");
-    assert_eq!(
-        before.relative_aggressor_order,
-        Order::NotApplicable
-    );
+    assert_eq!(before.relative_aggressor_order, Order::NotApplicable);
 
     // 反過來：對手是最近主動方卻沒有順序，是不自洽的值
     let degenerate = PostflopLine {
@@ -973,9 +976,7 @@ fn 列舉器不輸出河牌的聽牌組別() {
 #[test]
 fn 列舉器不輸出翻牌與轉牌的三條濕潤面() {
     for node in enumerate_postflop_nodes() {
-        if node.surface == BoardSurface::Trips
-            && node.connectivity == BoardConnectivity::Wet
-        {
+        if node.surface == BoardSurface::Trips && node.connectivity == BoardConnectivity::Wet {
             assert_eq!(
                 node.street,
                 Street::River,
@@ -994,11 +995,9 @@ fn 列舉器的下注狀態與面對尺度一致() {
                 FacingSize::None,
                 "無人下注沒有面對尺度可談"
             ),
-            PostflopSituation::FacingBet => assert_ne!(
-                node.facing_size,
-                FacingSize::None,
-                "面對下注必然有尺度"
-            ),
+            PostflopSituation::FacingBet => {
+                assert_ne!(node.facing_size, FacingSize::None, "面對下注必然有尺度")
+            }
         }
         assert_eq!(
             node.line.situation(),
@@ -1047,7 +1046,7 @@ fn 線路命名與最小條件互為反向映射() {
 fn 節點規模報表逐項顯示維度成長() {
     let report = node_count_report();
 
-    assert_eq!(report.node_set_version, "postflop-nodes/v1");
+    assert_eq!(report.node_set_version, "postflop/v2-position-size-ranges");
     assert!(report.core > 0);
     assert!(
         report.with_facing_size > report.core,

@@ -47,21 +47,19 @@ fn setup() -> HandSetup {
 /// 固定發牌。牌面內容與尺度分檔無關，指定只是為了讓牌局可重現。
 fn deal() -> PreparedDeal {
     let hands = [
-        ["As", "Kd"], ["7c", "2h"], ["Qs", "Jh"],
-        ["9c", "9d"], ["4s", "4h"], ["6c", "5d"],
+        ["As", "Kd"],
+        ["7c", "2h"],
+        ["Qs", "Jh"],
+        ["9c", "9d"],
+        ["4s", "4h"],
+        ["6c", "5d"],
     ];
     PreparedDeal {
         hole_cards: hands
             .iter()
             .map(|hand| Some([card(hand[0]), card(hand[1])]))
             .collect(),
-        board: [
-            card("Ah"),
-            card("7d"),
-            card("3c"),
-            card("Ts"),
-            card("2c"),
-        ],
+        board: [card("Ah"), card("7d"), card("3c"), card("Ts"), card("2c")],
     }
 }
 
@@ -102,12 +100,12 @@ impl Table {
     fn run(self) -> (DecisionView, u64, u64) {
         let mut table = self;
         let _ = play_hand_with_deal(&TableConfig::simple(1, 2), &setup(), &deal(), &mut table);
-        let view = table.hero_view.borrow().clone().expect("英雄應面對過一次下注");
-        let (pot_before, bet) = *table
-            .observed
+        let view = table
+            .hero_view
             .borrow()
-            .last()
-            .expect("翻牌應有一次進攻");
+            .clone()
+            .expect("英雄應面對過一次下注");
+        let (pot_before, bet) = *table.observed.borrow().last().expect("翻牌應有一次進攻");
         (view, pot_before, bet)
     }
 
@@ -173,9 +171,10 @@ impl Table {
                 FlopScript::ShortAllIn if facing => {
                     let all_in = view.legal.all_in_to.expect("短碼應有全下上限");
                     let level = view.to_call.units() + view.committed_here();
-                    self.observed
-                        .borrow_mut()
-                        .push((view.pot.units() + view.to_call.units(), all_in.units() - level));
+                    self.observed.borrow_mut().push((
+                        view.pot.units() + view.to_call.units(),
+                        all_in.units() - level,
+                    ));
                     return Action::AllIn;
                 }
                 _ => {}
@@ -245,11 +244,11 @@ fn facing_size_of(view: &DecisionView) -> FacingSize {
 #[test]
 fn 下注尺度以下注前的底池分檔() {
     let cases = [
-        (1u64, 3u64, FacingSize::Third),
-        (1, 2, FacingSize::Half),
-        (2, 3, FacingSize::TwoThirds),
-        (1, 1, FacingSize::Pot),
-        (3, 2, FacingSize::Overbet),
+        (1u64, 3u64, FacingSize::UpToThird),
+        (1, 2, FacingSize::ThirdToHalf),
+        (2, 3, FacingSize::HalfToTwoThirds),
+        (1, 1, FacingSize::PotOrMore),
+        (3, 2, FacingSize::PotOrMore),
     ];
 
     for (numerator, denominator, expected) in cases {
@@ -293,7 +292,7 @@ fn 滿池下注歸在滿池而不是半池() {
 
     assert_eq!(bet, pot_before, "腳本應下出剛好一個底池");
     assert_eq!(view.pot.units(), pot_before + bet, "當下底池已含這一注");
-    assert_eq!(facing_size_of(&view), FacingSize::Pot);
+    assert_eq!(facing_size_of(&view), FacingSize::PotOrMore);
 }
 
 /// 多人底池：在進攻者之後才跟進的籌碼不算進他的基準。
@@ -318,7 +317,7 @@ fn 中途跟注的籌碼不算進下注者的基準() {
     );
     assert_eq!(
         facing_size_of(&view),
-        FacingSize::Pot,
+        FacingSize::PotOrMore,
         "下注者推的仍是一個底池，不因為後面有人跟而變小"
     );
 }
@@ -341,7 +340,7 @@ fn 再加注以加注增量對跟平後的底池分檔() {
     .run();
 
     assert_eq!(increment, base, "腳本應加出剛好一個底池的增量");
-    assert_eq!(facing_size_of(&view), FacingSize::Pot);
+    assert_eq!(facing_size_of(&view), FacingSize::PotOrMore);
     assert!(
         view.pot.units() > base,
         "當下底池已含這次加注，拿它當分母會把滿池加注歸到更小的一檔"
@@ -367,10 +366,10 @@ fn 短碼全下依實際增量分檔而不是全下就算_overbet() {
     let size = facing_size_of(&view);
     assert_ne!(
         size,
-        FacingSize::Overbet,
+        FacingSize::PotOrMore,
         "全下的是短碼，推出去的增量遠小於底池"
     );
-    assert_eq!(size, FacingSize::Quarter);
+    assert_eq!(size, FacingSize::UpToThird);
 }
 
 // ── 無人下注 ────────────────────────────────────────────────────

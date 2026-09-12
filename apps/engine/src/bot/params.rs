@@ -127,7 +127,10 @@ impl ParamSpec {
                 })
             }
         };
-        if numeric < self.min || numeric > self.max {
+        if numeric < self.min
+            || numeric > self.max
+            || (self.key.starts_with("openSizeCentiBb") && numeric != 0 && numeric < 200)
+        {
             return Err(ParamError::OutOfRange {
                 key: self.key,
                 value: numeric,
@@ -299,7 +302,17 @@ pub const PERSONA_SPECS: [ParamSpec; 11] = [
 ];
 
 /// 行為層 10 欄（核心規格 4.3，原等級層）。
-pub const BEHAVIOR_SPECS: [ParamSpec; 9] = [
+pub const BEHAVIOR_SPECS: [ParamSpec; 19] = [
+    ParamSpec { key: "openSizeCentiBb", display: "Open 尺寸", unit: "centi-BB", description: "0 沿用策略原值；200 = 2 BB。只修改未有人進池的 open，推入保持全下，尺寸依合法加注範圍調整。", level: OverrideLevel::BehaviorThenSeat, default: ParamValue::Count(0), min: 0, max: 10000, implemented: true },
+    ParamSpec { key: "openSizeCentiBb:UTG", display: "Open 尺寸 UTG", unit: "centi-BB", description: "0 沿用座位設定；200 = 2 BB。只修改未有人進池的 open，推入保持全下，尺寸依合法加注範圍調整。", level: OverrideLevel::BehaviorThenSeat, default: ParamValue::Count(0), min: 0, max: 10000, implemented: true },
+    ParamSpec { key: "openSizeCentiBb:UTG+1", display: "Open 尺寸 UTG+1", unit: "centi-BB", description: "0 沿用座位設定；200 = 2 BB。只修改未有人進池的 open，推入保持全下，尺寸依合法加注範圍調整。", level: OverrideLevel::BehaviorThenSeat, default: ParamValue::Count(0), min: 0, max: 10000, implemented: true },
+    ParamSpec { key: "openSizeCentiBb:UTG+2", display: "Open 尺寸 UTG+2", unit: "centi-BB", description: "0 沿用座位設定；200 = 2 BB。只修改未有人進池的 open，推入保持全下，尺寸依合法加注範圍調整。", level: OverrideLevel::BehaviorThenSeat, default: ParamValue::Count(0), min: 0, max: 10000, implemented: true },
+    ParamSpec { key: "openSizeCentiBb:LJ", display: "Open 尺寸 LJ", unit: "centi-BB", description: "0 沿用座位設定；200 = 2 BB。只修改未有人進池的 open，推入保持全下，尺寸依合法加注範圍調整。", level: OverrideLevel::BehaviorThenSeat, default: ParamValue::Count(0), min: 0, max: 10000, implemented: true },
+    ParamSpec { key: "openSizeCentiBb:HJ", display: "Open 尺寸 HJ", unit: "centi-BB", description: "0 沿用座位設定；200 = 2 BB。只修改未有人進池的 open，推入保持全下，尺寸依合法加注範圍調整。", level: OverrideLevel::BehaviorThenSeat, default: ParamValue::Count(0), min: 0, max: 10000, implemented: true },
+    ParamSpec { key: "openSizeCentiBb:CO", display: "Open 尺寸 CO", unit: "centi-BB", description: "0 沿用座位設定；200 = 2 BB。只修改未有人進池的 open，推入保持全下，尺寸依合法加注範圍調整。", level: OverrideLevel::BehaviorThenSeat, default: ParamValue::Count(0), min: 0, max: 10000, implemented: true },
+    ParamSpec { key: "openSizeCentiBb:BTN", display: "Open 尺寸 BTN", unit: "centi-BB", description: "0 沿用座位設定；200 = 2 BB。只修改未有人進池的 open，推入保持全下，尺寸依合法加注範圍調整。", level: OverrideLevel::BehaviorThenSeat, default: ParamValue::Count(0), min: 0, max: 10000, implemented: true },
+    ParamSpec { key: "openSizeCentiBb:SB", display: "Open 尺寸 SB", unit: "centi-BB", description: "0 沿用座位設定；200 = 2 BB。只修改未有人進池的 open，推入保持全下，尺寸依合法加注範圍調整。", level: OverrideLevel::BehaviorThenSeat, default: ParamValue::Count(0), min: 0, max: 10000, implemented: true },
+    ParamSpec { key: "openSizeCentiBb:BB", display: "Open 尺寸 BB", unit: "centi-BB", description: "0 沿用座位設定；200 = 2 BB。只修改未有人進池的 open，推入保持全下，尺寸依合法加注範圍調整。", level: OverrideLevel::BehaviorThenSeat, default: ParamValue::Count(0), min: 0, max: 10000, implemented: true },
     ParamSpec {
         key: "decisionNoisePp",
         display: "決策噪音",
@@ -419,9 +432,8 @@ mod tests {
         assert_eq!(PERSONA_SPECS.len(), 11, "核心規格 4.3：人格層 11 欄");
         assert_eq!(
             BEHAVIOR_SPECS.len(),
-            9,
-            "核心規格 4.3 原列行為層 10 欄；`postflopBucketCount` 在牌力組固定為八組後\
-             不再是有效的可調參數（0907 計劃 §6.3），從表上移除"
+            19,
+            "既有 9 個行為參數，加上座位及 9 個位置的 Open 尺寸"
         );
     }
 

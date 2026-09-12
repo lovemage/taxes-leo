@@ -164,7 +164,7 @@ export function Strategy({
           </span>
         </h2>
         <span className="dim" style={{ fontSize: 11, fontFamily: 'var(--font-mono)' }}>
-          {matrix?.nodeKey ?? ''}
+          {selection.stage === 'preflop' ? matrix?.nodeKey ?? '' : ''}
         </span>
       </div>
       <p className="dim" style={{ fontSize: 11, margin: '0 0 16px', lineHeight: 1.6 }}>
@@ -336,6 +336,11 @@ function PostflopRules({
   const [nodes, setNodes] = useState<PostflopNodesView | null>(null);
   const [rule, setRule] = useState<PostflopRuleView | null>(null);
   const [line, setLine] = useState('cbet-chance');
+  const [heroPosition, setHeroPosition] = useState('*');
+  const [relativePosition, setRelativePosition] = useState('*');
+  const [decisionPhase, setDecisionPhase] = useState('*');
+  const [continuation, setContinuation] = useState('*');
+  useEffect(() => { setDecisionPhase('*'); setContinuation('*'); }, [stage, situationKey, line]);
   const [surface, setSurface] = useState('rainbow');
   const [connectivity, setConnectivity] = useState('dry');
   const [handStrength, setHandStrength] = useState('strong-made');
@@ -369,7 +374,7 @@ function PostflopRules({
     if (situationKey === 'no-bet') {
       setFacingSize('none');
     } else if (facingSize === 'none') {
-      setFacingSize('two-thirds');
+      setFacingSize('half-to-two-thirds');
     }
   }, [nodes, situationKey, line, facingSize]);
 
@@ -406,6 +411,7 @@ function PostflopRules({
   }, [nodes, handStrength]);
 
   const query: PostflopRuleQuery = {
+    scope: [heroPosition, relativePosition, decisionPhase, continuation].join('/'),
     street: stage,
     situation: situationKey,
     line,
@@ -420,6 +426,7 @@ function PostflopRules({
   const issued = useRef(0);
   useEffect(() => {
     const ticket = ++issued.current;
+    setRule(null); setDraft(null);
     postflopRule(JSON.parse(queryKey) as PostflopRuleQuery, overrides)
       .then((view) => {
         if (ticket !== issued.current) return;
@@ -488,7 +495,7 @@ function PostflopRules({
   /** 批次恢復的範圍判定。節點鍵的欄位順序見引擎的 `PostflopNode::key` */
   const inScope = (scope: BatchScope, key: string): boolean => {
     const parts = key.split('|');
-    if (parts.length !== 7) return false;
+    if (parts.length !== 7 && parts.length !== 8) return false;
     switch (scope) {
       case 'street':
         return parts[0] === stage;
@@ -523,6 +530,15 @@ function PostflopRules({
 
       {/* ── 導覽：線路 → 牌面兩軸 → 牌力組 → 面對尺度 ── */}
       <section style={{ ...cardStyle, display: 'grid', gap: 12 }}>
+        <OptionRow label="翻前位置" value={heroPosition} onChange={setHeroPosition}
+          options={['*','UTG','UTG+1','UTG+2','LJ','HJ','CO','BTN','SB','BB'].map(key => ({key,label:key==='*'?'所有位置':key}))} />
+        <OptionRow label="翻後相對位置" value={relativePosition} onChange={setRelativePosition}
+          options={[{key:'*',label:'不限'},{key:'first',label:'最先行動（OOP）'},{key:'middle',label:'中間（多人底池）'},{key:'last',label:'最後行動（IP）'},{key:'alone',label:'其餘對手皆全下'}]} />
+        <OptionRow label="本街行動" value={decisionPhase} onChange={setDecisionPhase}
+          options={[{key:'*',label:'不限'},{key:'unacted',label:'尚未行動'},...(situationKey==='facing-bet'?[{key:'checked',label:'過牌後被下注（可 check-raise）'},{key:'bet-raised',label:'已投入後面對加注'}]:[])]} />
+        <OptionRow label="持續下注歷史" value={continuation} onChange={setContinuation}
+          options={[{key:'*',label:'不限'},...(stage==='flop'?[{key:'flop-cbet',label:'翻牌 C-bet'}]:stage==='turn'?[{key:'double-barrel',label:'第二槍 Double barrel'},{key:'delayed-cbet',label:'延遲 C-bet'}]:[{key:'triple-barrel',label:'第三槍 Triple barrel'},{key:'delayed-cbet',label:'延遲 C-bet'}]),{key:'other',label:'其他（含加注後延續下注）'}]} />
+        <p className="dim" style={{margin:0,fontSize:12}}>位置依仍可行動的對手判斷。完整度只計通用節點，不含位置／歷史限定。先在無人下注設定過牌頻率，再於「過牌後被下注」設定跟注／加注頻率；加注仍須符合實際加注權。</p>
         <OptionRow
           label="牌局線路"
           options={lines.map((item) => ({ key: item.key, label: item.label }))}
@@ -561,7 +577,7 @@ function PostflopRules({
         />
         {situationKey === 'facing-bet' && (
           <OptionRow
-            label="面對尺度"
+            label="面對下注區間"
             options={facingSizes.map((item) => ({ key: item.key, label: item.label }))}
             value={facingSize}
             onChange={setFacingSize}
@@ -607,6 +623,7 @@ function PostflopRules({
                 <span style={{ fontSize: 12 }}>{weight.label}</span>
                 <input
                   type="number"
+                  aria-label={`${weight.label} 頻率`}
                   min={0}
                   max={100}
                   step={1}
@@ -786,11 +803,12 @@ function OptionRow({
               key={option.key}
               type="button"
               title={option.title}
+              aria-pressed={active}
               onClick={() => onChange(option.key)}
               style={{
                 padding: '4px 10px',
                 border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-control)',
+                borderRadius: 0,
                 background: active ? 'var(--bg-raised)' : 'transparent',
                 color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
                 fontWeight: active ? 600 : 400,

@@ -226,12 +226,12 @@ fn serve(mut stream: TcpStream, handler: &IpcHandler, run_id: i64) -> std::io::R
         "/api/postflop/rule" => {
             let overrides = parse_postflop_overrides(&body);
             let query = poker_ipc::postflop::PostflopRuleQuery {
+                scope: text_param(query, "scope").unwrap_or_default(),
                 street: text_param(query, "street").unwrap_or_else(|| "flop".to_owned()),
                 situation: text_param(query, "situation").unwrap_or_else(|| "no-bet".to_owned()),
                 line: text_param(query, "line").unwrap_or_else(|| "cbet-chance".to_owned()),
                 surface: text_param(query, "surface").unwrap_or_else(|| "rainbow".to_owned()),
-                connectivity: text_param(query, "connectivity")
-                    .unwrap_or_else(|| "dry".to_owned()),
+                connectivity: text_param(query, "connectivity").unwrap_or_else(|| "dry".to_owned()),
                 hand_strength: text_param(query, "handStrength")
                     .unwrap_or_else(|| "strong-made".to_owned()),
                 facing_size: text_param(query, "facingSize").unwrap_or_else(|| "none".to_owned()),
@@ -412,6 +412,10 @@ fn percent_decode(raw: &str) -> String {
     let mut index = 0;
     while index < bytes.len() {
         match bytes[index] {
+            b'+' => {
+                out.push(b' ');
+                index += 1;
+            }
             b'%' if index + 2 < bytes.len() => {
                 let hex = std::str::from_utf8(&bytes[index + 1..index + 3]).unwrap_or("");
                 match u8::from_str_radix(hex, 16) {
@@ -440,4 +444,14 @@ fn param(query: &str, key: &str) -> Option<u64> {
         .filter_map(|pair| pair.split_once('='))
         .find(|(k, _)| *k == key)
         .and_then(|(_, value)| value.parse().ok())
+}
+
+#[cfg(test)]
+mod query_tests {
+    #[test]
+    fn form_encoded_spaces_and_literal_plus_are_distinct() {
+        assert_eq!(super::percent_decode("As+Ts"), "As Ts");
+        assert_eq!(super::percent_decode("UTG%2B1"), "UTG+1");
+        assert_eq!(super::percent_decode("As%20Ts"), "As Ts");
+    }
 }

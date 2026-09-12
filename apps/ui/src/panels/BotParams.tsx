@@ -51,7 +51,8 @@ export function BotParams({
   };
 
   const persona = specs.filter((spec) => spec.layer === 'persona' && spec.implemented);
-  const behavior = specs.filter((spec) => spec.layer === 'behavior' && spec.implemented);
+  const sizing = specs.filter(spec => spec.key.startsWith('openSizeCentiBb'));
+  const behavior = specs.filter((spec) => spec.layer === 'behavior' && spec.implemented && !spec.key.startsWith('openSizeCentiBb'));
   // 決策路徑還沒讀到的欄位單獨列在最後並停用。混在可調的欄位裡會讓
   // 使用者拉一個不會有事的滑桿，然後以為自己調到了東西
   const pending = specs.filter((spec) => !spec.implemented);
@@ -133,6 +134,22 @@ export function BotParams({
         </div>
       </section>
 
+      <section style={{ ...cardStyle, marginBottom: 16 }}>
+        <SectionTitle>Open 尺寸 · {isHero ? 'Hero' : current.name}</SectionTitle>
+        <p className="dim">只套用前方未有人進池的首次加注（raise-to BB）。0 表示繼承；不改變全下頻率。隔離跛入與再加注沿用原策略。</p>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(155px,1fr))',gap:12}}>
+          {sizing.map(spec => {
+            const value = current.params[spec.key] ?? spec.default;
+            const effective = value || current.params.openSizeCentiBb || 0;
+            const rounded = effective ? Math.max(1,Math.floor((effective * request.bigBlind + 50)/100))/request.bigBlind : null;
+            return <label key={spec.key} style={{display:'grid',gap:5}}>{spec.display}
+              <input aria-label={spec.display} type="number" min={0} max={spec.max/100} step={.01} disabled={locked}
+                value={value/100} onChange={event => setParam(spec.key,Math.round(Number(event.target.value)*100))} />
+              <small className="dim">{rounded===null?'策略原值（一般 2.5 BB）':`籌碼取整後 ${rounded.toFixed(2)} BB；受合法下限／餘額限制`}</small>
+            </label>;
+          })}
+        </div>
+      </section>
       <ParamGroup
         title="人格層"
         specs={persona}

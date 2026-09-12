@@ -29,17 +29,17 @@
 
 use crate::betting::Action;
 use crate::chips::Chips;
+use crate::position::PositionLabel;
+use crate::strategy::cell_override::CellOverrides;
 use crate::strategy::decision::StackBucket;
+use crate::strategy::default_chart::{ChartShift, DefaultChart};
 use crate::strategy::distribution::{ActionDistribution, DistributionError, Myriad, FULL};
 use crate::strategy::hand_class::HandClass;
-use crate::position::PositionLabel;
 use crate::strategy::opening::OpeningWidths;
 use crate::strategy::playability::PlayabilityAdjustments;
 use crate::strategy::preflop::{positions_for, PreflopNode, PreflopScenario};
-use crate::strategy::cell_override::CellOverrides;
-use crate::strategy::default_chart::{ChartShift, DefaultChart};
-use crate::strategy::vs_open::VsOpenWidths;
 use crate::strategy::ranking::EquityRanking;
+use crate::strategy::vs_open::VsOpenWidths;
 
 /// 情境的範圍寬度參數。寬度以「equity 排序的前 X%」表示（萬分比）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -123,6 +123,8 @@ pub struct BaselineRules {
 
     /// 各情境的加注尺度，以 BB 的百分之一表示
     pub open_size_centi_bb: u32,
+    pub open_override: Option<u32>,
+    pub open_by_position: std::collections::BTreeMap<PositionLabel, u32>,
     pub three_bet_size_centi_bb: u32,
     pub four_bet_size_centi_bb: u32,
 }
@@ -269,6 +271,8 @@ impl BaselineRules {
             playability: PlayabilityAdjustments::engineering_placeholder(),
 
             open_size_centi_bb: 250,
+            open_override: None,
+            open_by_position: std::collections::BTreeMap::new(),
             three_bet_size_centi_bb: 900,
             four_bet_size_centi_bb: 2_200,
         }
@@ -413,12 +417,43 @@ pub fn distribution_for(
     ranking: &EquityRanking,
     big_blind: Chips,
 ) -> Result<ActionDistribution, DistributionError> {
+    let distribution = distribution_for_inner(node, class, rules, ranking, big_blind)?;
+    let size = rules
+        .open_by_position
+        .get(&node.hero)
+        .copied()
+        .or(rules.open_override);
+    if matches!(node.scenario, PreflopScenario::Unopened) {
+        if let Some(size) = size {
+            return ActionDistribution::new(
+                distribution
+                    .entries()
+                    .iter()
+                    .map(|entry| {
+                        let action = if matches!(entry.0, Action::RaiseTo(_)) {
+                            Action::RaiseTo(centi_bb_to_chips(size, big_blind))
+                        } else {
+                            entry.0
+                        };
+                        (action, entry.1)
+                    })
+                    .collect(),
+            );
+        }
+    }
+    Ok(distribution)
+}
+
+fn distribution_for_inner(
+    node: &PreflopNode,
+    class: HandClass,
+    rules: &BaselineRules,
+    ranking: &EquityRanking,
+    big_blind: Chips,
+) -> Result<ActionDistribution, DistributionError> {
     let widths = rules.widths_for(node.scenario);
     let order = positions_for(node.seated);
-    let position_index = order
-        .iter()
-        .position(|&p| p == node.hero)
-        .unwrap_or(0);
+    let position_index = order.iter().position(|&p| p == node.hero).unwrap_or(0);
 
     // 開牌與面對開牌都逐節點查表；其餘情境仍以端點內插，因為顧問目前
     // 只對這兩類逐節點調整（見 opening 與 vs_open 模組的說明）
@@ -452,14 +487,19 @@ pub fn distribution_for(
     // 以可玩性調整後的百分位判定，而非 raw equity 排序。
     // 這讓「同花連牌比弱同花高張更值得開」得以表達，不必逐格覆寫
     let base_percentile = Myriad::try_from(ranking.percentile_myriad(class)).unwrap_or(FULL);
-    let percentile = rules.playability.adjusted_percentile(class, base_percentile);
+    let percentile = rules
+        .playability
+        .adjusted_percentile(class, base_percentile);
     let band = widths.mix_band.max(1);
 
     // 短碼採推入或棄牌，不做小額加注
     let aggressive_action = if node.bucket <= rules.push_fold_below {
         Action::AllIn
     } else {
-        Action::RaiseTo(centi_bb_to_chips(raise_size(node.scenario, rules), big_blind))
+        Action::RaiseTo(centi_bb_to_chips(
+            raise_size(node.scenario, rules),
+            big_blind,
+        ))
     };
 
     // 逐格覆寫在此套用：位置必須在 aggressive_action 決定之後，
@@ -540,9 +580,9 @@ mod tests {
     const TEST_BB: Chips = Chips::new(2);
 
     use super::*;
+    use crate::card::Rank;
     use crate::strategy::cell_override::OverrideCell;
     use crate::strategy::ranking::{class_of, CONTENT_GRADE_SAMPLES};
-    use crate::card::Rank;
 
     /// 快速排序表，供不依賴精細排序的測試使用。
     fn ranking() -> EquityRanking {
@@ -583,7 +623,8 @@ mod tests {
         let ranking = ranking();
         let node = override_node();
         let (a5s, a6s) = (labelled("A5s"), labelled("A6s"));
-        let before_a6s = shares(&distribution_for(&node, a6s, &base, &ranking, TEST_BB).expect("可產生"));
+        let before_a6s =
+            shares(&distribution_for(&node, a6s, &base, &ranking, TEST_BB).expect("可產生"));
 
         let mut rules = base.clone();
         rules
@@ -591,7 +632,11 @@ mod tests {
             .set(node, a5s, OverrideCell::new(5_000, 2_000).expect("合法"));
 
         let after = distribution_for(&node, a5s, &rules, &ranking, TEST_BB).expect("可產生");
-        assert_eq!(shares(&after), (5_000, 2_000, 3_000), "覆寫值必須原封不動出現");
+        assert_eq!(
+            shares(&after),
+            (5_000, 2_000, 3_000),
+            "覆寫值必須原封不動出現"
+        );
 
         assert_eq!(
             shares(&distribution_for(&node, a6s, &rules, &ranking, TEST_BB).expect("可產生")),
@@ -664,7 +709,11 @@ mod tests {
                 by: PositionLabel::Btn,
             },
         ] {
-            for bucket in [StackBucket::VeryShort, StackBucket::Deep, StackBucket::VeryDeep] {
+            for bucket in [
+                StackBucket::VeryShort,
+                StackBucket::Deep,
+                StackBucket::VeryDeep,
+            ] {
                 for class in HandClass::all() {
                     let node = node(PositionLabel::Co, scenario, bucket);
                     let d = distribution_for(&node, class, &rules, &ranking, TEST_BB)
@@ -686,20 +735,28 @@ mod tests {
         let marginal = class_of(Rank::King, Rank::Nine, false); // K9o
 
         let utg = distribution_for(
-            &node(PositionLabel::Utg, PreflopScenario::Unopened, StackBucket::VeryDeep),
+            &node(
+                PositionLabel::Utg,
+                PreflopScenario::Unopened,
+                StackBucket::VeryDeep,
+            ),
             marginal,
             &rules,
             &ranking,
-                         TEST_BB,
-                     )
+            TEST_BB,
+        )
         .expect("產生");
         let btn = distribution_for(
-            &node(PositionLabel::Btn, PreflopScenario::Unopened, StackBucket::VeryDeep),
+            &node(
+                PositionLabel::Btn,
+                PreflopScenario::Unopened,
+                StackBucket::VeryDeep,
+            ),
             marginal,
             &rules,
             &ranking,
-                         TEST_BB,
-                     )
+            TEST_BB,
+        )
         .expect("產生");
 
         let raise_weight = |d: &ActionDistribution| -> Myriad {
@@ -733,8 +790,8 @@ mod tests {
                         class,
                         &rules,
                         &ranking,
-                                     TEST_BB,
-                                 )
+                        TEST_BB,
+                    )
                     .expect("產生");
                     let raise: Myriad = d
                         .entries()
@@ -752,10 +809,7 @@ mod tests {
             width(PositionLabel::Sb) < btn,
             "SB 翻後最不利，開牌範圍不得寬於 BTN"
         );
-        assert!(
-            width(PositionLabel::Bb) < btn,
-            "BB 的主動範圍不得寬於 BTN"
-        );
+        assert!(width(PositionLabel::Bb) < btn, "BB 的主動範圍不得寬於 BTN");
         assert!(
             width(PositionLabel::Utg) < width(PositionLabel::Co),
             "非盲注位仍應維持位置越晚越寬"
@@ -792,7 +846,11 @@ mod tests {
     fn 開牌範圍中中等對子不弱於弱同花牌() {
         let rules = BaselineRules::engineering_placeholder();
         let ranking = EquityRanking::compute(2, 3_000);
-        let node = node(PositionLabel::Utg, PreflopScenario::Unopened, StackBucket::VeryDeep);
+        let node = node(
+            PositionLabel::Utg,
+            PreflopScenario::Unopened,
+            StackBucket::VeryDeep,
+        );
 
         let aggressive = |class: HandClass| -> Myriad {
             distribution_for(&node, class, &rules, &ranking, TEST_BB)
@@ -824,7 +882,11 @@ mod tests {
         // 類別間的真實差距，可玩性調整因此失效（見 CONTENT_GRADE_SAMPLES）
         let ranking = content_ranking();
         assert!(ranking.is_content_grade());
-        let node = node(PositionLabel::Btn, PreflopScenario::Unopened, StackBucket::VeryDeep);
+        let node = node(
+            PositionLabel::Btn,
+            PreflopScenario::Unopened,
+            StackBucket::VeryDeep,
+        );
 
         let aggressive = |class: HandClass| -> Myriad {
             distribution_for(&node, class, &rules, ranking, TEST_BB)
@@ -858,8 +920,12 @@ mod tests {
 
         for scenario in [
             PreflopScenario::Unopened,
-            PreflopScenario::VsOpen { opener: PositionLabel::Utg },
-            PreflopScenario::VsFourBet { by: PositionLabel::Utg },
+            PreflopScenario::VsOpen {
+                opener: PositionLabel::Utg,
+            },
+            PreflopScenario::VsFourBet {
+                by: PositionLabel::Utg,
+            },
         ] {
             for hero in [PositionLabel::Utg, PositionLabel::Btn, PositionLabel::Bb] {
                 let d = distribution_for(
@@ -867,8 +933,8 @@ mod tests {
                     aces,
                     &rules,
                     &ranking,
-                                 TEST_BB,
-                             )
+                    TEST_BB,
+                )
                 .expect("產生");
                 assert_eq!(
                     d.weight_of(Action::Fold),
@@ -886,12 +952,16 @@ mod tests {
         let worst = class_of(Rank::Seven, Rank::Two, false); // 72o
 
         let d = distribution_for(
-            &node(PositionLabel::Utg, PreflopScenario::Unopened, StackBucket::VeryDeep),
+            &node(
+                PositionLabel::Utg,
+                PreflopScenario::Unopened,
+                StackBucket::VeryDeep,
+            ),
             worst,
             &rules,
             &ranking,
-                         TEST_BB,
-                     )
+            TEST_BB,
+        )
         .expect("產生");
         assert_eq!(d.weight_of(Action::Fold), FULL, "72o 在 UTG 應 100% 棄牌");
     }
@@ -903,12 +973,16 @@ mod tests {
         let strong = class_of(Rank::Ace, Rank::Ace, false);
 
         let d = distribution_for(
-            &node(PositionLabel::Btn, PreflopScenario::Unopened, StackBucket::VeryShort),
+            &node(
+                PositionLabel::Btn,
+                PreflopScenario::Unopened,
+                StackBucket::VeryShort,
+            ),
             strong,
             &rules,
             &ranking,
-                         TEST_BB,
-                     )
+            TEST_BB,
+        )
         .expect("產生");
         assert!(
             d.entries()

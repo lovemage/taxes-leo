@@ -765,7 +765,9 @@ fn 已實作的參數確實會改變決策() {
     let rankings = BotAgent::rankings(FAST_SAMPLES);
 
     for spec in PERSONA_SPECS.iter().chain(BEHAVIOR_SPECS.iter()) {
-        if !spec.implemented {
+        // Sizes have deterministic per-position assertions in strategy_v016.
+        // Their purpose is not to alter aggregate fold/raise frequencies.
+        if !spec.implemented || spec.key.starts_with("openSizeCentiBb") {
             continue;
         }
         let outcome = |raw: u32| {

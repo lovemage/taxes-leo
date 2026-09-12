@@ -37,6 +37,7 @@ fn weights(pairs: &[(&str, u32)]) -> Vec<PostflopWeightInput> {
 /// 翻牌、無人下注、c-bet 機會、彩虹乾燥面、強成牌
 fn query() -> PostflopRuleQuery {
     PostflopRuleQuery {
+        scope: String::new(),
         street: "flop".to_owned(),
         situation: "no-bet".to_owned(),
         line: "cbet-chance".to_owned(),
@@ -253,7 +254,7 @@ fn 面對下注時不能過牌() {
     let mut facing = query();
     facing.situation = "facing-bet".to_owned();
     facing.line = "facing-cbet".to_owned();
-    facing.facing_size = "two-thirds".to_owned();
+    facing.facing_size = "half-to-two-thirds".to_owned();
 
     let view = postflop_rule(&facing, &PostflopOverridesView::default()).expect("節點");
     let check = view
@@ -307,18 +308,21 @@ fn 未知的鍵回傳說明而不是靜默落回預設() {
 #[test]
 fn 完整度只算使用者覆寫且帶節點集合版本() {
     let empty = postflop_nodes("flop", &PostflopOverridesView::default());
-    assert_eq!(empty.coverage.node_set_version, "postflop-nodes/v1");
     assert_eq!(
-        empty.coverage.user, 0,
-        "還沒寫任何覆寫時玩家完整度必須是 0"
+        empty.coverage.node_set_version,
+        "postflop/v2-position-size-ranges"
     );
+    assert_eq!(empty.coverage.user, 0, "還沒寫任何覆寫時玩家完整度必須是 0");
     assert!(
         empty.coverage.generic > 0,
         "工程通則涵蓋了節點，但那不算玩家寫的"
     );
     assert_eq!(empty.coverage.completeness_myriad, 0);
     assert_eq!(
-        empty.coverage.user + empty.coverage.official + empty.coverage.generic + empty.coverage.fallback,
+        empty.coverage.user
+            + empty.coverage.official
+            + empty.coverage.generic
+            + empty.coverage.fallback,
         empty.coverage.total_nodes,
         "四層合計必須等於可達節點數"
     );
@@ -367,7 +371,12 @@ fn dto_序列化為_camel_case() {
     let view = postflop_rule(&query(), &PostflopOverridesView::default()).expect("節點");
     let json = serde_json::to_value(&view).expect("序列化");
 
-    for key in ["nodeKey", "totalMyriad", "sourceLabel", "consultantApproved"] {
+    for key in [
+        "nodeKey",
+        "totalMyriad",
+        "sourceLabel",
+        "consultantApproved",
+    ] {
         assert!(json.get(key).is_some(), "缺少 {key}");
     }
     let restore = json.get("restore").expect("restore");

@@ -107,6 +107,9 @@ impl BotSeatConfig {
         });
 
         for (key, &raw) in &self.params {
+            if key.starts_with("openSizeCentiBb") && raw != 0 && !(200..=10000).contains(&raw) {
+                return Err(format!("{key} 必須為 0（繼承）或 2～100 BB"));
+            }
             // 舊存檔還帶著已移除的欄位。整份拒絕會讓使用者的設定讀不回來，
             // 而那個欄位本來就沒有作用——忽略並記一筆比較誠實
             // （0907 計劃 §6.3）
@@ -121,7 +124,9 @@ impl BotSeatConfig {
             let value = match spec.default {
                 ParamValue::Myriad(_) => ParamValue::Myriad(clamp_u32(raw)),
                 ParamValue::Count(_) => ParamValue::Count(clamp_u32(raw)),
-                ParamValue::Enum(_) => ParamValue::Enum(u8::try_from(raw.clamp(0, 255)).unwrap_or(0)),
+                ParamValue::Enum(_) => {
+                    ParamValue::Enum(u8::try_from(raw.clamp(0, 255)).unwrap_or(0))
+                }
                 ParamValue::Flag(_) => ParamValue::Flag(raw != 0),
             };
             let applied = if PERSONA_SPECS.iter().any(|s| s.key == spec.key) {
@@ -247,9 +252,7 @@ mod tests {
     fn 真正未登錄的參數仍然被拒絕() {
         let seat = BotSeatConfig {
             name: "亂填".to_owned(),
-            params: [("notARealParameter2".to_owned(), 1)]
-                .into_iter()
-                .collect(),
+            params: [("notARealParameter2".to_owned(), 1)].into_iter().collect(),
         };
         assert!(
             seat.to_bot_config().is_err(),

@@ -104,6 +104,8 @@ pub fn baseline(rules: &BaselineRules) -> Value {
         "vsOpenWidths": vs_open,
         "playability": playability,
         "cellOverrides": overrides,
+        "openOverrideCentiBb": rules.open_override,
+        "openByPositionCentiBb": rules.open_by_position.iter().map(|(p, n)| (p.as_str(), *n)).collect::<std::collections::BTreeMap<_, _>>(),
         "raiseSizesCentiBb": {
             "open": rules.open_size_centi_bb,
             "threeBet": rules.three_bet_size_centi_bb,
@@ -267,8 +269,20 @@ pub fn postflop(rules: &RuleSet) -> Value {
 /// 全部寫出來的話，一條只指定牌力組的通則會多出十幾個 `null`。
 fn condition(condition: &PostflopCondition) -> Value {
     let mut map = Map::new();
+    if let Some(v) = condition.relative_position {
+        map.insert("relativePosition".into(), json!(v.key()));
+    }
+    if let Some(v) = condition.decision_phase {
+        map.insert("decisionPhase".into(), json!(v.key()));
+    }
+    if let Some(v) = condition.continuation {
+        map.insert("continuation".into(), json!(v.key()));
+    }
     if let Some(street) = condition.street {
-        map.insert("street".to_owned(), json!(crate::postflop::street_key(street)));
+        map.insert(
+            "street".to_owned(),
+            json!(crate::postflop::street_key(street)),
+        );
     }
     if let Some(situation) = condition.situation {
         map.insert("situation".to_owned(), json!(situation.key()));
@@ -295,10 +309,16 @@ fn condition(condition: &PostflopCondition) -> Value {
         map.insert("heroPosition".to_owned(), json!(position.as_str()));
     }
     if let Some(range) = condition.active_players.as_ref() {
-        map.insert("activePlayers".to_owned(), json!([range.start(), range.end()]));
+        map.insert(
+            "activePlayers".to_owned(),
+            json!([range.start(), range.end()]),
+        );
     }
     if let Some(range) = condition.opponents_behind.as_ref() {
-        map.insert("opponentsBehind".to_owned(), json!([range.start(), range.end()]));
+        map.insert(
+            "opponentsBehind".to_owned(),
+            json!([range.start(), range.end()]),
+        );
     }
     if let Some(range) = condition.spr_centi.as_ref() {
         map.insert("sprCenti".to_owned(), json!([range.start(), range.end()]));
@@ -431,6 +451,21 @@ fn rebuild_condition(value: &Value) -> Option<PostflopCondition> {
     let map = value.as_object()?;
 
     Some(PostflopCondition {
+        relative_position: enum_field(
+            map,
+            "relativePosition",
+            poker_engine::strategy::postflop::RelativePosition::parse,
+        )?,
+        decision_phase: enum_field(
+            map,
+            "decisionPhase",
+            poker_engine::strategy::postflop::DecisionPhase::parse,
+        )?,
+        continuation: enum_field(
+            map,
+            "continuation",
+            poker_engine::strategy::postflop::Continuation::parse,
+        )?,
         street: enum_field(map, "street", crate::postflop::parse_street)?,
         situation: enum_field(map, "situation", crate::postflop::parse_situation)?,
         board_surface: enum_field(map, "boardSurface", crate::postflop::parse_surface)?,
@@ -508,7 +543,9 @@ fn rebuild_line(value: Option<&Value>) -> Option<PostflopLineCondition> {
     };
     let role = |key: &str| {
         enum_field(map, key, |text| {
-            AggressorRole::ALL.into_iter().find(|role| role.key() == text)
+            AggressorRole::ALL
+                .into_iter()
+                .find(|role| role.key() == text)
         })
     };
 
@@ -585,13 +622,17 @@ mod tests {
 
     #[test]
     fn 翻後快照存的是完整內容而不是版本指標() {
-        let rules = crate::postflop::to_rule_set(&crate::postflop::PostflopOverridesView::default())
-            .expect("預設覆寫");
+        let rules =
+            crate::postflop::to_rule_set(&crate::postflop::PostflopOverridesView::default())
+                .expect("預設覆寫");
         let snapshot = postflop(&rules);
 
         let entries = snapshot["rules"].as_array().expect("規則列");
         assert_eq!(entries.len(), 16, "十六條工程通則");
-        assert_eq!(snapshot["nodeSetVersion"], "postflop-nodes/v1");
+        assert_eq!(
+            snapshot["nodeSetVersion"],
+            "postflop/v2-position-size-ranges"
+        );
 
         for entry in entries {
             assert!(
@@ -599,7 +640,9 @@ mod tests {
                 "每條規則都要有條件，否則重建不出來"
             );
             assert!(
-                entry["intent"].as_object().is_some_and(|map| !map.is_empty()),
+                entry["intent"]
+                    .as_object()
+                    .is_some_and(|map| !map.is_empty()),
                 "每條規則都要有意圖頻率"
             );
             assert!(entry["source"].is_string());
@@ -634,8 +677,9 @@ mod tests {
 
     #[test]
     fn 翻後快照的體積留在預算內() {
-        let rules = crate::postflop::to_rule_set(&crate::postflop::PostflopOverridesView::default())
-            .expect("預設覆寫");
+        let rules =
+            crate::postflop::to_rule_set(&crate::postflop::PostflopOverridesView::default())
+                .expect("預設覆寫");
         let size = postflop(&rules).to_string().len();
         assert!(
             size < 80_000,
@@ -694,7 +738,10 @@ mod tests {
         snapshot["rules"][3]["intent"] = json!({ "notAnAction": 10_000 });
         assert!(rebuild_postflop(&snapshot).is_none());
 
-        assert!(rebuild_postflop(&json!({ "rules": [] })).is_none(), "缺欄位");
+        assert!(
+            rebuild_postflop(&json!({ "rules": [] })).is_none(),
+            "缺欄位"
+        );
     }
 
     #[test]
@@ -711,6 +758,9 @@ mod tests {
         };
 
         let condition = PostflopCondition {
+            relative_position: Some(poker_engine::strategy::postflop::RelativePosition::First),
+            decision_phase: Some(poker_engine::strategy::postflop::DecisionPhase::Checked),
+            continuation: Some(poker_engine::strategy::postflop::Continuation::DoubleBarrel),
             street: Some(Street::Turn),
             situation: Some(PostflopSituation::FacingBet),
             board_surface: Some(BoardSurface::FlushDrawPaired),
@@ -738,8 +788,14 @@ mod tests {
                 name: "每個欄位都填滿的覆寫".to_owned(),
                 condition: condition.clone(),
                 intent: PostflopIntentDistribution::new(vec![
-                    (poker_engine::strategy::postflop::PostflopActionKind::Call, 4_000),
-                    (poker_engine::strategy::postflop::PostflopActionKind::Fold, 6_000),
+                    (
+                        poker_engine::strategy::postflop::PostflopActionKind::Call,
+                        4_000,
+                    ),
+                    (
+                        poker_engine::strategy::postflop::PostflopActionKind::Fold,
+                        6_000,
+                    ),
                 ])
                 .expect("意圖"),
                 source: RuleSource::UserOverride,
@@ -755,7 +811,11 @@ mod tests {
             condition,
             "條件必須逐欄還原，否則重建出來的規則會命中不同的節點"
         );
-        assert_eq!(postflop(&original), postflop(&rebuilt), "再存一次要一模一樣");
+        assert_eq!(
+            postflop(&original),
+            postflop(&rebuilt),
+            "再存一次要一模一樣"
+        );
     }
 
     #[test]
@@ -831,12 +891,11 @@ mod tests {
 
     #[test]
     fn 條件只寫出有指定的欄位() {
-        let rules = crate::postflop::to_rule_set(&crate::postflop::PostflopOverridesView::default())
-            .expect("預設覆寫");
+        let rules =
+            crate::postflop::to_rule_set(&crate::postflop::PostflopOverridesView::default())
+                .expect("預設覆寫");
         let snapshot = postflop(&rules);
-        let condition = snapshot["rules"][0]["condition"]
-            .as_object()
-            .expect("條件");
+        let condition = snapshot["rules"][0]["condition"].as_object().expect("條件");
 
         // 工程通則只指定下注狀態與牌力組，其餘萬用。全部寫出來的話
         // 會多出十幾個 null，體積白白翻倍

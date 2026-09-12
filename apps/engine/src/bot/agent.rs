@@ -130,7 +130,22 @@ pub fn rules_for_bot(rules: &BaselineRules, config: &BotConfig) -> BaselineRules
         call_persistence: myriad("callPersistence"),
         fold_discipline: myriad("foldDiscipline"),
     };
+    apply_open_config(&mut scaled, config);
     scaled
+}
+fn apply_open_config(rules: &mut BaselineRules, config: &BotConfig) {
+    let value = |key: &str| {
+        config
+            .effective(key)
+            .and_then(ParamValue::as_count)
+            .filter(|&v| v > 0)
+    };
+    rules.open_override = value("openSizeCentiBb");
+    for position in crate::position::PositionLabel::ALL {
+        if let Some(size) = value(&format!("openSizeCentiBb:{}", position.as_str())) {
+            rules.open_by_position.insert(position, size);
+        }
+    }
 }
 
 impl BotAgent {
@@ -147,7 +162,14 @@ impl BotAgent {
             .map(|config| rules_for_bot(&rules, config))
             .collect();
         Self {
-            reference: vec![reference; seats.len()],
+            reference: seats
+                .iter()
+                .map(|config| {
+                    let mut r = reference.clone();
+                    apply_open_config(&mut r, config);
+                    r
+                })
+                .collect(),
             rules,
             rankings,
             seats,
@@ -302,7 +324,9 @@ impl BotAgent {
             line: classify_line(node.context.situation(), node.context.line),
             matched: matched.clone(),
             rule_id: rule.map(|rule| rule.id.clone()),
-            intent: rule.map(|rule| rule.intent.weights().to_vec()).unwrap_or_default(),
+            intent: rule
+                .map(|rule| rule.intent.weights().to_vec())
+                .unwrap_or_default(),
             converted: distribution.clone(),
         });
 
@@ -566,7 +590,10 @@ fn preflop_baseline(
     // 退回單挑排序會讓多人底池的範圍看起來正常、實際上系統性錯誤——
     // 那種錯誤不會報錯，只會靜靜地污染統計
     let ranking = rankings.get(&baseline::expected_opponents(&node))?;
-    baseline::distribution_for(&node, view.hand_class(), rules, ranking, view.big_blind).ok()
+    let distribution =
+        baseline::distribution_for(&node, view.hand_class(), rules, ranking, view.big_blind)
+            .ok()?;
+    Some(rescale_preflop_response(view, node.scenario, distribution))
 }
 
 /// 由公開行動歷史識別翻前情境（核心規格 4.1 的 node 要素）。
@@ -730,4 +757,52 @@ pub fn fallback_note() -> (&'static str, &'static str) {
         POSTFLOP_FALLBACK_VERSION,
         "僅在策略產生失敗時使用 check／fold 保底",
     )
+}
+
+/// Strategy sizes are ratios to the facing wager. The chart's nominal open is 2.5 BB.
+fn rescale_preflop_response(
+    view: &DecisionView,
+    scenario: PreflopScenario,
+    distribution: ActionDistribution,
+) -> ActionDistribution {
+    let nominal = match scenario {
+        PreflopScenario::VsOpen { .. } => 250,
+        PreflopScenario::VsOpenRaise { .. } => 750,
+        PreflopScenario::VsThreeBet { .. } | PreflopScenario::VsSqueeze { .. } => 900,
+        PreflopScenario::VsFourBet { .. } => 2200,
+        _ => return distribution,
+    };
+    let Some(actual) = view
+        .history
+        .iter()
+        .rev()
+        .find(|a| a.street == Street::Preflop && a.raised)
+        .map(|a| a.committed_to.units())
+    else {
+        return distribution;
+    };
+    let nominal_units = baseline::centi_bb_to_chips(nominal, view.big_blind)
+        .units()
+        .max(1);
+    ActionDistribution::new(
+        distribution
+            .entries()
+            .iter()
+            .map(|&(action, weight)| {
+                let action = match action {
+                    Action::RaiseTo(n) => Action::RaiseTo(Chips::new(
+                        u64::try_from(
+                            (u128::from(n.units()) * u128::from(actual)
+                                + u128::from(nominal_units / 2))
+                                / u128::from(nominal_units),
+                        )
+                        .unwrap_or(u64::MAX),
+                    )),
+                    other => other,
+                };
+                (action, weight)
+            })
+            .collect(),
+    )
+    .expect("size mapping preserves weights")
 }
