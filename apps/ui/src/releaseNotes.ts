@@ -18,6 +18,39 @@ export interface Release {
 
 export const RELEASES: readonly Release[] = [
   {
+    version: '0.1.7',
+    date: '2026-09-28',
+    sections: [
+      { title: '策略頁統一設定 Hero OPEN', items: [
+        '策略頁新增 Hero OPEN 尺寸，可設定全域與各位置。',
+        '每個位置列出策略原值、Hero 設定值與最終生效值。',
+        '與 Bot 頁 Hero 座位使用同一份設定，兩邊同步。',
+      ] },
+      { title: '面對 3-bet 與面對擠壓', items: [
+        '編輯區標示目前編輯的是面對 3-bet 或面對擠壓（Squeeze），兩者各自設定 4-bet、跟注與棄牌。',
+        '擠壓節點標示預設內容沿用組合表 3B 欄；擠壓的設定不影響 3-bet。',
+      ] },
+      { title: '依對手 OPEN 尺度設定翻前策略', items: [
+        '面對 OPEN 分為標準、中型、大型三個區間，預設為 3 BB 以下、超過 3～6 BB、超過 6 BB。',
+        '區間邊界可在策略頁調整；左欄可切換編輯的區間。',
+        '中型與大型區間未設定的格子沿用標準區間。',
+      ] },
+      { title: '翻後依底池類型設定', items: [
+        '翻後策略新增底池類型條件：單加注池、3-bet 池、4-bet 池。',
+        '新增 SPR 條件：3 以下、超過 3～6、超過 6～12、超過 12。',
+        '可與位置、IP／OOP、牌面、牌力與下注尺度一起設定。',
+      ] },
+      { title: '執行紀錄', items: [
+        'run 快照記錄 Hero 實際遇到的翻前情境、對手 OPEN 尺寸與所屬區間。',
+        '計算頁新增「翻前情境命中」，列出各情境次數與 OPEN 尺寸分布。',
+      ] },
+      { title: '安裝與外觀', items: [
+        '新增 macOS 版（Apple Silicon 與 Intel 通用），提供 dmg 與免安裝 zip。',
+        '更換應用程式圖示。',
+      ] },
+    ],
+  },
+  {
     version: '0.1.6',
     date: '2026-09-12',
     sections: [
