@@ -37,7 +37,7 @@ use crate::strategy::distribution::{ActionDistribution, DistributionError, Myria
 use crate::strategy::hand_class::HandClass;
 use crate::strategy::opening::OpeningWidths;
 use crate::strategy::playability::PlayabilityAdjustments;
-use crate::strategy::preflop::{positions_for, PreflopNode, PreflopScenario};
+use crate::strategy::preflop::{positions_for, OpenTierBounds, PreflopNode, PreflopScenario};
 use crate::strategy::ranking::EquityRanking;
 use crate::strategy::vs_open::VsOpenWidths;
 
@@ -125,6 +125,9 @@ pub struct BaselineRules {
     pub open_size_centi_bb: u32,
     pub open_override: Option<u32>,
     pub open_by_position: std::collections::BTreeMap<PositionLabel, u32>,
+    /// 面對開牌時 open 尺度的區間邊界。只決定覆寫落在哪個區間，
+    /// 不改變預設內容（見 [`OpenTierBounds`]）
+    pub open_tier_bounds: OpenTierBounds,
     pub three_bet_size_centi_bb: u32,
     pub four_bet_size_centi_bb: u32,
 }
@@ -273,6 +276,7 @@ impl BaselineRules {
             open_size_centi_bb: 250,
             open_override: None,
             open_by_position: std::collections::BTreeMap::new(),
+            open_tier_bounds: OpenTierBounds::DEFAULT,
             three_bet_size_centi_bb: 900,
             four_bet_size_centi_bb: 2_200,
         }
@@ -460,7 +464,7 @@ fn distribution_for_inner(
     let interpolated = match node.scenario {
         PreflopScenario::Unopened => i64::from(rules.opening.get(node.seated, node.hero)),
         // 面對開牌的寬度取決於「開牌者是誰」，端點內插表達不了這件事
-        PreflopScenario::VsOpen { opener } => {
+        PreflopScenario::VsOpen { opener, .. } => {
             i64::from(rules.vs_open_width.get(node.seated, node.hero, opener))
         }
         _ => match node.hero {
@@ -504,7 +508,8 @@ fn distribution_for_inner(
 
     // 逐格覆寫在此套用：位置必須在 aggressive_action 決定之後，
     // 覆寫才能沿用該節點正確的主動動作（短碼是 AllIn，其餘是 RaiseTo）
-    if let Some(cell) = rules.overrides.get(node, class) {
+    // 中型／大型 open 區間沒有自己的覆寫時繼承標準區間（見 `CellOverrides::resolve`）
+    if let Some((cell, _)) = rules.overrides.resolve(node, class) {
         let mut entries = Vec::with_capacity(3);
         if cell.aggressive() > 0 {
             entries.push((aggressive_action, cell.aggressive()));
@@ -702,9 +707,7 @@ mod tests {
         let mut checked = 0;
         for scenario in [
             PreflopScenario::Unopened,
-            PreflopScenario::VsOpen {
-                opener: PositionLabel::Utg,
-            },
+            PreflopScenario::vs_open(PositionLabel::Utg),
             PreflopScenario::VsThreeBet {
                 by: PositionLabel::Btn,
             },
@@ -920,9 +923,7 @@ mod tests {
 
         for scenario in [
             PreflopScenario::Unopened,
-            PreflopScenario::VsOpen {
-                opener: PositionLabel::Utg,
-            },
+            PreflopScenario::vs_open(PositionLabel::Utg),
             PreflopScenario::VsFourBet {
                 by: PositionLabel::Utg,
             },

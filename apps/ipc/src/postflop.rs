@@ -165,6 +165,10 @@ pub struct PostflopNodesView {
     /// 依街別過濾：河牌只有五組
     pub hand_strengths: Vec<PostflopOptionView>,
     pub facing_sizes: Vec<PostflopOptionView>,
+    /// 翻前底池類型：單加注池／3-bet 池／4-bet 池。scope 的第五段
+    pub pot_types: Vec<PostflopOptionView>,
+    /// SPR 區間。scope 的第六段
+    pub spr_bands: Vec<PostflopOptionView>,
     pub coverage: PostflopStaticCoverageView,
     /// 未簽核提示
     pub consultant_approved: bool,
@@ -176,7 +180,8 @@ pub struct PostflopNodesView {
 #[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
 #[serde(rename_all = "camelCase")]
 pub struct PostflopRuleQuery {
-    /// hero position / relative position / decision phase / continuation; * = unrestricted.
+    /// 翻前位置／翻後相對位置／本街行動／持續下注歷史／底池類型／SPR，
+    /// 以 `/` 連接；`*` 為不限。後兩段可省略（0.1.6 的四段格式）。
     #[serde(default)]
     pub scope: String,
     pub street: String,
@@ -358,6 +363,22 @@ pub fn postflop_nodes(street: &str, overrides: &PostflopOverridesView) -> Postfl
                 description: connectivity.description().to_owned(),
             })
             .collect(),
+        pot_types: poker_engine::strategy::postflop::PotType::ALL
+            .into_iter()
+            .map(|pot| PostflopOptionView {
+                key: pot.key().to_owned(),
+                label: pot_type_label(pot).to_owned(),
+                description: pot_type_description(pot).to_owned(),
+            })
+            .collect(),
+        spr_bands: SPR_BANDS
+            .iter()
+            .map(|band| PostflopOptionView {
+                key: band.0.to_owned(),
+                label: band.1.to_owned(),
+                description: "翻後當下有效籌碼 ÷ 底池".to_owned(),
+            })
+            .collect(),
         hand_strengths: HandStrength::for_street(street_value)
             .iter()
             .map(|strength| PostflopOptionView {
@@ -397,6 +418,8 @@ pub fn postflop_rule(
                         || c.relative_position == scoped.relative_position)
                     && (c.decision_phase.is_none() || c.decision_phase == scoped.decision_phase)
                     && (c.continuation.is_none() || c.continuation == scoped.continuation)
+                    && (c.pot_type.is_none() || c.pot_type == scoped.pot_type)
+                    && (c.spr_centi.is_none() || c.spr_centi == scoped.spr_centi)
             })
             .cloned()
             .collect(),
@@ -806,6 +829,8 @@ fn static_coverage(rules: &RuleSet) -> PostflopStaticCoverageView {
                     && c.relative_position.is_none()
                     && c.decision_phase.is_none()
                     && c.continuation.is_none()
+                    && c.pot_type.is_none()
+                    && c.spr_centi.is_none()
             })
             .cloned()
             .collect(),
@@ -1136,6 +1161,24 @@ pub(crate) fn parse_hand_strength(key: &str) -> Option<HandStrength> {
         .find(|strength| strength.key() == key)
 }
 
+const fn pot_type_label(pot: poker_engine::strategy::postflop::PotType) -> &'static str {
+    use poker_engine::strategy::postflop::PotType;
+    match pot {
+        PotType::SingleRaised => "單加注池 SRP",
+        PotType::ThreeBet => "3-bet 池",
+        PotType::FourBet => "4-bet 池",
+    }
+}
+
+const fn pot_type_description(pot: poker_engine::strategy::postflop::PotType) -> &'static str {
+    use poker_engine::strategy::postflop::PotType;
+    match pot {
+        PotType::SingleRaised => "翻前最多一次加注（含跛入池）",
+        PotType::ThreeBet => "翻前有兩次加注",
+        PotType::FourBet => "翻前有三次以上加注",
+    }
+}
+
 /// 底池類型。快照存的是 [`PotType::key`]，不是 `Debug` 名稱。
 pub(crate) fn parse_pot_type(key: &str) -> Option<poker_engine::strategy::postflop::PotType> {
     poker_engine::strategy::postflop::PotType::ALL
@@ -1181,13 +1224,51 @@ fn source_label(source: &str) -> &'static str {
     }
 }
 
+/// scope 的段數：翻前位置／翻後相對位置／本街行動／持續下注歷史／
+/// 底池類型／SPR。
+const SCOPE_PARTS: usize = 6;
+/// 0.1.6 的 scope 只有前四段。後兩段皆為不限時仍寫成四段，舊覆寫鍵與
+/// 新介面產生的鍵因此是同一個字串，不會同一個切片存成兩筆。
+const LEGACY_SCOPE_PARTS: usize = 4;
+
+/// 節點鍵加上 scope 的 canonical 形式。
+///
+/// 全部不限時就是通用節點鍵；後兩段不限時用四段舊格式；其餘寫滿六段。
 fn scoped_key(node: &PostflopNode, scope: &str) -> String {
-    if scope.is_empty() || scope == "*/*/*/*" {
-        node.key()
+    let mut parts: Vec<&str> = if scope.is_empty() {
+        Vec::new()
     } else {
-        format!("{}|{scope}", node.key())
+        scope.split('/').collect()
+    };
+    parts.resize(SCOPE_PARTS.max(parts.len()), "*");
+    if parts.iter().all(|part| *part == "*") {
+        return node.key();
     }
+    let keep = if parts[LEGACY_SCOPE_PARTS..].iter().all(|part| *part == "*") {
+        LEGACY_SCOPE_PARTS
+    } else {
+        parts.len()
+    };
+    format!("{}|{}", node.key(), parts[..keep].join("/"))
 }
+
+/// SPR 條件的四個區間。鍵 → （標籤, SPR×100 的範圍, 代表值）。
+///
+/// 這是**條件的切法**，不是打法建議：區間只決定覆寫落在哪一格。
+pub const SPR_BANDS: [(&str, &str, u32, u32, u32); 4] = [
+    ("spr-lt3", "SPR 3 以下", 0, 300, 200),
+    ("spr-3-6", "SPR 超過 3～6", 301, 600, 450),
+    ("spr-6-12", "SPR 超過 6～12", 601, 1_200, 900),
+    ("spr-gt12", "SPR 超過 12", 1_201, u32::MAX, 2_000),
+];
+
+fn parse_spr_band(key: &str) -> Option<std::ops::RangeInclusive<u32>> {
+    SPR_BANDS
+        .iter()
+        .find(|band| band.0 == key)
+        .map(|band| band.2..=band.3)
+}
+
 fn scoped_condition(node: &PostflopNode, scope: &str) -> Result<PostflopCondition, String> {
     use poker_engine::strategy::postflop::{Continuation, DecisionPhase, RelativePosition};
     let mut c = node.condition();
@@ -1195,7 +1276,7 @@ fn scoped_condition(node: &PostflopNode, scope: &str) -> Result<PostflopConditio
         return Ok(c);
     }
     let parts: Vec<_> = scope.split('/').collect();
-    if parts.len() != 4 {
+    if parts.len() != LEGACY_SCOPE_PARTS && parts.len() != SCOPE_PARTS {
         return Err("位置／歷史條件格式錯誤".into());
     }
     let optional = |s: &str| if s == "*" { None } else { Some(s.to_owned()) };
@@ -1215,6 +1296,14 @@ fn scoped_condition(node: &PostflopNode, scope: &str) -> Result<PostflopConditio
         optional(parts[3]).as_deref(),
         Continuation::parse,
     )?;
+    if parts.len() == SCOPE_PARTS {
+        c.pot_type = optional_field(
+            "底池類型",
+            optional(parts[4]).as_deref(),
+            parse_pot_type,
+        )?;
+        c.spr_centi = optional_field("SPR", optional(parts[5]).as_deref(), parse_spr_band)?;
+    }
     if let Some(phase) = c.decision_phase {
         if node.situation == PostflopSituation::NoBet && phase != DecisionPhase::Unacted {
             return Err("已過牌／下注後的回應只能在面對下注時編輯".into());
@@ -1276,5 +1365,17 @@ fn apply_scope_context(
     }
     if let Some(v) = c.continuation {
         context.continuation = v;
+    }
+    if let Some(v) = c.pot_type {
+        context.pot_type = v;
+    }
+    if let Some(range) = c.spr_centi.as_ref() {
+        // 代表值取區間內的固定點，查詢才落得進這個 SPR 切片
+        if let Some(band) = SPR_BANDS
+            .iter()
+            .find(|band| band.2 == *range.start() && band.3 == *range.end())
+        {
+            context.spr_centi = band.4;
+        }
     }
 }

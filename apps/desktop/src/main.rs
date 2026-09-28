@@ -74,6 +74,9 @@ fn start_run(
     poker_ipc::strategy::to_cell_overrides(&hero_overrides)?;
     // 翻後覆寫同樣先驗證再送進背景執行緒
     let hero_postflop_overrides = request.hero_postflop_overrides.clone();
+    // open 尺度區間邊界同樣先驗證
+    let hero_open_tiers = request.hero_open_tiers;
+    hero_open_tiers.to_bounds()?;
 
     // 已有 run 在跑時拒絕啟動，避免兩個 run 同時寫入。
     //
@@ -105,6 +108,7 @@ fn start_run(
             run::HeroStrategy {
                 preflop_overrides: &hero_overrides,
                 postflop_overrides: &hero_postflop_overrides,
+                open_tiers: hero_open_tiers,
             },
             &store,
             &control,

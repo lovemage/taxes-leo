@@ -29,7 +29,7 @@ use crate::strategy::postflop::{
 };
 use crate::strategy::postflop_baseline::engineering_rules;
 use crate::strategy::postflop_view::postflop_node;
-use crate::strategy::preflop::{PreflopNode, PreflopScenario};
+use crate::strategy::preflop::{OpenSizeTier, OpenTierBounds, PreflopNode, PreflopScenario};
 use crate::strategy::ranking::EquityRanking;
 use crate::strategy::DecisionView;
 
@@ -97,6 +97,8 @@ pub struct BotAgent {
     /// 命中也算進去，完整度就變成「這個規則集涵蓋多少決策」，而使用者
     /// 想知道的是「我自己的策略寫了多少」
     postflop_coverage: CoverageStats,
+    /// 英雄座位的翻前情境命中統計。與翻後覆蓋同理只記英雄
+    preflop_hits: PreflopHits,
     /// 英雄座位。逐座設定裡沒有這個資訊，因此由呼叫端指定
     hero_seat: Option<usize>,
     /// 是否保留最後一次決策的完整 trace。
@@ -105,6 +107,46 @@ pub struct BotAgent {
     /// 的代價不該由批次執行付；需要逐手重播或除錯時才打開
     trace_enabled: bool,
     last_trace: Option<pipeline::DecisionTrace>,
+}
+
+/// 英雄座位在一次 run 裡實際命中的翻前情境。
+///
+/// 執行快照要能說出「這次面對擠壓幾次、面對 3-bet 幾次」「對手開了哪些
+/// 尺寸、各落在哪個區間」——策略頁的節點是可能發生的情境，這裡是實際
+/// 發生的情境，兩者不能互相取代。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PreflopHits {
+    /// 完整情境鍵（含位置與 open 區間，如 `vs-open-UTG@open-large`）→ 決策次數
+    pub scenarios: BTreeMap<String, u64>,
+    /// 面對開牌時（區間, 實際 open 尺寸 centi-BB）→ 決策次數
+    pub open_sizes: BTreeMap<(OpenSizeTier, u32), u64>,
+}
+
+impl PreflopHits {
+    fn record(&mut self, view: &DecisionView, scenario: PreflopScenario) {
+        *self.scenarios.entry(scenario.key()).or_insert(0) += 1;
+        let Some(tier) = scenario.open_tier() else {
+            return;
+        };
+        let open_to = view
+            .history
+            .iter()
+            .find(|a| a.street == Street::Preflop && a.raised)
+            .map(|a| a.committed_to);
+        if let Some(open_to) = open_to {
+            let bb = u128::from(view.big_blind.units().max(1));
+            // 顯示用的 centi-BB 四捨五入；區間判定本身不經過這個取整
+            let centi = (u128::from(open_to.units()) * 100 + bb / 2) / bb;
+            let centi = u32::try_from(centi).unwrap_or(u32::MAX);
+            *self.open_sizes.entry((tier, centi)).or_insert(0) += 1;
+        }
+    }
+
+    /// 英雄的翻前決策總次數。
+    #[must_use]
+    pub fn total(&self) -> u64 {
+        self.scenarios.values().sum()
+    }
 }
 
 /// 由 Bot 設定推導出該座位實際生效的基準規則。
@@ -179,6 +221,7 @@ impl BotAgent {
             opponent_postflop_rules: engineering_rules(),
             hand_strength: HandStrengthConfig::ENGINEERING,
             postflop_coverage: CoverageStats::default(),
+            preflop_hits: PreflopHits::default(),
             hero_seat: None,
             trace_enabled: false,
             last_trace: None,
@@ -208,6 +251,25 @@ impl BotAgent {
     #[must_use]
     pub const fn postflop_coverage(&self) -> &CoverageStats {
         &self.postflop_coverage
+    }
+
+    /// 英雄座位到目前為止的翻前情境命中統計。
+    #[must_use]
+    pub const fn preflop_hits(&self) -> &PreflopHits {
+        &self.preflop_hits
+    }
+
+    /// 為單一座位設定 open 尺度區間的邊界。
+    ///
+    /// 邊界只決定面對開牌時落在哪個區間、因而讀哪一組覆寫；沒有覆寫的
+    /// 座位不論邊界設多少都打同一份預設內容。
+    pub fn set_seat_open_tier_bounds(&mut self, seat: usize, bounds: OpenTierBounds) {
+        if let Some(rules) = self.rules.get_mut(seat) {
+            rules.open_tier_bounds = bounds;
+        }
+        if let Some(rules) = self.reference.get_mut(seat) {
+            rules.open_tier_bounds = bounds;
+        }
     }
 
     /// 換上翻後規則集，並指明它屬於哪一座。
@@ -358,6 +420,16 @@ impl ActionProvider for BotAgent {
             self.resolve_postflop(view)
         };
 
+        // 翻前情境在這裡識別一次，命中統計與基準分佈用的是同一個結果。
+        // 各算一次的話，快照記下的情境可能不是實際查表的那一個
+        let preflop_scenario = matches!(view.street, Street::Preflop)
+            .then(|| scenario_with_bounds(view, self.rules_for(view.seat).open_tier_bounds));
+        if let Some(scenario) = preflop_scenario {
+            if self.hero_seat == Some(view.seat) {
+                self.preflop_hits.record(view, scenario);
+            }
+        }
+
         let config = self.config_for(view.seat);
         let fit =
             |d: ActionDistribution| drop_free_fold(&fit_raise_sizes(&d, &view.legal), &view.legal);
@@ -369,8 +441,21 @@ impl ActionProvider for BotAgent {
         let mut neutralised_override = false;
         let (baseline, reference, aggression_key, config) = match view.street {
             Street::Preflop => (
-                preflop_baseline(view, self.rules_for(view.seat), &self.rankings).map(fit),
-                preflop_baseline(view, self.reference_for(view.seat), &self.rankings).map(fit),
+                preflop_scenario
+                    .and_then(|scenario| {
+                        preflop_baseline(view, scenario, self.rules_for(view.seat), &self.rankings)
+                    })
+                    .map(fit),
+                preflop_scenario
+                    .and_then(|scenario| {
+                        preflop_baseline(
+                            view,
+                            scenario,
+                            self.reference_for(view.seat),
+                            &self.rankings,
+                        )
+                    })
+                    .map(fit),
                 "preflopAggression",
                 config,
             ),
@@ -577,6 +662,7 @@ fn postflop_pot_odds(view: &DecisionView) -> Myriad {
 /// 翻前基準分佈。
 fn preflop_baseline(
     view: &DecisionView,
+    scenario: PreflopScenario,
     rules: &BaselineRules,
     rankings: &BTreeMap<usize, EquityRanking>,
 ) -> Option<ActionDistribution> {
@@ -584,7 +670,7 @@ fn preflop_baseline(
         seated: u8::try_from(view.seated).ok()?,
         hero: view.position,
         bucket: view.effective_stack_bucket,
-        scenario: scenario_of(view),
+        scenario,
     };
     // 取不到對應的排序寧可放棄這個節點走 fallback，也不退回別的人數。
     // 退回單挑排序會讓多人底池的範圍看起來正常、實際上系統性錯誤——
@@ -599,10 +685,22 @@ fn preflop_baseline(
 /// 由公開行動歷史識別翻前情境（核心規格 4.1 的 node 要素）。
 ///
 /// 只看**本手翻前**的公開行動；底牌與牌堆順序不參與，因此這個函式
-/// 拿不到也用不到隱藏資訊。
+/// 拿不到也用不到隱藏資訊。open 尺度區間使用預設邊界，逐座邊界見
+/// [`scenario_with_bounds`]。
 #[must_use]
 pub fn scenario_of(view: &DecisionView) -> PreflopScenario {
+    scenario_with_bounds(view, OpenTierBounds::DEFAULT)
+}
+
+/// 同 [`scenario_of`]，但以指定的邊界判定面對開牌的 open 尺度區間。
+///
+/// 區間依開牌者的**實際 raise-to 總額**判定，不依任何名目尺寸：對手
+/// 開 10BB 就是 10BB，不會被當成預設的 2.5BB。
+#[must_use]
+pub fn scenario_with_bounds(view: &DecisionView, bounds: OpenTierBounds) -> PreflopScenario {
     let mut raisers: Vec<PositionLabel> = Vec::new();
+    // 第一個加注者的 raise-to 總額，即 open 尺度
+    let mut open_to: Option<Chips> = None;
     let mut limpers = 0u8;
     let mut hero_raise_index: Option<usize> = None;
     // 英雄加注之後、下一個加注之前，有沒有人跟注——squeeze 與 3-bet 的差別
@@ -617,6 +715,9 @@ pub fn scenario_of(view: &DecisionView) -> PreflopScenario {
                 if action.seat == view.seat {
                     hero_raise_index = Some(raisers.len());
                     callers_since_hero_raise = 0;
+                }
+                if raisers.is_empty() {
+                    open_to = Some(action.committed_to);
                 }
                 raisers.push(action.position);
             }
@@ -640,7 +741,12 @@ pub fn scenario_of(view: &DecisionView) -> PreflopScenario {
                 PreflopScenario::VsLimp { limpers }
             }
         }
-        1 => PreflopScenario::VsOpen { opener: raisers[0] },
+        1 => PreflopScenario::VsOpen {
+            opener: raisers[0],
+            size: open_to.map_or(OpenSizeTier::Standard, |to| {
+                bounds.classify(to, view.big_blind)
+            }),
+        },
         2 => {
             let by = raisers[1];
             // 英雄自己沒下過注 → 前方是「開牌＋再加注」，這是冷 4-bet 的

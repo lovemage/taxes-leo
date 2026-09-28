@@ -55,6 +55,8 @@ fn seed_run(rankings: &poker_ipc::rankings::Rankings) -> (IpcHandler, i64) {
         vec![BotConfig::defaults("示範"); config.players],
         config.master_seed,
     );
+    // 只記錄英雄的翻前命中，不改變任何決策
+    agent.set_hero_seat(HERO_SEAT);
 
     let summary = run_session(&config, &mut agent, |played| {
         let record = HandRecord::from_played(played);
@@ -80,6 +82,10 @@ fn seed_run(rankings: &poker_ipc::rankings::Rankings) -> (IpcHandler, i64) {
         })
         .collect();
     final_manifest.completed = true;
+    final_manifest.preflop_hits = Some(poker_ipc::run::preflop_hits_record(
+        agent.preflop_hits(),
+        poker_engine::strategy::preflop::OpenTierBounds::DEFAULT,
+    ));
     store
         .finish_run(run_id, &final_manifest, summary.hands_played)
         .expect("結束 run");
@@ -128,6 +134,7 @@ fn build_manifest(config: &SessionConfig) -> RunManifest {
         completed: false,
         checkpoint_version: 1,
         postflop_coverage: None,
+        preflop_hits: None,
     }
 }
 
@@ -271,13 +278,23 @@ fn serve(mut stream: TcpStream, handler: &IpcHandler, run_id: i64) -> std::io::R
             let hero = text_param(query, "hero").unwrap_or_else(|| "BTN".to_owned());
             let bucket = text_param(query, "bucket").unwrap_or_else(|| "160-240".to_owned());
             let scenario = text_param(query, "scenario").unwrap_or_else(|| "unopened".to_owned());
-            let overrides = parse_overrides(
+            let mut overrides = parse_overrides(
                 seated,
                 &hero,
                 &bucket,
                 &scenario,
                 &text_param(query, "ov").unwrap_or_default(),
             );
+            // 中型／大型 open 區間繼承標準區間的覆寫（`bov`）
+            if let Some((base, _)) = scenario.split_once('@') {
+                overrides.extend(parse_overrides(
+                    seated,
+                    &hero,
+                    &bucket,
+                    base,
+                    &text_param(query, "bov").unwrap_or_default(),
+                ));
+            }
             poker_ipc::strategy::matrix(seated, &hero, &bucket, &scenario, &overrides)
                 .ok()
                 .and_then(|view| serde_json::to_string(&view).ok())

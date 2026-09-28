@@ -121,9 +121,7 @@ fn 單一加注為_vs_open_且記得開牌者() {
     ];
     assert_eq!(
         scenario_of(&view_with(history, 8)),
-        PreflopScenario::VsOpen {
-            opener: PositionLabel::Utg1
-        }
+        PreflopScenario::vs_open(PositionLabel::Utg1)
     );
 }
 
@@ -602,9 +600,7 @@ fn 排序涵蓋全部可能的預期對手數() {
         PreflopScenario::VsLimp { limpers: 2 },
         PreflopScenario::VsLimp { limpers: 3 },
         PreflopScenario::VsLimp { limpers: 7 },
-        PreflopScenario::VsOpen {
-            opener: PositionLabel::Utg,
-        },
+        PreflopScenario::vs_open(PositionLabel::Utg),
         PreflopScenario::VsThreeBet {
             by: PositionLabel::Bb,
         },
@@ -652,9 +648,7 @@ fn 短碼全下跟注不算加注() {
 
     assert_eq!(
         scenario_of(&view_with(history, hero)),
-        PreflopScenario::VsOpen {
-            opener: PositionLabel::Utg1
-        },
+        PreflopScenario::vs_open(PositionLabel::Utg1),
         "只有一次真正的加注，後手面對的仍是開牌而不是 3-bet"
     );
 }

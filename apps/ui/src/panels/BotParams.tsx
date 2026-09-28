@@ -137,6 +137,12 @@ export function BotParams({
       <section style={{ ...cardStyle, marginBottom: 16 }}>
         <SectionTitle>Open 尺寸 · {isHero ? 'Hero' : current.name}</SectionTitle>
         <p className="dim">只套用前方未有人進池的首次加注（raise-to BB）。0 表示繼承；不改變全下頻率。隔離跛入與再加注沿用原策略。</p>
+        {isHero && (
+          <p style={{ fontSize: 11, color: 'var(--accent)' }}>
+            這是 Hero 座位。Hero 的 OPEN 尺寸也可在「策略」頁設定，兩邊是同一份資料、會同步；
+            Bot 頁建議用來調整其他對手座位。
+          </p>
+        )}
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(155px,1fr))',gap:12}}>
           {sizing.map(spec => {
             const value = current.params[spec.key] ?? spec.default;

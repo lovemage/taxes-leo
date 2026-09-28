@@ -5,6 +5,7 @@
  */
 export type PostflopRuleQuery = { 
 /**
- * hero position / relative position / decision phase / continuation; * = unrestricted.
+ * 翻前位置／翻後相對位置／本街行動／持續下注歷史／底池類型／SPR，
+ * 以 `/` 連接；`*` 為不限。後兩段可省略（0.1.6 的四段格式）。
  */
 scope: string, street: string, situation: string, line: string, surface: string, connectivity: string, handStrength: string, facingSize: string, };

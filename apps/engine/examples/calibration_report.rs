@@ -51,9 +51,7 @@ fn report_nodes() -> Vec<(String, PreflopNode)> {
             seated: 9,
             hero: PositionLabel::Btn,
             bucket: deep,
-            scenario: PreflopScenario::VsOpen {
-                opener: PositionLabel::Co,
-            },
+            scenario: PreflopScenario::vs_open(PositionLabel::Co),
         },
     ));
     out.push((
@@ -62,9 +60,7 @@ fn report_nodes() -> Vec<(String, PreflopNode)> {
             seated: 9,
             hero: PositionLabel::Bb,
             bucket: deep,
-            scenario: PreflopScenario::VsOpen {
-                opener: PositionLabel::Btn,
-            },
+            scenario: PreflopScenario::vs_open(PositionLabel::Btn),
         },
     ));
     out.push((

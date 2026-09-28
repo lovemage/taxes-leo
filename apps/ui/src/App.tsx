@@ -40,6 +40,7 @@ import {
   type StrategySelection,
 } from './panels/StrategyNav';
 import { DEFAULT_REQUEST, TableSetup, validateRequest } from './panels/TableSetup';
+import { PreflopHitsCard } from './components/PreflopHitsCard';
 
 const RAIL: readonly RailItem[] = [
   { key: 'run', glyph: '▶', label: '計算', enabled: true },
@@ -211,6 +212,7 @@ export function App() {
                 failure={failure}
                 onViewReplay={() => setPanel('replay')}
               />
+              <PreflopHitsCard reloadToken={reloadToken} />
             </section>
 
             <section className="run-workspace__setup" aria-labelledby="table-setup-title">
@@ -256,6 +258,7 @@ export function App() {
                   selection={node}
                   onChange={setNode}
                   overrideCount={request.heroOverrides.length}
+                  openTiers={request.heroOpenTiers}
                 />
               )}
               {panel !== 'bots' && panel !== 'strategy' && (
@@ -274,6 +277,8 @@ export function App() {
               )}
               {panel === 'strategy' && (
                 <Strategy
+                  request={request}
+                  onRequestChange={setRequest}
                   selection={node}
                   overrides={request.heroOverrides}
                   onOverridesChange={setOverrides}

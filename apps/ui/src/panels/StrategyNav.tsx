@@ -9,6 +9,7 @@
 
 import { useEffect, useState } from 'react';
 import type {
+  OpenTierBoundsView,
   PostflopStrategyView,
   StrategyNodesView,
 } from '../../../../packages/poker-types/src/index';
@@ -36,15 +37,49 @@ export const DEFAULT_SELECTION: StrategySelection = {
   scenario: 'unopened',
 };
 
+/**
+ * 情境鍵拆成基礎情境與 open 尺度區間後綴。
+ *
+ * 面對開牌的中型／大型區間是標準節點的切片，鍵為 `vs-open-UTG@open-large`。
+ * 導航清單只列基礎情境，區間另外選。
+ */
+export function splitScenario(scenario: string): { base: string; suffix: string } {
+  const at = scenario.indexOf('@');
+  return at < 0
+    ? { base: scenario, suffix: '' }
+    : { base: scenario.slice(0, at), suffix: scenario.slice(at) };
+}
+
+/** 面對單一開牌（不含開牌＋再加注）才有 open 尺度區間 */
+export function isVsOpen(scenario: string): boolean {
+  return scenario.startsWith('vs-open-') && !scenario.startsWith('vs-open-raise-');
+}
+
+/** 區間的 BB 範圍說明，邊界由使用者設定 */
+export function openTierRange(key: string, bounds: OpenTierBoundsView): string {
+  const bb = (centi: number) => `${Number((centi / 100).toFixed(2))} BB`;
+  switch (key) {
+    case 'standard':
+      return `≤ ${bb(bounds.mediumAboveCentiBb)}`;
+    case 'medium':
+      return `> ${bb(bounds.mediumAboveCentiBb)}～${bb(bounds.largeAboveCentiBb)}`;
+    default:
+      return `> ${bb(bounds.largeAboveCentiBb)}`;
+  }
+}
+
 export function StrategyNav({
   selection,
   onChange,
   overrideCount,
+  openTiers,
 }: {
   selection: StrategySelection;
   onChange: (selection: StrategySelection) => void;
   /** 全部節點的覆寫筆數，供左欄一眼看出自己改了多少 */
   overrideCount: number;
+  /** open 尺度區間邊界，只用來顯示各區間的 BB 範圍 */
+  openTiers: OpenTierBoundsView;
 }) {
   const [nodes, setNodes] = useState<StrategyNodesView | null>(null);
   const [postflop, setPostflop] = useState<PostflopStrategyView | null>(null);
@@ -75,7 +110,8 @@ export function StrategyNav({
         // 桌型換小之後，原本的位置或情境可能不存在（9 人桌的 UTG+2 在
         // 6 人桌沒有）。引擎回的是修正後的結果，這裡同步回選取狀態，
         // 否則左欄顯示的節點與右側矩陣畫的會是兩件事
-        const scenarioOk = view.scenarios.some((item) => item.key === selection.scenario);
+        const { base } = splitScenario(selection.scenario);
+        const scenarioOk = view.scenarios.some((item) => item.key === base);
         const nextScenario = scenarioOk ? selection.scenario : 'unopened';
         if (view.hero !== selection.hero || nextScenario !== selection.scenario) {
           onChange({ ...selection, hero: view.hero, scenario: nextScenario });
@@ -90,6 +126,7 @@ export function StrategyNav({
   }, [selection, onChange]);
 
   const groups = groupScenarios(nodes);
+  const { base: baseScenario, suffix: tierSuffix } = splitScenario(selection.scenario);
   const stages: Array<{ key: StrategyStage; label: string }> = [
     { key: 'preflop', label: '翻前' },
     ...((postflop?.streets ?? [
@@ -175,8 +212,14 @@ export function StrategyNav({
               {items.map((item) => (
                 <Choice
                   key={item.key}
-                  active={item.key === selection.scenario}
-                  onClick={() => onChange({ ...selection, scenario: item.key })}
+                  active={item.key === baseScenario}
+                  // 換開牌者時保留目前的 open 區間；換到其他情境則沒有區間
+                  onClick={() =>
+                    onChange({
+                      ...selection,
+                      scenario: isVsOpen(item.key) ? item.key + tierSuffix : item.key,
+                    })
+                  }
                 >
                   {item.label}
                 </Choice>
@@ -185,6 +228,30 @@ export function StrategyNav({
           </div>
         ))}
       </section>
+
+      {isVsOpen(baseScenario) && (
+        <section style={{ marginBottom: 18 }}>
+          <SectionTitle>對手 OPEN 尺度</SectionTitle>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {(nodes?.openTiers ?? []).map((tier) => (
+              <Choice
+                key={tier.key}
+                active={tier.suffix === tierSuffix}
+                onClick={() => onChange({ ...selection, scenario: baseScenario + tier.suffix })}
+              >
+                {tier.label}
+                <span className="dim" style={{ fontSize: 10, marginLeft: 'auto', fontFamily: 'var(--font-mono)' }}>
+                  {openTierRange(tier.key, openTiers)}
+                </span>
+              </Choice>
+            ))}
+          </div>
+          <div className="dim" style={{ fontSize: 10, marginTop: 6, lineHeight: 1.5 }}>
+            依對手實際 open 的 raise-to 總額分區間。中型／大型未設定的格子沿用標準區間；
+            區間邊界在右側「OPEN 尺度區間」調整。
+          </div>
+        </section>
+      )}
 
       <section style={{ marginBottom: 18 }}>
         <SectionTitle>有效籌碼</SectionTitle>
@@ -277,13 +344,16 @@ export function StrategyNav({
 function groupScenarios(
   nodes: StrategyNodesView | null,
 ): Array<[string, StrategyNodesView['scenarios']]> {
-  const out: Array<[string, StrategyNodesView['scenarios']]> = [];
+  // 依分組合併，保留各組第一次出現的順序。引擎的情境清單是依開牌者交錯
+  // 排列（面對 UTG 開牌、面對 UTG 開牌＋再加注、面對 UTG+1 開牌…），只合併
+  // 相鄰項目會產生同名分組，React key 重複後切換位置時會殘留舊項目
+  const out = new Map<string, StrategyNodesView['scenarios']>();
   for (const item of nodes?.scenarios ?? []) {
-    const last = out[out.length - 1];
-    if (last && last[0] === item.group) last[1].push(item);
-    else out.push([item.group, [item]]);
+    const group = out.get(item.group);
+    if (group) group.push(item);
+    else out.set(item.group, [item]);
   }
-  return out;
+  return [...out.entries()];
 }
 
 /**

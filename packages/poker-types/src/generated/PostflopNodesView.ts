@@ -10,7 +10,15 @@ export type PostflopNodesView = { nodeSetVersion: string, streets: Array<Postflo
 /**
  * 依街別過濾：河牌只有五組
  */
-handStrengths: Array<PostflopOptionView>, facingSizes: Array<PostflopOptionView>, coverage: PostflopStaticCoverageView, 
+handStrengths: Array<PostflopOptionView>, facingSizes: Array<PostflopOptionView>, 
+/**
+ * 翻前底池類型：單加注池／3-bet 池／4-bet 池。scope 的第五段
+ */
+potTypes: Array<PostflopOptionView>, 
+/**
+ * SPR 區間。scope 的第六段
+ */
+sprBands: Array<PostflopOptionView>, coverage: PostflopStaticCoverageView, 
 /**
  * 未簽核提示
  */

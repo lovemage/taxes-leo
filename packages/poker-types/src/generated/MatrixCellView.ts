@@ -26,9 +26,13 @@ check: number, fold: number,
  */
 percentile: number, 
 /**
- * 這一格是使用者覆寫的結果，不是參數產生的
+ * 這一格是使用者在**本節點**設的覆寫，不是參數產生的
  */
 overridden: boolean, 
+/**
+ * 這一格沿用標準 open 區間的覆寫（中型／大型區間未另設時）
+ */
+inheritedOverride: boolean, 
 /**
  * 這一格在預設組合表上的動作鍵（`fold`／`call`／`raise-2.5x`／
  * `raise-8x`／`allin`）。`null` 代表這個節點不在表上，走參數產生器

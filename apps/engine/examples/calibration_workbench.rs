@@ -73,9 +73,7 @@ fn default_nodes() -> Vec<(String, PreflopNode)> {
             seated: 9,
             hero: PositionLabel::Btn,
             bucket: deep,
-            scenario: PreflopScenario::VsOpen {
-                opener: PositionLabel::Co,
-            },
+            scenario: PreflopScenario::vs_open(PositionLabel::Co),
         },
     ));
     out.push((
@@ -84,9 +82,7 @@ fn default_nodes() -> Vec<(String, PreflopNode)> {
             seated: 9,
             hero: PositionLabel::Bb,
             bucket: deep,
-            scenario: PreflopScenario::VsOpen {
-                opener: PositionLabel::Btn,
-            },
+            scenario: PreflopScenario::vs_open(PositionLabel::Btn),
         },
     ));
     out.push((
@@ -254,9 +250,7 @@ fn main() {
         ("vsLimp", PreflopScenario::VsLimp { limpers: 1 }),
         (
             "vsOpen",
-            PreflopScenario::VsOpen {
-                opener: PositionLabel::Co,
-            },
+            PreflopScenario::vs_open(PositionLabel::Co),
         ),
         (
             "vsThreeBet",

@@ -86,6 +86,7 @@ fn manifest_for(config: &SessionConfig) -> RunManifest {
         completed: false,
         checkpoint_version: 1,
         postflop_coverage: None,
+        preflop_hits: None,
     }
 }
 

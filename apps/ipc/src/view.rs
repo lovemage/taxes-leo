@@ -277,6 +277,54 @@ pub struct RunView {
     /// 桌次數。統計層以此判斷 block／cluster 是否足夠（核心規格 5.3）
     #[ts(type = "number")]
     pub instance_count: u64,
+    /// 英雄實際命中的翻前情境。0.1.7 以前的 run 沒有這份資料
+    pub preflop_hits: Option<PreflopHitsView>,
+}
+
+/// 英雄在一次 run 裡實際命中的翻前情境（執行快照 `preflopHits` 的檢視）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
+#[serde(rename_all = "camelCase")]
+pub struct PreflopHitsView {
+    /// 英雄的翻前決策總次數
+    #[ts(type = "number")]
+    pub total: u64,
+    /// 依情境種類排序，同種類內依次數由多到少
+    pub scenarios: Vec<PreflopHitRowView>,
+    /// 面對 OPEN 時的實際尺寸，依尺寸由小到大
+    pub open_sizes: Vec<OpenSizeHitView>,
+    /// 判定 OPEN 區間時的邊界（centi-BB）
+    pub medium_above_centi_bb: u32,
+    pub large_above_centi_bb: u32,
+}
+
+/// 一個翻前情境的命中次數。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
+#[serde(rename_all = "camelCase")]
+pub struct PreflopHitRowView {
+    /// 完整情境鍵，例如 `vs-squeeze-BTN`、`vs-open-UTG@open-large`
+    pub key: String,
+    pub label: String,
+    /// 情境種類鍵（`vs-3bet`／`vs-squeeze`…）
+    pub kind: String,
+    pub kind_label: String,
+    #[ts(type = "number")]
+    pub count: u64,
+}
+
+/// 一種實際 OPEN 尺寸的命中次數。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
+#[serde(rename_all = "camelCase")]
+pub struct OpenSizeHitView {
+    /// `standard`／`medium`／`large`
+    pub tier: String,
+    pub tier_label: String,
+    /// 實際 OPEN 的 raise-to 總額（centi-BB，四捨五入）
+    pub centi_bb: u32,
+    #[ts(type = "number")]
+    pub count: u64,
 }
 
 /// `master_seed` 以字串序列化。

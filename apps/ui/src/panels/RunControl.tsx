@@ -113,9 +113,23 @@ export function RunControl({
             <div className="run-control-compact__panel-title">
               <span>{reveal ? '計算結果' : '本次計算'}</span>
               {reveal && (
-                <button type="button" onClick={onViewReplay} className="run-control-compact__replay">
-                  看逐手 Log
-                </button>
+                <span style={{ display: 'flex', gap: 6 }}>
+                  {/* 翻前情境命中卡在狀態區下方，跑完時帶使用者捲過去 */}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      document
+                        .getElementById('preflop-hits')
+                        ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                    }
+                    className="run-control-compact__replay"
+                  >
+                    翻前情境命中
+                  </button>
+                  <button type="button" onClick={onViewReplay} className="run-control-compact__replay">
+                    看逐手 Log
+                  </button>
+                </span>
               )}
             </div>
             <div className="run-control-compact__metrics run-control-compact__metrics--result">

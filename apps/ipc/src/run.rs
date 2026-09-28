@@ -84,6 +84,10 @@ pub struct RunRequest {
     /// 都不影響進行中的 run（計劃 §6.2）
     #[serde(default)]
     pub hero_postflop_overrides: crate::postflop::PostflopOverridesView,
+    /// 面對開牌時 open 尺度區間的邊界（使用者座位）。舊請求沒有這個
+    /// 欄位時用預設的 3BB／6BB
+    #[serde(default)]
+    pub hero_open_tiers: crate::strategy::OpenTierBoundsView,
 }
 
 impl RunRequest {
@@ -287,6 +291,8 @@ pub const WRITE_BATCH_HANDS: usize = 500;
 pub struct HeroStrategy<'a> {
     pub preflop_overrides: &'a [crate::strategy::CellOverrideView],
     pub postflop_overrides: &'a crate::postflop::PostflopOverridesView,
+    /// 面對開牌時 open 尺度區間的邊界
+    pub open_tiers: crate::strategy::OpenTierBoundsView,
 }
 
 impl HeroStrategy<'static> {
@@ -298,6 +304,7 @@ impl HeroStrategy<'static> {
         Self {
             preflop_overrides: &[],
             postflop_overrides: EMPTY.get_or_init(crate::postflop::PostflopOverridesView::default),
+            open_tiers: crate::strategy::OpenTierBoundsView::default(),
         }
     }
 }
@@ -338,8 +345,10 @@ pub fn execute(
     let hero_overrides = crate::strategy::to_cell_overrides(strategy.preflop_overrides)?;
     // 快照必須是**使用者實際用的那份策略**，因此帶著覆寫；Bot 用的是
     // 沒有覆寫的基準規則，兩者分開存才讀得回當初到底跑了什麼
+    let hero_open_tiers = strategy.open_tiers.to_bounds()?;
     let mut hero_rules = rules.clone();
     hero_rules.overrides = hero_overrides.clone();
+    hero_rules.open_tier_bounds = hero_open_tiers;
 
     // 內容在這裡載入，而不是在桌面殼啟動時預熱。載入失敗就當場結束，
     // 不得拿一份殘缺的排序跑完一整晚才發現統計是壞的
@@ -401,6 +410,8 @@ pub fn execute(
     // 覆寫在 rangeWidth 縮放之後才裝上：覆寫是絕對頻率，被人格參數
     // 再乘一次就不是使用者寫下的那個數字了
     agent.set_seat_overrides(hero, hero_overrides);
+    // 區間邊界與覆寫一起裝在使用者座位：它決定面對開牌時讀哪一組覆寫
+    agent.set_seat_open_tier_bounds(hero, hero_open_tiers);
     // 翻後規則以值凍結：這一份是 run 開始那一刻的快照，
     // UI 後續的修改不會滲進來
     // 規則集連同英雄座位一起裝：使用者的覆寫只屬於他自己那一座，
@@ -490,6 +501,11 @@ pub fn execute(
         fallback_no_rule: coverage.fallback_no_rule,
         fallback_masked: coverage.fallback_masked,
     });
+    // 翻前實際命中的情境：擠壓與 3-bet 分開計，面對開牌另記實際尺寸與區間
+    final_manifest.preflop_hits = Some(preflop_hits_record(
+        agent.preflop_hits(),
+        hero_open_tiers,
+    ));
 
     {
         let mut guard = store.lock().map_err(|_| "資料庫鎖已毀損")?;
@@ -646,5 +662,31 @@ fn build_manifest(
         completed: false,
         checkpoint_version: 1,
         postflop_coverage: None,
+        preflop_hits: None,
+    }
+}
+
+/// 引擎的命中統計 → manifest 紀錄。開發伺服器的示範 run 也走這一支。
+#[must_use]
+pub fn preflop_hits_record(
+    hits: &poker_engine::bot::PreflopHits,
+    bounds: poker_engine::strategy::preflop::OpenTierBounds,
+) -> poker_storage::manifest::PreflopHitsRecord {
+    poker_storage::manifest::PreflopHitsRecord {
+        total: hits.total(),
+        scenarios: hits.scenarios.clone(),
+        open_sizes: hits
+            .open_sizes
+            .iter()
+            .map(
+                |(&(tier, centi_bb), &count)| poker_storage::manifest::OpenSizeHitRecord {
+                    tier: tier.key().to_owned(),
+                    centi_bb,
+                    count,
+                },
+            )
+            .collect(),
+        medium_above_centi_bb: bounds.medium_above_centi_bb,
+        large_above_centi_bb: bounds.large_above_centi_bb,
     }
 }

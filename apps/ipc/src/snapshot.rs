@@ -106,6 +106,12 @@ pub fn baseline(rules: &BaselineRules) -> Value {
         "cellOverrides": overrides,
         "openOverrideCentiBb": rules.open_override,
         "openByPositionCentiBb": rules.open_by_position.iter().map(|(p, n)| (p.as_str(), *n)).collect::<std::collections::BTreeMap<_, _>>(),
+        // 面對開牌的 open 尺度區間邊界。覆寫鍵帶區間後綴，沒有邊界的話
+        // 讀回來的人不知道「大型區間」當時是從幾 BB 起算
+        "openTierBoundsCentiBb": {
+            "mediumAbove": rules.open_tier_bounds.medium_above_centi_bb,
+            "largeAbove": rules.open_tier_bounds.large_above_centi_bb,
+        },
         "raiseSizesCentiBb": {
             "open": rules.open_size_centi_bb,
             "threeBet": rules.three_bet_size_centi_bb,

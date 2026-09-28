@@ -1409,9 +1409,7 @@ mod tests {
             9,
             PositionLabel::Btn,
             StackBucket::Deeper,
-            PreflopScenario::VsOpen {
-                opener: PositionLabel::Co,
-            },
+            PreflopScenario::vs_open(PositionLabel::Co),
         );
         let entry = chart().lookup(&node).expect("此節點由表提供");
         assert!(
@@ -1448,9 +1446,7 @@ mod tests {
             9,
             PositionLabel::Btn,
             StackBucket::Deeper,
-            PreflopScenario::VsOpen {
-                opener: PositionLabel::Co,
-            },
+            PreflopScenario::vs_open(PositionLabel::Co),
         );
         let calls = |shift: ChartShift| {
             HandClass::all()

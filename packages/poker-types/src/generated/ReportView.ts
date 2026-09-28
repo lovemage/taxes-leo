@@ -2,6 +2,7 @@
 import type { OverallView } from "./OverallView";
 import type { PositionRowView } from "./PositionRowView";
 import type { PostflopRuntimeCoverageView } from "./PostflopRuntimeCoverageView";
+import type { PreflopHitsView } from "./PreflopHitsView";
 import type { ProportionView } from "./ProportionView";
 import type { ReportScopeView } from "./ReportScopeView";
 import type { TablesView } from "./TablesView";
@@ -25,4 +26,8 @@ deadHands: number,
 /**
  * 翻後策略的執行期覆蓋。舊 run 沒有這份資料
  */
-postflopCoverage: PostflopRuntimeCoverageView | null, };
+postflopCoverage: PostflopRuntimeCoverageView | null, 
+/**
+ * 英雄實際命中的翻前情境。0.1.7 以前的 run 沒有這份資料
+ */
+preflopHits: PreflopHitsView | null, };

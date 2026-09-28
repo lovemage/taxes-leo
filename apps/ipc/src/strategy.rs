@@ -31,7 +31,8 @@ use poker_engine::strategy::postflop::{
     BoardConnectivity, BoardSurface, PostflopActionKind, PostflopSituation,
 };
 use poker_engine::strategy::preflop::{
-    all_buckets, enumerate_nodes, positions_for, scenarios_for, PreflopNode, PreflopScenario,
+    all_buckets, enumerate_nodes, positions_for, scenarios_for, OpenSizeTier, OpenTierBounds,
+    PreflopNode, PreflopScenario,
 };
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -200,6 +201,62 @@ pub struct StrategyNodesView {
     pub hero: String,
     pub scenarios: Vec<ScenarioOptionView>,
     pub buckets: Vec<BucketOptionView>,
+    /// 面對開牌時可選的 open 尺度區間。情境鍵加上 `suffix` 即為該區間的節點
+    pub open_tiers: Vec<OpenTierOptionView>,
+}
+
+/// 一個 open 尺度區間（面對開牌的節點切片）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
+#[serde(rename_all = "camelCase")]
+pub struct OpenTierOptionView {
+    /// `standard`／`medium`／`large`
+    pub key: String,
+    pub label: String,
+    /// 接在 `vs-open-XX` 之後的節點鍵後綴。標準區間為空字串
+    pub suffix: String,
+}
+
+/// open 尺度區間的邊界，以 BB 的百分之一表示（300 = 3BB）。
+///
+/// 左開右閉：`≤ mediumAbove` 為標準、`≤ largeAbove` 為中型、其餘為大型。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
+#[serde(rename_all = "camelCase")]
+pub struct OpenTierBoundsView {
+    pub medium_above_centi_bb: u32,
+    pub large_above_centi_bb: u32,
+}
+
+impl Default for OpenTierBoundsView {
+    fn default() -> Self {
+        Self::from(OpenTierBounds::DEFAULT)
+    }
+}
+
+impl From<OpenTierBounds> for OpenTierBoundsView {
+    fn from(bounds: OpenTierBounds) -> Self {
+        Self {
+            medium_above_centi_bb: bounds.medium_above_centi_bb,
+            large_above_centi_bb: bounds.large_above_centi_bb,
+        }
+    }
+}
+
+impl OpenTierBoundsView {
+    /// 轉為引擎的邊界並驗證。
+    ///
+    /// # Errors
+    /// 邊界越界或未遞增時回傳說明。**不靜默改成預設值**：使用者以為
+    /// 10BB 的 open 會落在大型區間，實際卻套到另一組覆寫。
+    pub fn to_bounds(self) -> Result<OpenTierBounds, String> {
+        let bounds = OpenTierBounds {
+            medium_above_centi_bb: self.medium_above_centi_bb,
+            large_above_centi_bb: self.large_above_centi_bb,
+        };
+        bounds.validate()?;
+        Ok(bounds)
+    }
 }
 
 /// 13×13 矩陣中的一格。
@@ -222,8 +279,10 @@ pub struct MatrixCellView {
     pub fold: u32,
     /// equity 排序百分位，萬分比（0 為最強）
     pub percentile: u32,
-    /// 這一格是使用者覆寫的結果，不是參數產生的
+    /// 這一格是使用者在**本節點**設的覆寫，不是參數產生的
     pub overridden: bool,
+    /// 這一格沿用標準 open 區間的覆寫（中型／大型區間未另設時）
+    pub inherited_override: bool,
     /// 這一格在預設組合表上的動作鍵（`fold`／`call`／`raise-2.5x`／
     /// `raise-8x`／`allin`）。`null` 代表這個節點不在表上，走參數產生器
     pub chart_action: Option<String>,
@@ -269,6 +328,14 @@ pub struct RangeMatrixView {
     pub mixed_count: u32,
     /// 本節點被覆寫的格數
     pub override_count: u32,
+    /// 沿用標準 open 區間覆寫的格數。只有中型／大型區間會大於 0
+    pub inherited_override_count: u32,
+    /// 情境種類（`vs-open`／`vs-3bet`／`vs-squeeze`…），不含位置與區間
+    pub scenario_kind: String,
+    /// 面對開牌時的 open 尺度區間鍵；其餘情境為 null
+    pub open_tier: Option<String>,
+    /// 內容來源的補充說明。擠壓節點借用 3B 欄時在這裡講清楚
+    pub content_note: Option<String>,
     /// 本節點的主動行動描述（推入或加注到多少 BB）
     pub aggressive_action: String,
     /// 產生排序時假設的對手數（見 `baseline::expected_opponents`）
@@ -480,6 +547,14 @@ pub fn nodes(seated: u8, hero: &str) -> StrategyNodesView {
                 chart_depth: ChartDepth::from_bucket(bucket).label().to_owned(),
             })
             .collect(),
+        open_tiers: OpenSizeTier::ALL
+            .into_iter()
+            .map(|tier| OpenTierOptionView {
+                key: tier.key().to_owned(),
+                label: open_tier_label(tier).to_owned(),
+                suffix: tier.suffix().to_owned(),
+            })
+            .collect(),
     }
 }
 
@@ -558,6 +633,10 @@ fn build_matrix_view(node: PreflopNode, rules: &BaselineRules) -> Result<RangeMa
                 fold: cell.fold,
                 percentile: cell.percentile,
                 overridden: rules.overrides.get(&node, class).is_some(),
+                inherited_override: rules
+                    .overrides
+                    .resolve(&node, class)
+                    .is_some_and(|(_, inherited)| inherited),
                 chart_action: entry
                     .and_then(|entry| entry.action_of(class))
                     .map(|action| action.as_str().to_owned()),
@@ -573,6 +652,13 @@ fn build_matrix_view(node: PreflopNode, rules: &BaselineRules) -> Result<RangeMa
         scenario: node.scenario.key(),
         scenario_label: scenario_label(node.scenario),
         override_count: u32::try_from(cells.iter().filter(|c| c.overridden).count()).unwrap_or(0),
+        inherited_override_count: u32::try_from(
+            cells.iter().filter(|c| c.inherited_override).count(),
+        )
+        .unwrap_or(0),
+        scenario_kind: node.scenario.kind_key().to_owned(),
+        open_tier: node.scenario.open_tier().map(|tier| tier.key().to_owned()),
+        content_note: content_note(node.scenario, entry.is_some()),
         mixed_count: u32::try_from(built.mixed_cells().len()).unwrap_or(0),
         width_myriad: built.width_myriad(),
         aggressive_action: aggressive_action(&node, rules),
@@ -618,7 +704,8 @@ fn parse_node(seated: u8, hero: &str, bucket: &str, scenario: &str) -> Result<Pr
     let bucket_value = parse_bucket(bucket).ok_or_else(|| format!("未知的籌碼分檔：{bucket}"))?;
     let scenario_value =
         parse_scenario(scenario).ok_or_else(|| format!("未知的情境：{scenario}"))?;
-    if !scenarios_for(seated, hero_label).contains(&scenario_value) {
+    // open 尺度區間是標準節點的切片：可達性以基礎情境判定
+    if !scenarios_for(seated, hero_label).contains(&scenario_value.base()) {
         return Err(format!(
             "{seated} 人桌的 {hero} 不可能遇到「{}」",
             scenario_label(scenario_value)
@@ -664,7 +751,21 @@ fn parse_scenario(text: &str) -> Option<PreflopScenario> {
         return parse_position(rest).map(|opener| PreflopScenario::VsOpenRaise { opener });
     }
     if let Some(rest) = text.strip_prefix("vs-open-") {
-        return parse_position(rest).map(|opener| PreflopScenario::VsOpen { opener });
+        // 區間後綴（`@open-large`）接在位置之後；沒有後綴就是標準區間，
+        // 與 0.1.6 以前的覆寫鍵相同
+        let (position, tier) = match rest.split_once('@') {
+            Some((position, suffix)) => {
+                let tier = OpenSizeTier::ALL
+                    .into_iter()
+                    .find(|tier| tier.suffix() == format!("@{suffix}"))?;
+                (position, tier)
+            }
+            None => (rest, OpenSizeTier::Standard),
+        };
+        return parse_position(position).map(|opener| PreflopScenario::VsOpen {
+            opener,
+            size: tier,
+        });
     }
     if let Some(rest) = text.strip_prefix("vs-3bet-") {
         return parse_position(rest).map(|by| PreflopScenario::VsThreeBet { by });
@@ -686,14 +787,79 @@ fn scenario_label(scenario: PreflopScenario) -> String {
     match scenario {
         PreflopScenario::Unopened => "無人進池".to_owned(),
         PreflopScenario::VsLimp { limpers } => format!("面對 {limpers} 名跛入"),
-        PreflopScenario::VsOpen { opener } => format!("面對 {} 開牌", opener.as_str()),
+        PreflopScenario::VsOpen { opener, size } => match size {
+            OpenSizeTier::Standard => format!("面對 {} 開牌", opener.as_str()),
+            tier => format!("面對 {} 開牌（{}）", opener.as_str(), open_tier_label(tier)),
+        },
         PreflopScenario::VsOpenRaise { opener } => {
             format!("面對 {} 開牌後再被加注", opener.as_str())
         }
         PreflopScenario::VsThreeBet { by } => format!("被 {} 3-bet", by.as_str()),
         PreflopScenario::VsFourBet { by } => format!("被 {} 4-bet", by.as_str()),
-        PreflopScenario::VsSqueeze { by } => format!("被 {} 擠壓", by.as_str()),
+        PreflopScenario::VsSqueeze { by } => format!("被 {} 擠壓（Squeeze）", by.as_str()),
     }
+}
+
+const fn open_tier_label(tier: OpenSizeTier) -> &'static str {
+    match tier {
+        OpenSizeTier::Standard => "標準 OPEN",
+        OpenSizeTier::Medium => "中型 OPEN",
+        OpenSizeTier::Large => "大型 OPEN",
+    }
+}
+
+/// 內容來源的補充說明。
+///
+/// 擠壓與中型／大型 open 都沒有自己的預設內容：前者借組合表的 3B 欄，
+/// 後者沿用標準區間。畫面上若不講，使用者會以為看到的是專屬內容。
+fn content_note(scenario: PreflopScenario, from_chart: bool) -> Option<String> {
+    match scenario {
+        PreflopScenario::VsSqueeze { .. } if from_chart => Some(
+            "組合表沒有獨立的 Squeeze 欄，預設內容沿用 3B 欄。這個節點的覆寫只作用於擠壓，\
+             不影響 3-bet 節點。"
+                .to_owned(),
+        ),
+        PreflopScenario::VsOpen { size, .. } if size != OpenSizeTier::Standard => Some(format!(
+            "{}沒有獨立的預設內容：未設定的格子沿用標準 OPEN 區間的覆寫，再落回預設內容。\
+             在這裡改動的格子只作用於此區間。",
+            open_tier_label(size)
+        )),
+        _ => None,
+    }
+}
+
+/// 情境鍵的顯示資訊，供執行快照的命中統計使用。
+pub(crate) struct ScenarioDescription {
+    pub label: String,
+    pub kind: &'static str,
+    pub kind_label: &'static str,
+    /// 種類的顯示順序
+    pub order: usize,
+}
+
+/// 由情境鍵（`vs-open-UTG@open-large`）反解出標籤與種類。
+pub(crate) fn describe_scenario_key(key: &str) -> Option<ScenarioDescription> {
+    let scenario = parse_scenario(key)?;
+    let (kind_label, order) = match scenario {
+        PreflopScenario::Unopened => ("無人進池", 0),
+        PreflopScenario::VsLimp { .. } => ("面對跛入", 1),
+        PreflopScenario::VsOpen { .. } => ("面對 OPEN", 2),
+        PreflopScenario::VsOpenRaise { .. } => ("面對 OPEN＋再加注", 3),
+        PreflopScenario::VsThreeBet { .. } => ("面對 3-bet", 4),
+        PreflopScenario::VsSqueeze { .. } => ("面對擠壓 Squeeze", 5),
+        PreflopScenario::VsFourBet { .. } => ("面對 4-bet", 6),
+    };
+    Some(ScenarioDescription {
+        label: scenario_label(scenario),
+        kind: scenario.kind_key(),
+        kind_label,
+        order,
+    })
+}
+
+/// OPEN 區間鍵 → 標籤。未知的鍵原樣回傳「其他」。
+pub(crate) fn open_tier_label_for_key(key: &str) -> &'static str {
+    OpenSizeTier::parse(key).map_or("其他", open_tier_label)
 }
 
 const fn scenario_group(scenario: PreflopScenario) -> &'static str {
@@ -702,9 +868,9 @@ const fn scenario_group(scenario: PreflopScenario) -> &'static str {
         PreflopScenario::VsLimp { .. } => "面對跛入",
         PreflopScenario::VsOpen { .. } => "面對開牌",
         PreflopScenario::VsOpenRaise { .. } => "面對開牌＋再加注",
-        PreflopScenario::VsThreeBet { .. } => "面對 3-bet",
+        PreflopScenario::VsThreeBet { .. } => "面對 3-bet（你 OPEN 後直接被再加注）",
         PreflopScenario::VsFourBet { .. } => "面對 4-bet",
-        PreflopScenario::VsSqueeze { .. } => "面對擠壓",
+        PreflopScenario::VsSqueeze { .. } => "面對擠壓 Squeeze（你 OPEN、中間有人跟注後被再加注）",
     }
 }
 

@@ -151,6 +151,36 @@ impl PostflopCoverageRecord {
     }
 }
 
+/// 英雄在這次 run 實際命中的翻前情境。
+///
+/// 情境鍵含位置與 open 尺度區間（`vs-squeeze-BTN`、`vs-open-UTG@open-large`），
+/// 因此擠壓與 3-bet、不同 open 區間都分得開。面對開牌另記實際 open 尺寸：
+/// 區間是依當時的邊界判定的，只留區間的話事後看不出對手到底開了多少。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreflopHitsRecord {
+    /// 英雄的翻前決策總次數
+    pub total: u64,
+    /// 情境鍵 → 決策次數
+    pub scenarios: std::collections::BTreeMap<String, u64>,
+    /// 面對開牌時的實際 open 尺寸與命中區間
+    pub open_sizes: Vec<OpenSizeHitRecord>,
+    /// 判定區間時的邊界（centi-BB）
+    pub medium_above_centi_bb: u32,
+    pub large_above_centi_bb: u32,
+}
+
+/// 一種實際 open 尺寸的命中次數。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenSizeHitRecord {
+    /// `standard`／`medium`／`large`
+    pub tier: String,
+    /// 實際 open 的 raise-to 總額，BB 的百分之一（四捨五入）
+    pub centi_bb: u32,
+    pub count: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunManifest {
@@ -201,6 +231,9 @@ pub struct RunManifest {
     /// 統計是後來才加的，不能讓既有的 manifest 讀不回來
     #[serde(default)]
     pub postflop_coverage: Option<PostflopCoverageRecord>,
+    /// 翻前實際命中的情境。舊 run 沒有這個欄位
+    #[serde(default)]
+    pub preflop_hits: Option<PreflopHitsRecord>,
 }
 
 impl RunManifest {

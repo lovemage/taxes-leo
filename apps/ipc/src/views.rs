@@ -9,7 +9,10 @@ use poker_engine::position::resolve;
 use poker_storage::db::Store;
 
 use crate::handler::IpcError;
-use crate::view::{HandSummaryView, HandView, HoleCardVisibility, PowerPreviewView, RunView};
+use crate::view::{
+    HandSummaryView, HandView, HoleCardVisibility, OpenSizeHitView, PowerPreviewView,
+    PreflopHitRowView, PreflopHitsView, RunView,
+};
 
 /// run 層級摘要。
 ///
@@ -27,7 +30,63 @@ pub fn run_view(store: &Store, run_id: i64) -> Result<RunView, IpcError> {
         master_seed: manifest.master_seed,
         rng_algorithm: manifest.rng_algorithm,
         instance_count: manifest.instances.len() as u64,
+        preflop_hits: manifest.preflop_hits.as_ref().map(preflop_hits_view),
     })
+}
+
+/// 執行快照的翻前命中 → 帶中文標籤的檢視。
+///
+/// 標籤由引擎的情境鍵反解，前端不自己拆字串：情境鍵的格式（位置、區間
+/// 後綴）只有這一層知道。解不回來的鍵照原樣顯示，不丟掉——次數還是對的。
+#[must_use]
+pub fn preflop_hits_view(record: &poker_storage::manifest::PreflopHitsRecord) -> PreflopHitsView {
+    let mut scenarios: Vec<(usize, PreflopHitRowView)> = record
+        .scenarios
+        .iter()
+        .map(|(key, &count)| {
+            let described = crate::strategy::describe_scenario_key(key);
+            let (label, kind, kind_label, order) = described.map_or_else(
+                || (key.clone(), "unknown", "其他", usize::MAX),
+                |d| (d.label, d.kind, d.kind_label, d.order),
+            );
+            (
+                order,
+                PreflopHitRowView {
+                    key: key.clone(),
+                    label,
+                    kind: kind.to_owned(),
+                    kind_label: kind_label.to_owned(),
+                    count,
+                },
+            )
+        })
+        .collect();
+    scenarios.sort_by(|(a_order, a), (b_order, b)| {
+        a_order
+            .cmp(b_order)
+            .then(b.count.cmp(&a.count))
+            .then(a.key.cmp(&b.key))
+    });
+
+    let mut open_sizes: Vec<OpenSizeHitView> = record
+        .open_sizes
+        .iter()
+        .map(|hit| OpenSizeHitView {
+            tier: hit.tier.clone(),
+            tier_label: crate::strategy::open_tier_label_for_key(&hit.tier).to_owned(),
+            centi_bb: hit.centi_bb,
+            count: hit.count,
+        })
+        .collect();
+    open_sizes.sort_by_key(|hit| hit.centi_bb);
+
+    PreflopHitsView {
+        total: record.total,
+        scenarios: scenarios.into_iter().map(|(_, row)| row).collect(),
+        open_sizes,
+        medium_above_centi_bb: record.medium_above_centi_bb,
+        large_above_centi_bb: record.large_above_centi_bb,
+    }
 }
 
 /// 指定手牌的完整檢視。

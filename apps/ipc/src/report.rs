@@ -312,6 +312,8 @@ pub struct ReportView {
     pub dead_hands: u64,
     /// 翻後策略的執行期覆蓋。舊 run 沒有這份資料
     pub postflop_coverage: Option<PostflopRuntimeCoverageView>,
+    /// 英雄實際命中的翻前情境。0.1.7 以前的 run 沒有這份資料
+    pub preflop_hits: Option<crate::view::PreflopHitsView>,
 }
 
 // ── 逐手事實 ─────────────────────────────────────────────────────────
@@ -868,6 +870,10 @@ pub fn report(store: &Store, run_id: i64, include_dead: bool) -> Result<ReportVi
             .postflop_coverage
             .as_ref()
             .map(postflop_coverage_view),
+        preflop_hits: manifest
+            .preflop_hits
+            .as_ref()
+            .map(crate::views::preflop_hits_view),
     })
 }
 

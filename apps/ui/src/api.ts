@@ -16,6 +16,7 @@ import type {
   HandSummaryView,
   HandView,
   HoleCardVisibility,
+  OpenTierBoundsView,
   ParamSpecView,
   PostflopDiagnosticsView,
   PostflopHandPreviewView,
@@ -64,6 +65,8 @@ export interface RunRequest {
   heroOverrides: CellOverrideView[];
   /** 翻後的稀疏覆寫。run 開始時以值凍結，之後怎麼改都不影響進行中的 run */
   heroPostflopOverrides: PostflopOverridesView;
+  /** 面對開牌時 open 尺度區間的邊界（centi-BB）。只作用於使用者座位 */
+  heroOpenTiers: OpenTierBoundsView;
 }
 
 interface TauriGlobal {
@@ -265,11 +268,27 @@ export function strategyMatrix(
       item.bucket === bucket &&
       item.scenario === scenario,
   );
-  const ov = own.map((item) => `${item.class}:${item.aggressive}:${item.call}`).join(',');
+  const encode = (items: CellOverrideView[]) =>
+    items.map((item) => `${item.class}:${item.aggressive}:${item.call}`).join(',');
+  const ov = encode(own);
+  // 中型／大型 open 區間會繼承標準區間的覆寫，因此另外帶上標準節點那幾格
+  const base = scenario.includes('@') ? scenario.slice(0, scenario.indexOf('@')) : null;
+  const bov = base
+    ? encode(
+        overrides.filter(
+          (item) =>
+            item.seated === seated &&
+            item.hero === hero &&
+            item.bucket === bucket &&
+            item.scenario === base,
+        ),
+      )
+    : '';
   const query =
     `seated=${seated}&hero=${encodeURIComponent(hero)}` +
     `&bucket=${encodeURIComponent(bucket)}&scenario=${encodeURIComponent(scenario)}` +
-    (ov ? `&ov=${encodeURIComponent(ov)}` : '');
+    (ov ? `&ov=${encodeURIComponent(ov)}` : '') +
+    (bov ? `&bov=${encodeURIComponent(bov)}` : '');
   return http<RangeMatrixView>(`/api/strategy/matrix?${query}`);
 }
 

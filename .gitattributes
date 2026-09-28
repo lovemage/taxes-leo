@@ -43,3 +43,7 @@ apps/engine/assets/*.txt text eol=lf
 *.sqlite binary
 # 顧問的翻前組合表原始檔（docs/）。xlsx 是 zip，換行轉換會直接毀掉它
 *.xlsx binary
+
+# ts-rs 產生的型別檔在逗號後帶空白，是 generator 的固定輸出。CI 會重新產生
+# 並與版控比對，手動清掉空白反而會讓比對失敗，因此只在這裡關掉空白檢查
+packages/poker-types/src/generated/** -whitespace

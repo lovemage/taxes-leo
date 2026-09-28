@@ -314,7 +314,7 @@ fn current_value(parameter: ParameterRef, node: &PreflopNode, rules: &BaselineRu
         ParameterRef::AggressiveLatest => widths.aggressive_latest,
         ParameterRef::OpeningWidth => rules.opening.get(node.seated, node.hero),
         ParameterRef::VsOpenWidth => match node.scenario {
-            PreflopScenario::VsOpen { opener } => {
+            PreflopScenario::VsOpen { opener, .. } => {
                 rules.vs_open_width.get(node.seated, node.hero, opener)
             }
             // 非面對開牌的節點不會產生這個候選參數
@@ -336,7 +336,7 @@ fn apply(
         ParameterRef::AggressiveLatest => out.set_aggressive_latest(node.scenario, value),
         ParameterRef::OpeningWidth => out.opening.set(node.seated, node.hero, value),
         ParameterRef::VsOpenWidth => {
-            if let PreflopScenario::VsOpen { opener } = node.scenario {
+            if let PreflopScenario::VsOpen { opener, .. } = node.scenario {
                 out.vs_open_width.set(node.seated, node.hero, opener, value);
             }
         }

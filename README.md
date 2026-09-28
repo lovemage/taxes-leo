@@ -8,13 +8,19 @@
 
 測試人員**不需要安裝任何開發工具**，到
 [Releases](https://github.com/lovemage/taxes-leo/releases) 抓最新版即可。
-每版提供三種，擇一：
+Windows 提供三種、macOS 提供兩種，擇一：
 
 | 檔案 | 說明 |
 |---|---|
-| `9max-sim-<版本>-setup.exe` | NSIS 安裝檔（建議） |
-| `9max-sim-<版本>.msi` | MSI 安裝檔，適合用群組原則派送 |
-| `9max-sim-<版本>-portable.exe` | 免安裝，下載直接執行 |
+| `9max-sim-<版本>-setup.exe` | Windows NSIS 安裝檔（建議） |
+| `9max-sim-<版本>.msi` | Windows MSI 安裝檔，適合用群組原則派送 |
+| `9max-sim-<版本>-portable.exe` | Windows 免安裝，下載直接執行 |
+| `9max-sim-<版本>-macos-universal.dmg` | macOS 安裝映像（Apple Silicon 與 Intel 通用） |
+| `9max-sim-<版本>-macos-universal.app.zip` | macOS 免安裝，解壓縮後直接執行 |
+
+> **macOS 版未經 Apple 公證**，首次開啟會被 Gatekeeper 擋下：在 App 上按右鍵 →
+> 「打開」→ 再按「打開」。若顯示「已損毀」，在終端機執行
+> `xattr -cr "/Applications/9max 模擬平台.app"` 後再開啟。
 
 > **程式未做簽章，首次執行時 SmartScreen 會攔下來**，點「其他資訊」→
 > 「仍要執行」。這一步請先跟測試人員講——多數人看到攔截畫面會直接關掉，
@@ -253,7 +259,7 @@ C 原始碼，代價太高，不適合每個 PR 跑一次。
 | Workflow | 觸發 | 內容 |
 |---|---|---|
 | [`pr-checks.yml`](.github/workflows/pr-checks.yml) | PR、推 `main` | Linux：`cargo test`、`clippy -D warnings`、前端打包、產生型別一致性；Windows：`cargo check apps/desktop` |
-| [`desktop-build.yml`](.github/workflows/desktop-build.yml) | 手動、推 `v*` tag | 完整 installer 打包；tag 另開 Release |
+| [`desktop-build.yml`](.github/workflows/desktop-build.yml) | 手動、推 `v*` tag | Windows installer 與 macOS Universal app／dmg 平行打包；tag 由最後一個 job 統一開 Release |
 
 **發版**：
 
@@ -267,7 +273,7 @@ C 原始碼，代價太高，不適合每個 PR 跑一次。
 git tag -a v0.1.1 -m "..." && git push origin v0.1.1
 ```
 
-tag 推上去之後，Release 會自動建立並掛上三個產物。repo 是 public，
+tag 推上去之後，Release 會自動建立並掛上 Windows 三個、macOS 兩個產物。repo 是 public，
 測試人員不必登入 GitHub 就能下載。
 
 不打 tag 只想拿一份來測時，用手動觸發，產物在 Actions 的 artifacts

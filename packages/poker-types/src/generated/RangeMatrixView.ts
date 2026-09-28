@@ -27,6 +27,22 @@ mixedCount: number,
  */
 overrideCount: number, 
 /**
+ * 沿用標準 open 區間覆寫的格數。只有中型／大型區間會大於 0
+ */
+inheritedOverrideCount: number, 
+/**
+ * 情境種類（`vs-open`／`vs-3bet`／`vs-squeeze`…），不含位置與區間
+ */
+scenarioKind: string, 
+/**
+ * 面對開牌時的 open 尺度區間鍵；其餘情境為 null
+ */
+openTier: string | null, 
+/**
+ * 內容來源的補充說明。擠壓節點借用 3B 欄時在這裡講清楚
+ */
+contentNote: string | null, 
+/**
  * 本節點的主動行動描述（推入或加注到多少 BB）
  */
 aggressiveAction: string, 

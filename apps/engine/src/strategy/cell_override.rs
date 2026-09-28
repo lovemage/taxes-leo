@@ -82,6 +82,23 @@ impl CellOverrides {
         self.values.get(&(*node, class)).copied()
     }
 
+    /// 取某格**實際生效**的覆寫，含 open 尺度區間的繼承。
+    ///
+    /// 面對開牌的中型／大型區間是標準節點的切片：該區間沒有自己的覆寫時
+    /// 繼承標準區間那一格，再沒有才落回預設內容。第二個值表示是否為繼承
+    /// 而來——面板要能分辨「這格是你在這個區間設的」與「沿用標準區間」。
+    #[must_use]
+    pub fn resolve(&self, node: &PreflopNode, class: HandClass) -> Option<(OverrideCell, bool)> {
+        if let Some(cell) = self.get(node, class) {
+            return Some((cell, false));
+        }
+        let base = node.base();
+        if base == *node {
+            return None;
+        }
+        self.get(&base, class).map(|cell| (cell, true))
+    }
+
     /// 記下一格覆寫。
     pub fn set(&mut self, node: PreflopNode, class: HandClass, cell: OverrideCell) {
         self.values.insert((node, class), cell);

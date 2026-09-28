@@ -26,6 +26,7 @@ export const DEFAULT_REQUEST: RunRequest = {
   bots: [],
   heroOverrides: [],
   heroPostflopOverrides: { nodes: [], rules: [] },
+  heroOpenTiers: { mediumAboveCentiBb: 300, largeAboveCentiBb: 600 },
 };
 
 /** 手數以 1K 為單位，範圍 1K–100K（核心規格 2.1）。 */
@@ -70,6 +71,27 @@ export function validateRequest(request: RunRequest): string | null {
     if (!Number.isInteger(value) || value < 0) return `${label}必須是非負整數`;
   }
   if (request.rakeBasisPoints > 10_000) return '抽水比例不得超過 100%';
+  // 以下兩項引擎同樣會拒絕（`OpenTierBoundsView::to_bounds`、`BotSeatConfig`），
+  // 但要等按下計算才報錯；畫面上已標紅的設定不該還能按下去
+  const { mediumAboveCentiBb: medium, largeAboveCentiBb: large } = request.heroOpenTiers;
+  if (
+    !Number.isInteger(medium) ||
+    !Number.isInteger(large) ||
+    medium < 200 ||
+    large > 10_000 ||
+    medium >= large
+  ) {
+    return 'OPEN 尺度區間邊界需在 2～100 BB 之內，且中型上限大於標準上限';
+  }
+  for (const [index, seat] of request.bots.entries()) {
+    for (const [key, value] of Object.entries(seat?.params ?? {})) {
+      if (!key.startsWith('openSizeCentiBb')) continue;
+      if (!Number.isInteger(value) || (value !== 0 && (value < 200 || value > 10_000))) {
+        const who = index === request.heroSeat ? 'Hero' : `座位 ${index}`;
+        return `${who} 的 OPEN 尺寸需為 0（繼承）或 2～100 BB`;
+      }
+    }
+  }
   return null;
 }
 

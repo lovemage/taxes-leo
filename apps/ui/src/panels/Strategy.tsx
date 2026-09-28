@@ -39,12 +39,15 @@ import {
   postflopStrategy,
   strategyMatrix,
   strategyMeta,
+  type RunRequest,
 } from '../api';
 import { cellTone, FULL } from '../components/matrixTone';
-import type { StrategySelection } from './StrategyNav';
+import { openTierRange, type StrategySelection } from './StrategyNav';
 
 
 export function Strategy({
+  request,
+  onRequestChange,
   selection,
   overrides,
   onOverridesChange,
@@ -52,6 +55,9 @@ export function Strategy({
   onPostflopOverridesChange,
   locked,
 }: {
+  /** Hero 的 OPEN 尺寸與 open 區間邊界住在 request 裡，與 Bot 頁共用同一份 */
+  request: RunRequest;
+  onRequestChange: React.Dispatch<React.SetStateAction<RunRequest>>;
   selection: StrategySelection;
   overrides: CellOverrideView[];
   onOverridesChange: (overrides: CellOverrideView[]) => void;
@@ -112,7 +118,19 @@ export function Strategy({
     [selection],
   );
 
+  // 畫面上的矩陣是否就是目前選取的節點。切換節點或 OPEN 區間時，舊矩陣
+  // 會留在畫面上直到新結果回來（或請求失敗）；這段期間若允許編輯，
+  // 舊格的數值會以新節點的鍵寫進覆寫
+  const matrixCurrent =
+    matrix !== null &&
+    matrix.seated === selection.seated &&
+    matrix.hero === selection.hero &&
+    matrix.bucket === selection.bucket &&
+    matrix.scenario === selection.scenario;
+  const editLocked = locked || pending || !matrixCurrent;
+
   const setCell = (className: string, aggressive: number, call: number) => {
+    if (editLocked) return;
     const rest = overrides.filter((item) => !(isThisNode(item) && item.class === className));
     onOverridesChange([
       ...rest,
@@ -128,10 +146,15 @@ export function Strategy({
     ]);
   };
 
-  const clearCell = (className: string) =>
+  const clearCell = (className: string) => {
+    if (editLocked) return;
     onOverridesChange(overrides.filter((item) => !(isThisNode(item) && item.class === className)));
+  };
 
-  const clearNode = () => onOverridesChange(overrides.filter((item) => !isThisNode(item)));
+  const clearNode = () => {
+    if (editLocked) return;
+    onOverridesChange(overrides.filter((item) => !isThisNode(item)));
+  };
 
   const cell = matrix?.cells.find((item) => item.class === picked) ?? null;
   const streetLabel =
@@ -207,6 +230,10 @@ export function Strategy({
       )}
 
       {selection.stage === 'preflop' && matrix && (
+        <ScenarioKindCard matrix={matrix} bounds={request.heroOpenTiers} />
+      )}
+
+      {selection.stage === 'preflop' && matrix && (
         <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start', flexWrap: 'wrap' }}>
           {/* ── D.4 169 格範圍矩陣 ── */}
           <section style={{ flex: '1 1 560px', minWidth: 420, maxWidth: 720 }}>
@@ -256,6 +283,7 @@ export function Strategy({
                   key={item.class}
                   cell={item}
                   picked={item.class === picked}
+                  disabled={pending || !matrixCurrent}
                   onClick={() => setPicked(item.class)}
                 />
               ))}
@@ -273,12 +301,17 @@ export function Strategy({
               <span className="dim">
                 對角線為對子，右上為同花，左下為非同花（共 169 類）
               </span>
+              {matrix.inheritedOverrideCount > 0 && (
+                <span className="dim">
+                  {matrix.inheritedOverrideCount} 格沿用標準 OPEN 區間
+                </span>
+              )}
               {matrix.overrideCount > 0 && (
                 <button
                   type="button"
-                  disabled={locked}
+                  disabled={editLocked}
                   onClick={clearNode}
-                  style={linkStyle(locked)}
+                  style={linkStyle(editLocked)}
                 >
                   清除本節點的 {matrix.overrideCount} 格覆寫
                 </button>
@@ -290,7 +323,7 @@ export function Strategy({
           <aside style={{ flex: '0 1 300px', minWidth: 260, display: 'grid', gap: 14 }}>
             <CellEditor
               cell={cell}
-              locked={locked}
+              locked={editLocked}
               onSet={(aggressive, call) => cell && setCell(cell.class, aggressive, call)}
               onClear={() => cell && clearCell(cell.class)}
             />
@@ -304,6 +337,18 @@ export function Strategy({
             )}
             {meta && <ContentCard meta={meta} />}
           </aside>
+        </div>
+      )}
+
+      {selection.stage === 'preflop' && (
+        <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start', flexWrap: 'wrap', marginTop: 18 }}>
+          <HeroOpenCard
+            request={request}
+            onRequestChange={onRequestChange}
+            strategyOpenCentiBb={meta?.openSizeCentiBb ?? 250}
+            locked={locked}
+          />
+          <OpenTierCard request={request} onRequestChange={onRequestChange} locked={locked} />
         </div>
       )}
 
@@ -340,6 +385,8 @@ function PostflopRules({
   const [relativePosition, setRelativePosition] = useState('*');
   const [decisionPhase, setDecisionPhase] = useState('*');
   const [continuation, setContinuation] = useState('*');
+  const [potType, setPotType] = useState('*');
+  const [sprBand, setSprBand] = useState('*');
   useEffect(() => { setDecisionPhase('*'); setContinuation('*'); }, [stage, situationKey, line]);
   const [surface, setSurface] = useState('rainbow');
   const [connectivity, setConnectivity] = useState('dry');
@@ -411,7 +458,7 @@ function PostflopRules({
   }, [nodes, handStrength]);
 
   const query: PostflopRuleQuery = {
-    scope: [heroPosition, relativePosition, decisionPhase, continuation].join('/'),
+    scope: [heroPosition, relativePosition, decisionPhase, continuation, potType, sprBand].join('/'),
     street: stage,
     situation: situationKey,
     line,
@@ -530,6 +577,10 @@ function PostflopRules({
 
       {/* ── 導覽：線路 → 牌面兩軸 → 牌力組 → 面對尺度 ── */}
       <section style={{ ...cardStyle, display: 'grid', gap: 12 }}>
+        <OptionRow label="底池類型" value={potType} onChange={setPotType}
+          options={[{ key: '*', label: '所有底池' }, ...nodes.potTypes.map((item) => ({ key: item.key, label: item.label, title: item.description }))]} />
+        <OptionRow label="SPR" value={sprBand} onChange={setSprBand}
+          options={[{ key: '*', label: '不限' }, ...nodes.sprBands.map((item) => ({ key: item.key, label: item.label, title: item.description }))]} />
         <OptionRow label="翻前位置" value={heroPosition} onChange={setHeroPosition}
           options={['*','UTG','UTG+1','UTG+2','LJ','HJ','CO','BTN','SB','BB'].map(key => ({key,label:key==='*'?'所有位置':key}))} />
         <OptionRow label="翻後相對位置" value={relativePosition} onChange={setRelativePosition}
@@ -538,7 +589,7 @@ function PostflopRules({
           options={[{key:'*',label:'不限'},{key:'unacted',label:'尚未行動'},...(situationKey==='facing-bet'?[{key:'checked',label:'過牌後被下注（可 check-raise）'},{key:'bet-raised',label:'已投入後面對加注'}]:[])]} />
         <OptionRow label="持續下注歷史" value={continuation} onChange={setContinuation}
           options={[{key:'*',label:'不限'},...(stage==='flop'?[{key:'flop-cbet',label:'翻牌 C-bet'}]:stage==='turn'?[{key:'double-barrel',label:'第二槍 Double barrel'},{key:'delayed-cbet',label:'延遲 C-bet'}]:[{key:'triple-barrel',label:'第三槍 Triple barrel'},{key:'delayed-cbet',label:'延遲 C-bet'}]),{key:'other',label:'其他（含加注後延續下注）'}]} />
-        <p className="dim" style={{margin:0,fontSize:12}}>位置依仍可行動的對手判斷。完整度只計通用節點，不含位置／歷史限定。先在無人下注設定過牌頻率，再於「過牌後被下注」設定跟注／加注頻率；加注仍須符合實際加注權。</p>
+        <p className="dim" style={{margin:0,fontSize:12}}>底池類型依翻前加注次數判定（單加注池／3-bet 池／4-bet 池），各底池的頻率、下注尺度、IP／OOP、牌面與牌力分別設定；選「所有底池」編輯的是通用設定，指定底池的覆寫優先。位置依仍可行動的對手判斷。完整度只計通用節點，不含位置／歷史／底池限定。先在無人下注設定過牌頻率，再於「過牌後被下注」設定跟注／加注頻率；加注仍須符合實際加注權。</p>
         <OptionRow
           label="牌局線路"
           options={lines.map((item) => ({ key: item.key, label: item.label }))}
@@ -924,16 +975,20 @@ function HandPreviewCard() {
 function Cell({
   cell,
   picked,
+  disabled = false,
   onClick,
 }: {
   cell: MatrixCellView;
   picked: boolean;
+  /** 矩陣還不是目前節點（載入中）時停用，避免選到舊格 */
+  disabled?: boolean;
   onClick: () => void;
 }) {
   const tone = cellTone(cell);
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={onClick}
       title={[
         cell.class,
@@ -960,7 +1015,7 @@ function Cell({
         fontFamily: 'var(--font-mono)',
         fontSize: 10,
         lineHeight: 1,
-        cursor: 'pointer',
+        cursor: disabled ? 'wait' : 'pointer',
         ...tone,
       }}
     >
@@ -977,6 +1032,19 @@ function Cell({
             width: 4,
             height: 4,
             background: 'var(--warning)',
+          }}
+        />
+      )}
+      {/* 沿用標準 OPEN 區間的覆寫：空心框，與本節點自己的實心標記區分 */}
+      {!cell.overridden && cell.inheritedOverride && (
+        <span
+          style={{
+            position: 'absolute',
+            top: 2,
+            right: 2,
+            width: 4,
+            height: 4,
+            border: '1px solid var(--warning)',
           }}
         />
       )}
@@ -1118,6 +1186,8 @@ function CellEditor({
       <div className="dim" style={{ fontSize: 10, marginTop: 8, lineHeight: 1.5 }}>
         {cell.overridden
           ? '這一格是你的覆寫，內容不再影響它。'
+          : cell.inheritedOverride
+            ? '這一格沿用標準 OPEN 區間的覆寫。改動後只作用於目前這個區間。'
           : cell.chartAction
             ? '目前照預設組合表。改動後即成為覆寫，蓋掉表上的那一格。'
             : '目前由參數產生。改動後即成為覆寫。'}
@@ -1410,6 +1480,333 @@ function linkStyle(locked: boolean): React.CSSProperties {
     cursor: locked ? 'default' : 'pointer',
     opacity: locked ? 0.4 : 1,
   };
+}
+
+/**
+ * 目前編輯的是哪一種翻前情境。
+ *
+ * 3-bet 與 Squeeze 在矩陣上長得一樣（預設內容都來自組合表的 3B 欄），
+ * 只看節點鍵很容易改錯邊，因此用一整塊講清楚目前是哪一個。
+ */
+function ScenarioKindCard({
+  matrix,
+  bounds,
+}: {
+  matrix: RangeMatrixView;
+  bounds: RunRequest['heroOpenTiers'];
+}) {
+  const kind = SCENARIO_KINDS[matrix.scenarioKind];
+  const tier = matrix.openTier;
+  if (!kind && !matrix.contentNote) return null;
+  return (
+    <section style={{ ...cardStyle, marginBottom: 14, maxWidth: 1000, display: 'grid', gap: 6 }}>
+      {kind && (
+        <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', flexWrap: 'wrap' }}>
+          <span
+            style={{
+              padding: '2px 8px',
+              background: 'var(--bg-raised)',
+              color: 'var(--text-primary)',
+              fontWeight: 600,
+              fontSize: 12,
+            }}
+          >
+            目前編輯：{kind.title}
+            {tier && `｜${OPEN_TIER_LABEL[tier] ?? tier}（${openTierRange(tier, bounds)}）`}
+          </span>
+          <span className="dim" style={{ fontSize: 11 }}>{kind.detail}</span>
+        </div>
+      )}
+      {matrix.contentNote && (
+        <div style={{ fontSize: 11, lineHeight: 1.6, color: 'var(--warning)' }}>
+          {matrix.contentNote}
+        </div>
+      )}
+    </section>
+  );
+}
+
+const SCENARIO_KINDS: Record<string, { title: string; detail: string }> = {
+  'vs-3bet': {
+    title: '面對 3-bet',
+    detail: '你 OPEN 後，對手直接再加注（中間無人跟注）。可分別設定 4-bet／跟注／棄牌。',
+  },
+  'vs-squeeze': {
+    title: '面對擠壓 Squeeze',
+    detail: '你 OPEN 後，中間有人跟注，後方玩家再加注。與 3-bet 是獨立節點，改這裡不影響 3-bet。',
+  },
+  'vs-open': {
+    title: '面對 OPEN',
+    detail: '依對手實際 open 尺寸分區間，各區間可分別設定加注／跟注／棄牌。',
+  },
+};
+
+const OPEN_TIER_LABEL: Record<string, string> = {
+  standard: '標準 OPEN',
+  medium: '中型 OPEN',
+  large: '大型 OPEN',
+};
+
+/** 引擎 `positions_for` 的同一組位置序列，依在座人數刪最早的位置 */
+function tablePositions(players: number): string[] {
+  const all = ['UTG', 'UTG+1', 'UTG+2', 'LJ', 'HJ', 'CO', 'BTN', 'SB', 'BB'];
+  const drop: Record<number, string[]> = {
+    9: [],
+    8: ['UTG+2'],
+    7: ['UTG+1', 'UTG+2'],
+    6: ['UTG+1', 'UTG+2', 'LJ'],
+  };
+  return all.filter((position) => !(drop[players] ?? []).includes(position));
+}
+
+/** 與引擎 `centi_bb_to_chips` 相同的四捨五入：取整後的實際 BB */
+function roundedBb(centi: number, bigBlind: number): number {
+  return Math.max(1, Math.floor((centi * bigBlind + 50) / 100)) / bigBlind;
+}
+
+const OPEN_KEY = 'openSizeCentiBb';
+
+/**
+ * Hero 的 OPEN 尺寸。
+ *
+ * 資料就是 Bot 頁 Hero 座位的 `openSizeCentiBb*` 參數——同一份 request，
+ * 不另存一份，因此兩頁自然雙向同步。0（或空白）代表繼承。
+ */
+function HeroOpenCard({
+  request,
+  onRequestChange,
+  strategyOpenCentiBb,
+  locked,
+}: {
+  request: RunRequest;
+  onRequestChange: React.Dispatch<React.SetStateAction<RunRequest>>;
+  strategyOpenCentiBb: number;
+  locked: boolean;
+}) {
+  const hero = request.heroSeat;
+  const params = request.bots[hero]?.params ?? {};
+  const global = params[OPEN_KEY] ?? 0;
+
+  const setParam = (key: string, centi: number) =>
+    onRequestChange((current) => {
+      const seats = Array.from(
+        { length: current.players },
+        (_, index) => current.bots[index] ?? { name: `座位 ${index}`, params: {} },
+      );
+      const seat = seats[current.heroSeat];
+      const next = { ...seat.params };
+      // 0 代表繼承：刪鍵而不是存 0，manifest 只留真正改過的欄位
+      if (centi === 0) delete next[key];
+      else next[key] = centi;
+      seats[current.heroSeat] = { ...seat, params: next };
+      return { ...current, bots: seats };
+    });
+
+  const rows = [
+    { key: OPEN_KEY, label: '全域（所有位置）', own: global, inherited: 0 },
+    ...tablePositions(request.players).map((position) => ({
+      key: `${OPEN_KEY}:${position}`,
+      label: position,
+      own: params[`${OPEN_KEY}:${position}`] ?? 0,
+      inherited: global,
+    })),
+  ];
+
+  return (
+    <section style={{ ...cardStyle, flex: '1 1 560px', maxWidth: 720 }}>
+      <SectionTitle>Hero OPEN 尺寸 · 座位 {hero}</SectionTitle>
+      <div className="dim" style={{ fontSize: 11, lineHeight: 1.6, marginBottom: 10 }}>
+        前方無人進池時的首次加注（raise-to）。與 Bot 頁 Hero 座位是<strong>同一份設定</strong>，
+        兩邊任一處修改都會同步。0 或空白表示繼承；非零範圍 2～100 BB。位置設定優先於全域。
+        不改變範圍與全下頻率；實際金額依籌碼取整、最小加注與餘額限制。
+      </div>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '120px 1fr 110px 1fr',
+          gap: '4px 12px',
+          alignItems: 'center',
+          fontSize: 11,
+        }}
+      >
+        <span className="dim">位置</span>
+        <span className="dim">策略原值</span>
+        <span className="dim">Hero 覆寫（BB）</span>
+        <span className="dim">最終有效值</span>
+        {rows.map((row) => {
+          const invalid = row.own !== 0 && (row.own < 200 || row.own > 10_000);
+          const effective = row.own || row.inherited;
+          const source = row.own
+            ? row.key === OPEN_KEY
+              ? '全域覆寫'
+              : '位置覆寫'
+            : row.inherited
+              ? '繼承全域覆寫'
+              : '策略原值';
+          return (
+            <HeroOpenRow
+              key={row.key}
+              label={row.label}
+              original={`${(strategyOpenCentiBb / 100).toFixed(2)} BB`}
+              value={row.own}
+              invalid={invalid}
+              locked={locked}
+              onChange={(centi) => setParam(row.key, centi)}
+              effective={
+                effective
+                  ? `${roundedBb(effective, request.bigBlind).toFixed(2)} BB · ${source}`
+                  : `${(strategyOpenCentiBb / 100).toFixed(2)} BB · 策略原值`
+              }
+            />
+          );
+        })}
+      </div>
+      <div className="dim" style={{ fontSize: 10, marginTop: 8, lineHeight: 1.6 }}>
+        策略原值來自預設組合表的 2.5 倍前方下注；表上標為 8 倍的手牌在沒有覆寫時維持 8 BB。
+      </div>
+    </section>
+  );
+}
+
+function HeroOpenRow({
+  label,
+  original,
+  value,
+  invalid,
+  locked,
+  onChange,
+  effective,
+}: {
+  label: string;
+  original: string;
+  value: number;
+  invalid: boolean;
+  locked: boolean;
+  onChange: (centi: number) => void;
+  effective: string;
+}) {
+  return (
+    <>
+      <span style={{ fontFamily: 'var(--font-mono)' }}>{label}</span>
+      <span className="num dim">{original}</span>
+      <input
+        type="number"
+        aria-label={`${label} OPEN 尺寸`}
+        min={0}
+        max={100}
+        step={0.1}
+        disabled={locked}
+        value={value === 0 ? '' : value / 100}
+        placeholder="繼承"
+        onChange={(event) => {
+          const raw = event.target.value.trim();
+          onChange(raw === '' ? 0 : Math.max(0, Math.round(Number(raw) * 100)));
+        }}
+        style={{
+          width: 90,
+          padding: '3px 6px',
+          fontSize: 12,
+          fontFamily: 'var(--font-mono)',
+          border: `1px solid ${invalid ? 'var(--negative)' : 'var(--border)'}`,
+          borderRadius: 'var(--radius-control)',
+          background: 'var(--bg-surface)',
+          color: 'inherit',
+        }}
+      />
+      <span
+        className="num"
+        style={{ color: invalid ? 'var(--negative)' : value ? 'var(--text-primary)' : 'var(--text-secondary)' }}
+      >
+        {invalid ? '需為 0 或 2～100 BB，run 無法啟動' : effective}
+      </span>
+    </>
+  );
+}
+
+/** 面對開牌的 open 尺度區間邊界。只作用於 Hero，隨 run 寫入快照 */
+function OpenTierCard({
+  request,
+  onRequestChange,
+  locked,
+}: {
+  request: RunRequest;
+  onRequestChange: React.Dispatch<React.SetStateAction<RunRequest>>;
+  locked: boolean;
+}) {
+  const bounds = request.heroOpenTiers;
+  const set = (key: keyof RunRequest['heroOpenTiers'], bb: string) => {
+    const centi = Math.round(Number(bb) * 100);
+    if (!Number.isFinite(centi)) return;
+    onRequestChange((current) => ({
+      ...current,
+      heroOpenTiers: { ...current.heroOpenTiers, [key]: centi },
+    }));
+  };
+  const invalid =
+    bounds.mediumAboveCentiBb < 200 ||
+    bounds.largeAboveCentiBb > 10_000 ||
+    bounds.mediumAboveCentiBb >= bounds.largeAboveCentiBb;
+
+  const field: React.CSSProperties = {
+    width: 80,
+    padding: '3px 6px',
+    fontSize: 12,
+    fontFamily: 'var(--font-mono)',
+    border: `1px solid ${invalid ? 'var(--negative)' : 'var(--border)'}`,
+    borderRadius: 'var(--radius-control)',
+    background: 'var(--bg-surface)',
+    color: 'inherit',
+  };
+
+  return (
+    <section style={{ ...cardStyle, flex: '1 1 300px', maxWidth: 420 }}>
+      <SectionTitle>OPEN 尺度區間</SectionTitle>
+      <div className="dim" style={{ fontSize: 11, lineHeight: 1.6, marginBottom: 10 }}>
+        面對開牌時，依對手實際 open 的 raise-to 總額選用不同區間的策略。
+        左欄「對手 OPEN 尺度」切換正在編輯的區間。
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '6px 12px', alignItems: 'center', fontSize: 11 }}>
+        <span>標準 OPEN 上限（BB）</span>
+        <input
+          type="number"
+          aria-label="標準 OPEN 上限"
+          min={2}
+          max={100}
+          step={0.5}
+          disabled={locked}
+          value={bounds.mediumAboveCentiBb / 100}
+          onChange={(event) => set('mediumAboveCentiBb', event.target.value)}
+          style={field}
+        />
+        <span>中型 OPEN 上限（BB）</span>
+        <input
+          type="number"
+          aria-label="中型 OPEN 上限"
+          min={2}
+          max={100}
+          step={0.5}
+          disabled={locked}
+          value={bounds.largeAboveCentiBb / 100}
+          onChange={(event) => set('largeAboveCentiBb', event.target.value)}
+          style={field}
+        />
+      </div>
+      <div style={{ marginTop: 10, display: 'grid', gap: 2 }}>
+        {(['standard', 'medium', 'large'] as const).map((key) => (
+          <Row key={key} label={OPEN_TIER_LABEL[key]} value={openTierRange(key, bounds)} />
+        ))}
+      </div>
+      {invalid && (
+        <div style={{ fontSize: 11, color: 'var(--negative)', marginTop: 8 }}>
+          邊界需在 2～100 BB 之內，且中型上限必須大於標準上限；否則 run 無法啟動。
+        </div>
+      )}
+      <div className="dim" style={{ fontSize: 10, marginTop: 8, lineHeight: 1.6 }}>
+        中型／大型區間沒有自己的預設內容：未設定的格子沿用標準區間，再落回組合表。
+        run 快照會記錄實際 open 尺寸與命中的區間。
+      </div>
+    </section>
+  );
 }
 
 function pct(myriad: number): string {

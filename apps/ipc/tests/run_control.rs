@@ -30,6 +30,7 @@ fn request() -> RunRequest {
         bots: Vec::new(),
         hero_overrides: Vec::new(),
         hero_postflop_overrides: Default::default(),
+        hero_open_tiers: Default::default(),
     }
 }
 
@@ -151,6 +152,7 @@ fn 非法的翻後覆寫讓_run_直接拒絕啟動() {
     let strategy = HeroStrategy {
         preflop_overrides: &[],
         postflop_overrides: &overrides,
+        open_tiers: Default::default(),
     };
 
     let mut request = request();
@@ -631,6 +633,7 @@ fn 自身策略的覆寫寫進_manifest_且不影響_bot_快照() {
         HeroStrategy {
             preflop_overrides: &request.hero_overrides,
             postflop_overrides: &request.hero_postflop_overrides,
+            open_tiers: request.hero_open_tiers,
         },
         &store,
         &control,
@@ -682,6 +685,7 @@ fn 不合法的覆寫讓執行直接失敗() {
         HeroStrategy {
             preflop_overrides: &request.hero_overrides,
             postflop_overrides: &request.hero_postflop_overrides,
+            open_tiers: request.hero_open_tiers,
         },
         &store,
         &control,
@@ -700,6 +704,7 @@ fn 不合法的覆寫讓執行直接失敗() {
         HeroStrategy {
             preflop_overrides: &[bad_node],
             postflop_overrides: &Default::default(),
+            open_tiers: Default::default(),
         },
         &store,
         &control,

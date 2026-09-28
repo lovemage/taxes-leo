@@ -1,12 +1,18 @@
-# Windows 桌面殼打包。
+# 桌面殼打包（Windows ＋ macOS）。
 #
 # 兩種觸發方式：
 #   - 手動（workflow_dispatch）：產物放 Actions artifacts，給內部測試人員抓。
-#   - 推 v* tag：額外開一個 GitHub Release，產物掛在上面，不必登入即可下載。
+#   - 推 v* tag：額外開一個 GitHub Release，兩個平台的產物都掛在上面，
+#     不必登入即可下載。
 #
-# 建置環境刻意跟 README「Windows 端一次性準備」對齊：MSVC build tools 與
-# WebView2 都是 windows-latest runner 內建，不需要另外安裝。
-name: 桌面殼打包（Windows）
+# 兩個平台各自一個 job、平行建置；Release 由最後的 release job 統一建立。
+# 各平台 job 自己開 Release 的話，兩個 job 會搶著建同一個 tag 的 Release，
+# 後到的那個直接失敗。
+#
+# Windows 建置環境刻意跟 README「Windows 端一次性準備」對齊：MSVC build
+# tools 與 WebView2 都是 windows-latest runner 內建，不需要另外安裝。
+# macOS 用系統內建的 WKWebView，Xcode command line tools 也是 runner 內建。
+name: 桌面殼打包（Windows／macOS）
 
 on:
   workflow_dispatch:
@@ -22,7 +28,8 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  windows:
+    name: Windows installer
     runs-on: windows-latest
 
     steps:
@@ -88,14 +95,96 @@ jobs:
           path: dist-windows/*
           retention-days: 30
 
-      - name: 發佈 Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: pwsh
+  macos:
+    name: macOS app（Universal）
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # Universal binary 同時含 Apple Silicon 與 Intel，兩個 target 都要裝。
+      # 只出 arm64 的話 Intel Mac 的測試人員打不開。
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop -> target
+
+      - name: 安裝 node 相依
+        run: pnpm install --frozen-lockfile
+
+      # tauri.conf.json 的 bundle.targets 列的是 Windows 格式，這裡以
+      # --bundles 指定 macOS 的 .app 與 .dmg。用 exec 直接呼叫 tauri CLI，
+      # 參數不經過 package script 轉手。
+      - name: 建置 app 與 dmg
+        run: pnpm --filter @taxes-leo/desktop exec tauri build --target universal-apple-darwin --bundles app,dmg
+
+      # 同 Windows：產物檔名含中文，改為 ASCII。
+      # .app 是資料夾，用 ditto 壓成 zip 才保得住權限與簽章屬性。
+      - name: 整理產物檔名
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=dist-macos
+          mkdir -p "$out"
+          ver=$(node -p "require('./apps/desktop/tauri.conf.json').version")
+          bundle=apps/desktop/target/universal-apple-darwin/release/bundle
+
+          # 各類產物都必須剛好一個，理由同 Windows
+          take_one() {
+            local hits=()
+            while IFS= read -r -d '' hit; do hits+=("$hit"); done \
+              < <(find "$1" -maxdepth 1 -name "$2" -print0)
+            if [ "${#hits[@]}" -ne 1 ]; then
+              echo "$1/$2 預期剛好 1 個，實際 ${#hits[@]} 個" >&2
+              exit 1
+            fi
+            printf '%s' "${hits[0]}"
+          }
+
+          cp "$(take_one "$bundle/dmg" '*.dmg')" "$out/9max-sim-$ver-macos-universal.dmg"
+          ditto -c -k --keepParent "$(take_one "$bundle/macos" '*.app')" \
+            "$out/9max-sim-$ver-macos-universal.app.zip"
+
+          ls -l "$out"
+
+      - name: 上傳 artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: 9max-macos
+          path: dist-macos/*
+          retention-days: 30
+
+  release:
+    name: 發佈 Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: 建立 Release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          Set-Content -Path release-notes.md -Encoding utf8 -Value @'
-          Windows 測試版，三種擇一：
+          cat > release-notes.md <<'EOF'
+          ## Windows（三種擇一）
 
           - `*-setup.exe` — NSIS 安裝檔（建議）
           - `*.msi` — MSI 安裝檔，適合用群組原則派送
@@ -106,9 +195,19 @@ jobs:
 
           若視窗開得起來但畫面空白，多半是缺 WebView2 執行階段：
           https://developer.microsoft.com/microsoft-edge/webview2/
-          '@
 
-          $files = @(Get-ChildItem dist-windows | ForEach-Object FullName)
-          gh release create $env:GITHUB_REF_NAME @files `
-            --title $env:GITHUB_REF_NAME `
+          ## macOS（Apple Silicon 與 Intel 通用）
+
+          - `*-macos-universal.dmg` — 開啟後把 App 拖到「應用程式」
+          - `*-macos-universal.app.zip` — 解壓縮後直接執行
+
+          未經 Apple 公證，首次開啟會被 Gatekeeper 擋下：
+          在 App 上按右鍵 →「打開」→ 再按「打開」即可。
+          若顯示「已損毀」，請在終端機執行
+          `xattr -cr "/Applications/9max 模擬平台.app"` 後再開啟。
+          EOF
+
+          ls -l dist
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "$GITHUB_REF_NAME" \
             --notes-file release-notes.md

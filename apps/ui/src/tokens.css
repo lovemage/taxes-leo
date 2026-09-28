@@ -326,6 +326,82 @@ input[type='range']::-moz-range-track {
   font-size: 10px;
 }
 
+/* 翻前情境命中：計算狀態區下方，上一次 run 的實際命中 */
+.preflop-hits {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--bg-surface);
+  font-size: 11px;
+}
+
+.preflop-hits h3 {
+  margin: 0;
+  font-size: 12px;
+}
+
+.preflop-hits p {
+  margin: 6px 0 0;
+}
+
+.preflop-hits__heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.preflop-hits__body {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr);
+  gap: 16px;
+}
+
+.preflop-hits__groups {
+  display: grid;
+  gap: 8px;
+}
+
+.preflop-hits__group-title,
+.preflop-hits__tier-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.preflop-hits__rows {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.preflop-hits__row {
+  display: inline-flex;
+  gap: 6px;
+  padding: 2px 8px;
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+}
+
+.preflop-hits__row .num {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.preflop-hits__open {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.preflop-hits__sizes {
+  font-size: 10px;
+  line-height: 1.6;
+}
+
 .run-control-compact {
   display: flex;
   flex-direction: column;
@@ -462,7 +538,8 @@ input[type='range']::-moz-range-track {
     overflow: visible;
   }
 
-  .run-control-compact__body {
+  .run-control-compact__body,
+  .preflop-hits__body {
     grid-template-columns: 1fr;
   }
 
