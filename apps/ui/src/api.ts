@@ -27,11 +27,13 @@ import type {
   PostflopStrategyView,
   PowerPreviewView,
   RangeMatrixView,
+  ReportView,
   RunPhase,
   RunProgress,
   RunView,
   RuntimeStatusView,
   StrategyMetaView,
+  StrategyIdentityView,
   StrategyNodesView,
 } from '../../../packages/poker-types/src/index';
 
@@ -119,12 +121,13 @@ function desktopOnly<T>(what: string): Promise<T> {
 
 // ── 執行控制（面板 E）────────────────────────────────────────────────
 
-export function startRun(request: RunRequest): Promise<void> {
+export function startRun(request: RunRequest, strategyIdentity: StrategyIdentityView | null = null): Promise<void> {
   const bridge = tauri();
   if (!bridge) return desktopOnly('執行模擬');
   // created_at 由前端提供：引擎自身不讀系統時鐘，以免時間進入可重現路徑
   return bridge.core.invoke('start_run', {
     request,
+    strategyIdentity,
     createdAt: Math.floor(Date.now() / 1000),
   });
 }
@@ -334,6 +337,33 @@ export function getRun(): Promise<RunView> {
   const bridge = tauri();
   if (bridge) return bridge.core.invoke<RunView>('get_run');
   return http<RunView>('/api/run');
+}
+
+export function getReport(includeDead: boolean): Promise<ReportView> {
+  const bridge = tauri();
+  if (bridge) return bridge.core.invoke<ReportView>('get_report', { includeDead });
+  return http<ReportView>(`/api/report?includeDead=${includeDead ? 1 : 0}`);
+}
+
+/** 引擎驗證儲存／匯入的策略，與執行時使用同一套檢查。 */
+export async function validateStrategy(request: RunRequest): Promise<void> {
+  const bridge = tauri();
+  const error = bridge
+    ? await bridge.core.invoke<string | null>('validate_strategy', { request })
+    : await httpPost<string | null>('/api/strategy/validate', request);
+  if (error) throw new Error(error);
+}
+
+/** 桌面直接寫入下載資料夾；瀏覽器使用原生下載。回傳實際存放位置。 */
+export async function exportFile(filename: string, content: string, mime: string): Promise<string> {
+  const bridge = tauri();
+  if (bridge) return bridge.core.invoke<string>('export_file', { filename, content });
+  const url = URL.createObjectURL(new Blob([content], { type: mime }));
+  const anchor = document.createElement('a');
+  anchor.href = url; anchor.download = filename;
+  document.body.append(anchor); anchor.click(); anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return `已下載 ${filename}`;
 }
 
 export function listHands(offset: number, limit: number): Promise<HandSummaryView[]> {

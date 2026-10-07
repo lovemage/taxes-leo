@@ -6,7 +6,7 @@
 //   [ 圖示欄 56px ][ 工作內容 ]
 //   [ ────────── Status bar 24px ────────── ]
 //
-// 計算頁把輸出放在上方、設定放在下方，其他頁面仍維持參數欄與主內容分工。
+// 計算與牌桌設定各自為獨立頁面。
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -23,6 +23,7 @@ import {
 import type {
   CellOverrideView,
   PostflopOverridesView,
+  StrategyIdentityView,
 } from '../../../packages/poker-types/src/index';
 import { AppHeader, type ReplayHeadline, type RunMode } from './components/AppHeader';
 import { useMinimumVisible } from './motion';
@@ -41,14 +42,17 @@ import {
 } from './panels/StrategyNav';
 import { DEFAULT_REQUEST, TableSetup, validateRequest } from './panels/TableSetup';
 import { PreflopHitsCard } from './components/PreflopHitsCard';
+import { Report } from './panels/Report';
+import { StrategyLibrary } from './components/StrategyLibrary';
 
 const RAIL: readonly RailItem[] = [
   { key: 'run', glyph: '▶', label: '計算', enabled: true },
+  { key: 'table', glyph: '▤', label: '牌桌', enabled: true },
   { key: 'replay', glyph: '⏱', label: '重播', enabled: true },
   { key: 'bots', glyph: '◍', label: 'Bot', enabled: true },
   { key: 'strategy', glyph: '▦', label: '策略', enabled: true },
   { key: 'quiz', glyph: '◈', label: '測驗', enabled: true },
-  { key: 'report', glyph: '◫', label: '報表', enabled: false },
+  { key: 'report', glyph: '◫', label: '報表', enabled: true },
 ];
 
 /** 執行狀態的最短可見時間。短到看不見的回饋等於沒有回饋 */
@@ -65,6 +69,7 @@ const PANEL_TITLE: Record<string, string> = {
 export function App() {
   const [panel, setPanel] = useState('run');
   const [request, setRequest] = useState<RunRequest>(DEFAULT_REQUEST);
+  const [strategyIdentity, setStrategyIdentity] = useState<StrategyIdentityView | null>(null);
   /** 面板 B 選定的座位。左欄選、右欄改，因此狀態要在兩者之上 */
   const [botSeat, setBotSeat] = useState(0);
   /** 面板 D 檢視中的翻前節點 */
@@ -162,11 +167,11 @@ export function App() {
     setFailure(null);
     setProgress(null);
     setRunning(true);
-    startRun(request).catch((error: unknown) => {
+    startRun(request, strategyIdentity).catch((error: unknown) => {
       setRunning(false);
       setFailure(String(error));
     });
-  }, [request]);
+  }, [request, strategyIdentity]);
 
   const handlePause = useCallback(() => {
     const next = !(progress?.paused ?? false);
@@ -195,13 +200,15 @@ export function App() {
         onCancel={handleCancel}
       />
 
+      <StrategyLibrary visible={panel === 'strategy'} request={request} onChange={setRequest} onIdentity={setStrategyIdentity} locked={busy} />
+
       {/* 工作區。minHeight 0 讓內容在應用程式視窗內自行配置 */}
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
         <IconRail items={RAIL} active={panel} onSelect={setPanel} />
 
-        {panel === 'run' ? (
+        {panel === 'run' || panel === 'table' ? (
           <main className="run-workspace">
-            <section className="run-workspace__status" aria-label="計算狀態">
+            {panel === 'run' ? <section className="run-workspace__status" aria-label="計算狀態">
               <RunControl
                 compact
                 request={request}
@@ -213,7 +220,7 @@ export function App() {
                 onViewReplay={() => setPanel('replay')}
               />
               <PreflopHitsCard reloadToken={reloadToken} />
-            </section>
+            </section> : (
 
             <section className="run-workspace__setup" aria-labelledby="table-setup-title">
               <div className="run-workspace__setup-heading">
@@ -227,11 +234,12 @@ export function App() {
                 locked={busy}
               />
             </section>
+            )}
           </main>
         ) : (
           <>
             {/* 其他面板保留左側輸入、右側內容的既有工作方式 */}
-            {panel !== 'replay' && <aside
+            {panel !== 'replay' && panel !== 'report' && <aside
               style={{
                 width: 300,
                 flexShrink: 0,
@@ -288,6 +296,7 @@ export function App() {
                 />
               )}
               {panel === 'quiz' && <Quiz seated={request.players} />}
+              {panel === 'report' && <Report reloadToken={reloadToken} running={busy} />}
               {panel === 'replay' && (
                 <Replay
                   reloadToken={reloadToken}

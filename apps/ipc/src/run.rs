@@ -91,6 +91,24 @@ pub struct RunRequest {
 }
 
 impl RunRequest {
+    /// 策略庫的儲存與匯入共用執行時的內容驗證。
+    pub fn validate_strategy(&self) -> Result<(), String> {
+        crate::strategy::to_cell_overrides(&self.hero_overrides)?;
+        self.hero_open_tiers.to_bounds()?;
+        crate::bots::to_bot_configs(&self.bots, self.players)?;
+        let diagnostics = crate::postflop::postflop_diagnostics(&self.hero_postflop_overrides);
+        if !diagnostics.can_save {
+            return Err(diagnostics
+                .issues
+                .iter()
+                .filter(|issue| issue.severity == "error")
+                .map(|issue| issue.message.as_str())
+                .collect::<Vec<_>>()
+                .join("；"));
+        }
+        Ok(())
+    }
+
     /// 轉為引擎設定。
     ///
     /// # Errors
@@ -280,15 +298,20 @@ pub const PROGRESS_EVERY_HANDS: u64 = 250;
 /// 逐手 log 每幾手 commit 一次（核心規格 3.2：批次交易，避免 UI 餓死）。
 pub const WRITE_BATCH_HANDS: usize = 500;
 
-/// `on_progress` 由呼叫端節流後推送給前端；核心規格要求進度更新
-/// 不得逐手觸發，否則 UI 執行緒會被重繪吃滿。
-/// run 要用的使用者策略。
-///
-/// 翻前逐格覆寫與翻後稀疏覆寫包在一起：兩者都是「使用者親手訂的內容」，
-/// 而且都在 run 開始時以值凍結。分成兩個參數傳的話，呼叫端很容易只更新
-/// 其中一個。
+/// 策略庫身分隨執行凍結；草稿版本明確標示，不冒充已儲存版本。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../packages/poker-types/src/generated/")]
+#[serde(rename_all = "camelCase")]
+pub struct StrategyIdentityView {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+}
+
+/// 翻前逐格覆寫與翻後稀疏覆寫在 run 開始時一起凍結。
 #[derive(Debug, Clone, Copy)]
 pub struct HeroStrategy<'a> {
+    pub identity: Option<&'a StrategyIdentityView>,
     pub preflop_overrides: &'a [crate::strategy::CellOverrideView],
     pub postflop_overrides: &'a crate::postflop::PostflopOverridesView,
     /// 面對開牌時 open 尺度區間的邊界
@@ -302,6 +325,7 @@ impl HeroStrategy<'static> {
         static EMPTY: std::sync::OnceLock<crate::postflop::PostflopOverridesView> =
             std::sync::OnceLock::new();
         Self {
+            identity: None,
             preflop_overrides: &[],
             postflop_overrides: EMPTY.get_or_init(crate::postflop::PostflopOverridesView::default),
             open_tiers: crate::strategy::OpenTierBoundsView::default(),
@@ -347,6 +371,10 @@ pub fn execute(
     // 沒有覆寫的基準規則，兩者分開存才讀得回當初到底跑了什麼
     let hero_open_tiers = strategy.open_tiers.to_bounds()?;
     let mut hero_rules = rules.clone();
+    if let Some(identity) = strategy.identity {
+        hero_rules.name.clone_from(&identity.name);
+        hero_rules.version.clone_from(&identity.version);
+    }
     hero_rules.overrides = hero_overrides.clone();
     hero_rules.open_tier_bounds = hero_open_tiers;
 
@@ -379,7 +407,7 @@ pub fn execute(
             format!("翻後覆寫不合法，run 未啟動——{detail}")
         })?;
 
-    let manifest = build_manifest(
+    let mut manifest = build_manifest(
         config,
         &rules,
         &hero_rules,
@@ -388,6 +416,7 @@ pub fn execute(
         &postflop_rules,
         created_at,
     );
+    attach_strategy_identity(&mut manifest, strategy.identity);
     let run_id = {
         let mut guard = store.lock().map_err(|_| "資料庫鎖已毀損")?;
         guard
@@ -488,6 +517,7 @@ pub fn execute(
             refills: Vec::new(),
         })
         .collect();
+    attach_strategy_identity(&mut final_manifest, strategy.identity);
     final_manifest.completed = !aborted;
     // 翻後覆蓋隨 manifest 一起落地：報表要能在 run 結束後說出
     // 「你的策略涵蓋了多少實際決策」，而不是重跑一次去猜
@@ -539,6 +569,18 @@ pub fn execute(
     });
 
     Ok(run_id)
+}
+
+fn attach_strategy_identity(manifest: &mut RunManifest, identity: Option<&StrategyIdentityView>) {
+    if let Some(identity) = identity {
+        let snapshot = &mut manifest.hero_strategy;
+        snapshot.content["libraryIdentity"] = serde_json::json!(identity);
+        *snapshot = ContentSnapshot::new(
+            snapshot.name.clone(),
+            snapshot.version.clone(),
+            snapshot.content.clone(),
+        );
+    }
 }
 
 /// 離開 [`execute`] 時標記 control 已結束。

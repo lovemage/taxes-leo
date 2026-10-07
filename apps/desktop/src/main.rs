@@ -53,6 +53,58 @@ struct AppState {
 
 type CommandResult<T> = Result<T, String>;
 
+#[tauri::command(async)]
+fn validate_strategy(request: RunRequest) -> Option<String> {
+    request.validate_strategy().err()
+}
+
+/// 使用 create_new 保證連續匯出不會覆蓋先前檔案。
+#[tauri::command(async)]
+fn export_file(app: tauri::AppHandle, filename: String, content: String) -> CommandResult<String> {
+    use std::io::Write;
+    let name = std::path::Path::new(&filename);
+    if name.file_name().and_then(|n| n.to_str()) != Some(filename.as_str())
+        || filename.contains(['/', '\\'])
+        || filename.is_empty()
+    {
+        return Err("匯出檔名不合法".to_owned());
+    }
+    let directory = app.path().download_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
+    let stem = name
+        .file_stem()
+        .and_then(|n| n.to_str())
+        .unwrap_or("export");
+    let extension = name.extension().and_then(|n| n.to_str()).unwrap_or("txt");
+    for suffix in 0..10_000 {
+        let path = directory.join(if suffix == 0 {
+            filename.clone()
+        } else {
+            format!("{stem}-{suffix}.{extension}")
+        });
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(mut file) => {
+                if let Err(error) = file
+                    .write_all(content.as_bytes())
+                    .and_then(|()| file.sync_all())
+                {
+                    drop(file);
+                    let _ = std::fs::remove_file(&path);
+                    return Err(error.to_string());
+                }
+                return Ok(path.to_string_lossy().into_owned());
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    Err("同名匯出檔案過多，請清理下載資料夾".to_owned())
+}
+
 // ── 執行控制（面板 E）────────────────────────────────────────────────
 
 /// 啟動一個批次 run。立即回傳，實際執行在背景執行緒。
@@ -62,6 +114,7 @@ fn start_run(
     state: State<'_, AppState>,
     request: RunRequest,
     created_at: i64,
+    strategy_identity: Option<run::StrategyIdentityView>,
 ) -> CommandResult<()> {
     let config = request.to_session_config()?;
     // 逐座 Bot 設定隨 request 一起進來；驗證在這裡就做，
@@ -106,6 +159,7 @@ fn start_run(
             &config,
             &bots,
             run::HeroStrategy {
+                identity: strategy_identity.as_ref(),
                 preflop_overrides: &hero_overrides,
                 postflop_overrides: &hero_postflop_overrides,
                 open_tiers: hero_open_tiers,
@@ -417,6 +471,8 @@ fn main() {
             bot_strategy_matrix,
             get_run,
             get_report,
+            validate_strategy,
+            export_file,
             list_hands,
             get_hand
         ])

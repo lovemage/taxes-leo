@@ -20,6 +20,7 @@ export function useReplayPlayer(frames: FrameView[], options: {
   const latest = useRef({ index, playing, speed, options });
   latest.current = { index, playing, speed, options };
   const setIndex = (next: number) => {
+    next = Math.max(0, Math.min(Math.max(0, frames.length - 1), next));
     time.current = next === 0 ? 0 : frameDuration(frames[next]?.kind ?? '');
     setElapsed(time.current);
     updateIndex(next);
@@ -148,7 +149,7 @@ export function ReplayControls({
           checked={continuous}
           onChange={(e) => setContinuous(e.target.checked)}
         />
-        <span className="dim">連續</span>
+        <span className="dim">連續播放下一手</span>
       </label>
 
       <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>

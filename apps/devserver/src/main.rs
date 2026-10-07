@@ -265,6 +265,13 @@ fn serve(mut stream: TcpStream, handler: &IpcHandler, run_id: i64) -> std::io::R
         // 在瀏覽器開發模式下也是真的——否則 Linux 開發機（沒有 webkit2gtk，
         // 開不了 Tauri 殼）就完全看不到自己在改什麼
         "/api/strategy/meta" => serde_json::to_string(&poker_ipc::strategy::meta()).ok(),
+        "/api/strategy/validate" => {
+            let error = match serde_json::from_str::<poker_ipc::RunRequest>(&body) {
+                Ok(request) => request.validate_strategy().err(),
+                Err(error) => Some(format!("策略格式錯誤：{error}")),
+            };
+            serde_json::to_string(&error).ok()
+        }
         "/api/strategy/postflop" => {
             serde_json::to_string(&poker_ipc::strategy::postflop_strategy()).ok()
         }

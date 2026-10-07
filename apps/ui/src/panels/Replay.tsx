@@ -45,7 +45,8 @@ export function Replay({
   const [visibility, setVisibility] = useState<HoleCardVisibility>('all');
   const [error, setError] = useState<string | null>(null);
   const [listOpen, setListOpen] = useState(false);
-  const [continuous, setContinuous] = useState(true);
+  const [continuous, setContinuous] = useState(false);
+  const [jump, setJump] = useState('1');
 
   const bigBlind = run?.bigBlind || configuredBigBlind;
   const total = run ? Number(run.handsPlayed) : 0;
@@ -62,7 +63,12 @@ export function Replay({
     let active = true;
     setHand(null); setError(null);
     if (run && total > 0) getHand(selected, visibility)
-      .then(next => { if (active) { setPreviousHand(lastHand.current); lastHand.current = next; setHand(next); } })
+      .then(next => { if (active) {
+        const previous = lastHand.current;
+        setPreviousHand(previous && previous.handIndex + 1 === next.handIndex
+          && previous.instanceIndex === next.instanceIndex ? previous : null);
+        lastHand.current = next; setHand(next);
+      } })
       .catch((e: unknown) => { if (active) setError(String(e)); });
     return () => { active = false; };
   }, [selected, visibility, run, total]);
@@ -76,13 +82,22 @@ export function Replay({
     onAdvance: advance,
   });
 
+  const selectHand = (index: number) => {
+    if (!Number.isInteger(index) || index < 0 || index >= total) return;
+    player.setPlaying(false);
+    player.setIndex(0);
+    setSelected(index);
+    setJump(String(index + 1));
+  };
+  useEffect(() => setJump(String(selected + 1)), [selected]);
+
   const frame = hand && hand.frames.length > 0
     ? hand.frames[Math.min(player.index, hand.frames.length - 1)]
     : null;
 
   // 手數編號與面板內的 header 用同一個基準，兩處對不上會讓人以為看的不是同一手
   useEffect(() => {
-    onHeadline(frame && total > 0 ? { hand: selected, total, potBb: frame.pot / bigBlind } : null);
+    onHeadline(frame && total > 0 ? { hand: selected + 1, total, potBb: frame.pot / bigBlind } : null);
   }, [frame, selected, total, bigBlind, onHeadline]);
 
   // 切走面板時清掉，否則頂部列會停在上一次看到的數字
@@ -93,7 +108,7 @@ export function Replay({
       <div style={{ padding: 24 }}>
         <h1 style={{ fontSize: 16 }}>沒有可重播的資料</h1>
         <p className="muted">{error}</p>
-        <p className="dim">請先在「執行」面板跑一個 run。</p>
+        <p className="dim">請先在「計算」面板執行模擬。</p>
       </div>
     );
   }
@@ -132,7 +147,7 @@ export function Replay({
           <span style={{ fontSize: 10 }}>{listOpen ? '▾' : '▸'}</span>
           逐手 Log
           <span className="num dim">
-            #{selected}
+            #{total ? selected + 1 : 0}
           </span>
           <span className="dim" style={{ fontSize: 11 }}>
             / {total.toLocaleString()} 手
@@ -172,6 +187,16 @@ export function Replay({
           限制底牌（攤牌時揭露）
         </label>
       </header>
+      <form className="workspace-toolbar replay-hand-controls" onSubmit={event => {
+        event.preventDefault(); selectHand(Number(jump) - 1);
+      }}>
+        <strong>逐手重播</strong>
+        <button type="button" disabled={!hand || selected === 0} onClick={() => selectHand(selected - 1)}>◀ 上一手</button>
+        <button type="button" disabled={!hand || selected + 1 >= total} onClick={() => selectHand(selected + 1)}>下一手 ▶</button>
+        <label>跳至第 <input aria-label="跳至手數" type="number" min={1} max={total || 1} value={jump} disabled={!total} onChange={event => setJump(event.target.value)} style={{ width: 85 }} /> 手</label>
+        <button type="submit" disabled={!total || !Number.isInteger(Number(jump)) || Number(jump) < 1 || Number(jump) > total}>前往</button>
+        <span className="dim">預設播完一手即停；可在下方開啟連續播放。</span>
+      </form>
       <ReplayAudio hand={hand} frame={frame} index={player.index} elapsed={player.elapsed} playing={player.playing} heroSeat={run?.heroSeat ?? 0} />
 
       {listOpen && (
@@ -189,7 +214,7 @@ export function Replay({
             total={total}
             selected={selected}
             onSelect={(index) => {
-              setSelected(index);
+              selectHand(index);
               setListOpen(false);
             }}
             bigBlind={bigBlind}
@@ -211,7 +236,7 @@ export function Replay({
               }}
             >
               <h1 style={{ fontSize: 15, margin: 0 }}>
-                第 <span className="num">{selected}</span> 手
+                第 <span className="num">{selected + 1}</span> 手
               </h1>
               {visibility === 'all' && (
                 <span className="dim" style={{ fontSize: 11 }}>

@@ -59,6 +59,7 @@ export type { RuntimeStatusView } from './generated/RuntimeStatusView';
 export type { ScenarioOptionView } from './generated/ScenarioOptionView';
 export type { SeatView } from './generated/SeatView';
 export type { StrategyMetaView } from './generated/StrategyMetaView';
+export type { StrategyIdentityView } from './generated/StrategyIdentityView';
 export type { StrategyNodesView } from './generated/StrategyNodesView';
 export type { StreetView } from './generated/StreetView';
 export type { TablesView } from './generated/TablesView';

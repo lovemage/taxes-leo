@@ -54,6 +54,9 @@ jobs:
       - name: 前端打包
         run: pnpm --filter @taxes-leo/ui build
 
+      - name: 前端資料處理測試
+        run: pnpm --filter @taxes-leo/ui test
+
       # 型別由 Rust 產生（ts-rs）。產生結果與 commit 進去的不一致，代表
       # 有人改了 DTO 卻沒重新產生，前端會對著過期的型別寫程式
       - name: 產生的型別與版控一致

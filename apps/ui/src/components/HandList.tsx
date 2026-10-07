@@ -121,7 +121,7 @@ export function HandList({
               }}
             >
               <span className="num" style={{ minWidth: 46 }}>
-                #{index}
+                #{index + 1}
               </span>
               {summary ? (
                 <>

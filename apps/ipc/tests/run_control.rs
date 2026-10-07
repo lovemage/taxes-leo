@@ -34,6 +34,49 @@ fn request() -> RunRequest {
     }
 }
 
+#[test]
+fn 策略存檔驗證拒絕不合法的頻率與尺度() {
+    let mut request = request();
+    assert!(request.validate_strategy().is_ok());
+    request.hero_overrides = vec![override_of("AA", 9_000, 9_000)];
+    assert!(request.validate_strategy().is_err());
+    request.hero_overrides.clear();
+    request.hero_open_tiers.medium_above_centi_bb = 1;
+    assert!(request.validate_strategy().is_err());
+}
+
+#[test]
+fn 策略庫名稱版本與身分凍結於快照及報表() {
+    let mut request = request();
+    request.hand_limit = 20;
+    let config = request.to_session_config().expect("轉換");
+    let store = Arc::new(Mutex::new(Store::open_in_memory().expect("資料庫")));
+    let mut identity = poker_ipc::run::StrategyIdentityView {
+        id: "strategy-one".to_owned(),
+        name: "測試策略".to_owned(),
+        version: "2-draft".to_owned(),
+    };
+    let run_id = execute(
+        &config,
+        &[],
+        HeroStrategy { identity: Some(&identity), ..HeroStrategy::none() },
+        &store,
+        &Arc::new(RunControl::default()),
+        1_771_200_000,
+        |_| {},
+    ).expect("執行");
+    identity.name = "之後修改的名稱".to_owned();
+    let guard = store.lock().expect("鎖");
+    let manifest = guard.load_manifest(run_id).expect("快照");
+    assert_eq!(manifest.hero_strategy.name, "測試策略");
+    assert_eq!(manifest.hero_strategy.version, "2-draft");
+    assert_eq!(manifest.hero_strategy.content["libraryIdentity"]["id"], "strategy-one");
+    assert!(manifest.hero_strategy.verify());
+    let report = poker_ipc::report::report(&guard, run_id, false).expect("報表");
+    assert!(report.scope.hero_strategy.contains("測試策略"));
+    assert!(report.scope.hero_strategy.contains("2-draft"));
+}
+
 // ── 面板 A 的設定轉換 ───────────────────────────────────────────────────
 
 #[test]
@@ -150,6 +193,7 @@ fn 非法的翻後覆寫讓_run_直接拒絕啟動() {
         rules: Vec::new(),
     };
     let strategy = HeroStrategy {
+        identity: None,
         preflop_overrides: &[],
         postflop_overrides: &overrides,
         open_tiers: Default::default(),
@@ -631,6 +675,7 @@ fn 自身策略的覆寫寫進_manifest_且不影響_bot_快照() {
         &config,
         &request.bots,
         HeroStrategy {
+            identity: None,
             preflop_overrides: &request.hero_overrides,
             postflop_overrides: &request.hero_postflop_overrides,
             open_tiers: request.hero_open_tiers,
@@ -683,6 +728,7 @@ fn 不合法的覆寫讓執行直接失敗() {
         &config,
         &request.bots,
         HeroStrategy {
+            identity: None,
             preflop_overrides: &request.hero_overrides,
             postflop_overrides: &request.hero_postflop_overrides,
             open_tiers: request.hero_open_tiers,
@@ -702,6 +748,7 @@ fn 不合法的覆寫讓執行直接失敗() {
         &config,
         &request.bots,
         HeroStrategy {
+            identity: None,
             preflop_overrides: &[bad_node],
             postflop_overrides: &Default::default(),
             open_tiers: Default::default(),

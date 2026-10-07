@@ -481,6 +481,7 @@ fn run_快照記錄區間邊界與翻前命中() {
         &config,
         &request.bots,
         HeroStrategy {
+            identity: None,
             preflop_overrides: &request.hero_overrides,
             postflop_overrides: &request.hero_postflop_overrides,
             open_tiers: request.hero_open_tiers,
@@ -549,6 +550,7 @@ fn 不合法的區間邊界讓_run_拒絕啟動() {
         &config,
         &request.bots,
         HeroStrategy {
+            identity: None,
             preflop_overrides: &request.hero_overrides,
             postflop_overrides: &request.hero_postflop_overrides,
             open_tiers: request.hero_open_tiers,

@@ -4,6 +4,28 @@
   --accent:#7dc9c5; --accent-hover:#a0e0d8; --range-accent:#7dc9c5;
   --radius-control:3px; --radius-panel:5px; --radius-container:8px;
 }
+.workspace-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
+.workspace-toolbar h1, .workspace-toolbar h2 { margin:0; margin-right:auto; }
+.workspace-toolbar button { border:1px solid var(--border); border-radius:0; padding:6px 12px; background:var(--bg-raised); color:var(--text-primary); font:inherit; font-size:12px; }
+.workspace-toolbar :is(select,input[type=text],input:not([type])) { border:1px solid var(--border); border-radius:0; padding:6px 8px; background:var(--bg-base); color:var(--text-primary); font:inherit; max-width:280px; }
+.workspace-toolbar label { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
+.strategy-library { flex-shrink:0; padding:12px 16px; border-bottom:1px solid var(--border); background:var(--bg-surface); font-size:12px; }
+.strategy-library form, .strategy-library [role=alert] { margin-top:10px; }
+.strategy-library p { margin:8px 0 0; overflow-wrap:anywhere; }
+.strategy-dirty { color:var(--warning); }
+.report-workspace { padding:20px; max-width:1600px; margin:auto; font-size:12px; }
+.report-workspace h1 { font-size:18px; }.report-workspace h2 { font-size:13px; margin-top:0; }
+.report-section { margin:16px 0; padding:16px; border:1px solid var(--border); background:var(--bg-surface); }
+.report-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:12px; }
+.report-grid .report-section { margin:0; }
+.report-metric { display:flex; flex-direction:column; gap:8px; }
+.report-metric > strong { font-size:22px; }
+.report-workspace small { display:block; margin-top:4px; color:var(--text-secondary); font-size:11px; line-height:1.6; }
+.report-table-scroll { overflow-x:auto; }.report-workspace table { width:100%; border-collapse:collapse; }
+.report-workspace :is(th,td) { text-align:left; padding:10px 8px; border-bottom:1px solid var(--border); vertical-align:top; min-width:100px; }
+.report-workspace th { font-weight:600; color:var(--text-secondary); white-space:nowrap; }
+.report-workspace td strong { white-space:nowrap; }
+.replay-hand-controls { padding:10px 16px; border-bottom:1px solid var(--border); background:var(--bg-surface); font-size:12px; }
 .cockpit-app { background: radial-gradient(ellipse at top,#26343e,#0b1117 65%); }
 .cockpit-app > header, .cockpit-app aside, .run-workspace__setup, .run-workspace__status {
   background-image:linear-gradient(#111c26e8,#111c26ed),url('../../../assets/ui/cockpit/graphite-brushed-v1.png');
