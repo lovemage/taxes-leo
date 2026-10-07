@@ -123,9 +123,8 @@ export function App() {
         setRunning(false);
         // run 寫完才換資料來源，否則重播會讀到半成品
         setReloadToken((token) => token + 1);
-        // 不自動跳到重播：跑完先讓面板 E 揭曉 E.6 的完成摘要（總手數、
-        // 桌次、總時長、bb/100），跳走的話那塊等於沒人看得到。要看逐手
-        // Log 由完成區的按鈕帶過去
+        // run-ready 在牌局寫入完成後才送出；此時才開放重播並切頁。
+        setPanel('replay');
       }),
     );
     track(
@@ -225,7 +224,7 @@ export function App() {
             <section className="run-workspace__setup" aria-labelledby="table-setup-title">
               <div className="run-workspace__setup-heading">
                 <h2 id="table-setup-title">牌桌設定</h2>
-                <span>所有參數依類別展開，可直接逐項檢查與調整</span>
+                <span>設定完成後按上方「計算」；完成時會自動進入逐手重播</span>
               </div>
               <TableSetup
                 layout="workspace"
@@ -299,6 +298,8 @@ export function App() {
               {panel === 'report' && <Report reloadToken={reloadToken} running={busy} />}
               {panel === 'replay' && (
                 <Replay
+                  key={reloadToken}
+                  available={reloadToken > 0}
                   reloadToken={reloadToken}
                   bigBlind={request.bigBlind}
                   onHeadline={setReplayHeadline}

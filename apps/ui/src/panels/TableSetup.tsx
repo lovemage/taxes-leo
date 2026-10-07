@@ -107,255 +107,104 @@ export function TableSetup({
   locked: boolean;
 }) {
   const [previews, setPreviews] = useState<PowerPreviewView[]>([]);
-  const dense = layout === 'workspace';
+  const workspace = layout === 'workspace';
 
-  // A.3：手數旁必須即時顯示效力預覽。算式由引擎提供，前端不重寫
+  // 統計效力預覽由引擎提供，手數與桌型改變時更新。
   useEffect(() => {
     let cancelled = false;
     previewPower(request.handLimit, request.players)
-      .then((result) => {
-        if (!cancelled) setPreviews(result);
-      })
-      .catch(() => setPreviews([]));
-    return () => {
-      cancelled = true;
-    };
+      .then(result => { if (!cancelled) setPreviews(result); })
+      .catch(() => { if (!cancelled) setPreviews([]); });
+    return () => { cancelled = true; };
   }, [request.handLimit, request.players]);
 
   const set = <K extends keyof RunRequest>(key: K, value: RunRequest[K]) =>
     onChange({ ...request, [key]: value });
-
-  const blindError =
-    request.smallBlind >= request.bigBlind ? '小盲必須小於大盲' : undefined;
+  const blindError = request.smallBlind >= request.bigBlind ? '小盲必須小於大盲' : undefined;
+  const rakeActive = request.rakeBasisPoints > 0 && request.rakeCapBb > 0;
 
   return (
-    <div className={dense ? 'table-setup table-setup--workspace' : 'table-setup'}>
-      {locked && (
-        <div
-          className={dense ? 'table-setup__lock' : undefined}
-          style={{
-            padding: '8px 10px',
-            marginBottom: dense ? 0 : 12,
-            borderRadius: 'var(--radius-control)',
-            border: '1px solid var(--warning)',
-            color: 'var(--warning)',
-            fontSize: 11,
-          }}
-        >
-          run 進行中，設定已鎖定。中途變更會讓 RunManifest 與實際執行不符。
-        </div>
-      )}
+    <div className={workspace ? 'table-setup table-setup--workspace' : 'table-setup'}>
+      {workspace && <div className="table-setup__summary" aria-label="目前牌桌設定摘要">
+        <div><small>桌型</small><strong>{request.players} 人桌</strong></div>
+        <div><small>起始籌碼</small><strong>{request.startingStackBb} BB</strong></div>
+        <div><small>小盲 / 大盲</small><strong>{request.smallBlind} / {request.bigBlind}</strong></div>
+        <div><small>抽水</small><strong>{rakeActive ? `${request.rakeBasisPoints / 100}% · 上限 ${request.rakeCapBb} BB` : '不抽水'}</strong></div>
+        <div><small>計算手數</small><strong>{request.handLimit.toLocaleString()} 手</strong></div>
+      </div>}
+      {locked && <p className="table-setup__lock" role="status">計算進行中，設定暫時鎖定。完成後可調整並重新計算。</p>}
 
-      <Group title="桌型" compact={dense}>
-        <Field dense={dense} label="座位數" range="6–9">
-          <Segmented
-            value={request.players}
-            options={[6, 7, 8, 9]}
-            disabled={locked}
-            onChange={(v) => {
-              // 補位目標不得大於開桌人數
-              onChange({
-                ...request,
-                players: v,
-                autoRefillTarget: Math.min(request.autoRefillTarget, v),
-              });
-            }}
-          />
+      <Group title="桌型與籌碼" description="決定開桌人數、每位玩家的起始籌碼，以及有人離桌時是否補位。" compact={workspace}>
+        <Field label="開桌人數" range="6–9 人" hint="選擇本次模擬的桌型。">
+          <Segmented value={request.players} options={[6, 7, 8, 9]} disabled={locked}
+            onChange={v => onChange({ ...request, players: v, autoRefillTarget: Math.min(request.autoRefillTarget, v) })} />
         </Field>
-        <Field dense={dense} label="自動補位" hint="關閉時人數降到 6 以下即結束桌次">
-          <Toggle
-            checked={request.autoRefillEnabled}
-            disabled={locked}
-            label="Bot 離桌後補入新 Bot"
-            onChange={(v) => set('autoRefillEnabled', v)}
-          />
+        <Field label="起始籌碼" unit="BB" range="至少 1" hint={`每位玩家開桌時持有 ${request.startingStackBb * request.bigBlind} 個籌碼單位；1 BB = ${request.bigBlind}。`}>
+          <NumberInput ariaLabel="起始籌碼（BB）" value={request.startingStackBb} min={1} disabled={locked} onChange={v => set('startingStackBb', v)} />
         </Field>
-        {request.autoRefillEnabled && (
-          <Field dense={dense} label="補位目標人數" range={`6–${request.players}`}>
-            <Segmented
-              value={request.autoRefillTarget}
-              options={[6, 7, 8, 9].filter((n) => n <= request.players)}
-              disabled={locked}
-              onChange={(v) => set('autoRefillTarget', v)}
-            />
-          </Field>
-        )}
-      </Group>
-
-      <Group title="籌碼" compact={dense}>
-        <Field dense={dense} label="起始深度" unit="BB" range="整數">
-          <NumberInput
-            value={request.startingStackBb}
-            min={1}
-            disabled={locked}
-            onChange={(v) => set('startingStackBb', v)}
-          />
+        <Field label="自動補位" hint="關閉後不補人；在桌人數少於 6 人時結束該桌次。">
+          <Toggle checked={request.autoRefillEnabled} disabled={locked} label="Bot 離桌後補入新 Bot" onChange={v => set('autoRefillEnabled', v)} />
         </Field>
-        <Field dense={dense} label="籌碼政策" hint="v1 只有一種政策，因此為唯讀顯示">
-          <ReadOnlyValue value="bustOut" note="破產離桌、籌碼跨手結轉" />
+        {request.autoRefillEnabled && <Field label="補位目標人數" range={`6–${request.players} 人`} hint="補位後維持的人數，不能超過開桌人數。">
+          <Segmented value={request.autoRefillTarget} options={[6, 7, 8, 9].filter(n => n <= request.players)} disabled={locked} onChange={v => set('autoRefillTarget', v)} />
+        </Field>}
+        <Field label="籌碼政策" hint="目前固定使用此政策，無須設定。">
+          <ReadOnlyValue value="破產離桌" note="籌碼跨手累計，不會每手重置" />
         </Field>
       </Group>
 
-      <Group title="強制下注" compact={dense}>
-        <Field dense={dense} label="小盲／大盲" error={blindError}>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <NumberInput
-              value={request.smallBlind}
-              min={1}
-              disabled={locked}
-              onChange={(v) => set('smallBlind', v)}
-            />
-            <NumberInput
-              value={request.bigBlind}
-              min={1}
-              disabled={locked}
-              onChange={(v) => set('bigBlind', v)}
-            />
+      <Group title="強制下注" description="盲注與 Ante 使用籌碼單位；起始籌碼與抽水上限則以 BB 設定。" compact={workspace}>
+        <Field label="小盲 / 大盲" unit="籌碼單位" hint="兩者皆為正整數，小盲必須小於大盲。" error={blindError}>
+          <div className="table-setup__blinds">
+            <label>小盲<NumberInput ariaLabel="小盲" value={request.smallBlind} min={1} disabled={locked} onChange={v => set('smallBlind', v)} /></label>
+            <label>大盲<NumberInput ariaLabel="大盲" value={request.bigBlind} min={1} disabled={locked} onChange={v => set('bigBlind', v)} /></label>
           </div>
         </Field>
-        <Field
-          dense={dense}
-          label="Ante 模式"
-          hint={
-            request.anteMode === 'bbAnte' || request.anteMode === 'btnAnte'
-              ? '代付者付「金額 × 在座人數」'
-              : undefined
-          }
-        >
-          <Select
-            value={request.anteMode}
-            disabled={locked}
-            options={[
-              { value: 'none', label: '無' },
-              { value: 'perPlayer', label: '逐人 ante' },
-              { value: 'bbAnte', label: 'BB 代付' },
-              { value: 'btnAnte', label: 'BTN 代付' },
-            ]}
-            onChange={(v) =>
-              onChange({ ...request, anteMode: v, anteAmount: v === 'none' ? 0 : request.anteAmount })
-            }
-          />
+        <Field label="Ante 模式" hint={request.anteMode === 'bbAnte' || request.anteMode === 'btnAnte' ? '代付者每手支付「每人金額 × 在桌人數」。' : request.anteMode === 'perPlayer' ? '每位在桌玩家在盲注前支付 Ante。' : '不收 Ante，只支付盲注。'}>
+          <Select ariaLabel="Ante 模式" value={request.anteMode} disabled={locked} options={[
+            { value: 'none', label: '無 Ante' }, { value: 'perPlayer', label: '每人支付' },
+            { value: 'bbAnte', label: '大盲代付（BB Ante）' }, { value: 'btnAnte', label: '莊家代付（BTN Ante）' },
+          ]} onChange={v => onChange({ ...request, anteMode: v, anteAmount: v === 'none' ? 0 : request.anteAmount })} />
         </Field>
-        {request.anteMode !== 'none' && (
-          <Field dense={dense} label="Ante 金額" unit="最小籌碼單位">
-            <NumberInput
-              value={request.anteAmount}
-              min={0}
-              disabled={locked}
-              onChange={(v) => set('anteAmount', v)}
-            />
-          </Field>
-        )}
-        <Field
-          dense={dense}
-          label="Straddle"
-          hint="金額由引擎自動計算：首段 2×BB，後段為前段 2 倍"
-        >
-          <Select
-            value={request.straddleMode}
-            disabled={locked}
-            options={[
-              { value: 'none', label: '無' },
-              { value: 'single', label: '單 straddle' },
-              { value: 'double', label: 'double straddle' },
-            ]}
-            onChange={(v) => set('straddleMode', v)}
-          />
+        <Field label="Straddle" hint={`單次為 ${request.bigBlind * 2}（2 BB）；雙次再加 ${request.bigBlind * 4}（4 BB）的強制下注。`}>
+          <Select ariaLabel="Straddle" value={request.straddleMode} disabled={locked} options={[
+            { value: 'none', label: '無 Straddle' }, { value: 'single', label: '單次（2 BB）' }, { value: 'double', label: '雙次（2 BB、4 BB）' },
+          ]} onChange={v => set('straddleMode', v)} />
+        </Field>
+        {request.anteMode !== 'none' && <Field label="每人 Ante 金額" unit="籌碼單位" range="0 以上的整數" hint={request.anteMode === 'perPlayer' ? `每人每手支付 ${request.anteAmount}。` : `${request.players} 人在桌時，代付者每手支付 ${request.anteAmount * request.players}。`}>
+          <NumberInput ariaLabel="每人 Ante 金額" value={request.anteAmount} min={0} disabled={locked} onChange={v => set('anteAmount', v)} />
+        </Field>}
+      </Group>
+
+      <Group title="抽水" description="每手依底池比例抽水，最高不超過設定上限。比例或上限為 0 時不抽水。" compact={workspace}>
+        <Field label="抽水比例" unit="%" range="0–100" hint="可輸入至小數點後兩位，例如 4.5%。">
+          <NumberInput ariaLabel="抽水比例（%）" value={request.rakeBasisPoints / 100} min={0} max={100} step={0.5} decimals={2} disabled={locked} onChange={v => set('rakeBasisPoints', Math.round(v * 100))} />
+        </Field>
+        <Field label="每手抽水上限" unit="BB" range="0 以上的整數" hint="要啟用抽水，比例與上限都需大於 0。">
+          <NumberInput ariaLabel="每手抽水上限（BB）" value={request.rakeCapBb} min={0} disabled={locked} onChange={v => set('rakeCapBb', v)} />
+        </Field>
+        <Field label="抽水時機" hint="勾選後，只對有發出翻牌（Flop）的牌局抽水。">
+          <Toggle checked={request.rakeNoFlopNoDrop} disabled={locked} label="未發翻牌不抽水" onChange={v => set('rakeNoFlopNoDrop', v)} />
         </Field>
       </Group>
 
-      <Group title="抽水" compact={dense}>
-        <Field
-          dense={dense}
-          label="抽水比例"
-          unit="%"
-          range="0–100"
-          hint="可到小數點後兩位；引擎以萬分比計算，4.5% 這類值不會被截掉"
-        >
-          <NumberInput
-            value={request.rakeBasisPoints / 100}
-            min={0}
-            max={100}
-            step={0.5}
-            decimals={2}
-            disabled={locked}
-            onChange={(v) => set('rakeBasisPoints', Math.round(v * 100))}
-          />
-        </Field>
-        <Field dense={dense} label="每手上限" unit="BB">
-          <NumberInput
-            value={request.rakeCapBb}
-            min={0}
-            disabled={locked}
-            onChange={(v) => set('rakeCapBb', v)}
-          />
-        </Field>
-        <Field dense={dense} label="未發 flop 不抽水">
-          <Toggle
-            checked={request.rakeNoFlopNoDrop}
-            disabled={locked}
-            label="noFlopNoDrop"
-            onChange={(v) => set('rakeNoFlopNoDrop', v)}
-          />
-        </Field>
-      </Group>
-
-      <Group title="計算" compact={dense}>
-        <Field
-          dense={dense}
-          label="手數"
-          range={`${HAND_MIN / 1000}K–${HAND_MAX / 1000}K，以 1K 為單位`}
-        >
-          <input
-            type="range"
-            min={HAND_MIN}
-            max={HAND_MAX}
-            step={HAND_STEP}
-            value={request.handLimit}
-            disabled={locked}
-            onChange={(e) => set('handLimit', Number(e.target.value))}
-            style={{ width: '100%' }}
-          />
-          <div
-            className="num"
-            style={{ fontSize: 14, color: 'var(--accent)', marginTop: 2 }}
-          >
-            {(request.handLimit / 1000).toFixed(0)}K 手
+      <Group title="計算設定" description="設定樣本手數與亂數種子，再按上方「計算」。完成後自動進入本次牌局重播。" compact={workspace}>
+        <Field label="計算手數" range="1,000–100,000" hint="每次增減 1,000 手；較多手數有助於縮小統計誤差。">
+          <div className="table-setup__hand-limit">
+            <input aria-label="計算手數" type="range" min={HAND_MIN} max={HAND_MAX} step={HAND_STEP} value={request.handLimit} disabled={locked} onChange={e => set('handLimit', Number(e.target.value))} />
+            <output className="num">{request.handLimit.toLocaleString()} 手</output>
           </div>
         </Field>
-
-        <PowerPreview previews={previews} compact={dense} />
-
-        <Field
-          dense={dense}
-          label="亂數種子"
-          hint="相同 seed 與設定可完整重現同一個 run"
-        >
-          <div style={{ display: 'flex', gap: 8 }}>
-            <TextInput
-              value={request.masterSeed}
-              disabled={locked}
-              onChange={(v) => set('masterSeed', v.replace(/\D/g, ''))}
-            />
-            <button
-              type="button"
-              disabled={locked}
-              onClick={() => set('masterSeed', String(Math.floor(Math.random() * 1_000_000_000)))}
-              style={{
-                padding: '6px 10px',
-                borderRadius: 'var(--radius-control)',
-                border: '1px solid var(--border)',
-                background: 'transparent',
-                color: 'var(--text-secondary)',
-                fontSize: 12,
-                cursor: locked ? 'default' : 'pointer',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              重骰
-            </button>
+        <Field label="亂數種子（Seed）" range="非負整數" hint="相同種子、牌桌及策略設定可重現同一批牌局；重骰可換一批牌。">
+          <div className="table-setup__seed">
+            <TextInput ariaLabel="亂數種子（Seed）" value={request.masterSeed} disabled={locked} onChange={v => set('masterSeed', v.replace(/\D/g, ''))} />
+            <button type="button" disabled={locked} onClick={() => set('masterSeed', String(Math.floor(Math.random() * 1_000_000_000)))}>重骰</button>
           </div>
         </Field>
+        <details className="table-setup__power" open>
+          <summary>查看統計精度預覽<span>估計此手數的誤差範圍與建議樣本量</span></summary>
+          {previews.length > 0 ? <PowerPreview previews={previews} /> : <p className="dim">統計預覽暫時無法取得；仍可依設定手數計算。</p>}
+        </details>
       </Group>
     </div>
   );
@@ -450,31 +299,23 @@ function formatHands(hands: number): string {
 
 function Group({
   title,
+  description,
   compact = false,
   children,
 }: {
   title: string;
+  description: string;
   compact?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <section
-      className={compact ? 'table-setup__group' : undefined}
-      style={{ marginBottom: compact ? 0 : 24 }}
-    >
-      <h3
-        style={{
-          fontSize: 11,
-          color: 'var(--text-secondary)',
-          fontWeight: 600,
-          margin: '0 0 8px',
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-        }}
-      >
-        {title}
-      </h3>
-      {children}
+    <section className={compact ? 'table-setup__group' : undefined}
+      style={{ marginBottom: compact ? 0 : 24 }} aria-label={title}>
+      <div className="table-setup__group-heading">
+        <h3>{title}</h3>
+        <p>{description}</p>
+      </div>
+      <div className="table-setup__fields">{children}</div>
     </section>
   );
 }

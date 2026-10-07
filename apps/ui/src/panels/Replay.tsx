@@ -23,10 +23,13 @@ const NO_FRAMES: never[] = [];
  *   current_run，前端不需要（也拿不到）run id。
  */
 export function Replay({
+  available,
   reloadToken,
   bigBlind: configuredBigBlind,
   onHeadline,
 }: {
+  /** 本次開啟至少完成一次計算才開放，不自動載入歷史或示範牌局。 */
+  available: boolean;
   reloadToken: number;
   bigBlind: number;
   /** 回報頂部列要顯示的手數／底池（V.1）。身分必須穩定，否則每次 render 重跑 */
@@ -54,10 +57,11 @@ export function Replay({
   useEffect(() => {
     let active = true;
     setError(null); setRun(null); setHand(null); lastHand.current = null; setPreviousHand(null);
+    if (!available) return () => { active = false; };
     getRun().then(next => { if (active) { setRun(next); setSelected(0); } })
       .catch((e: unknown) => { if (active) setError(String(e)); });
     return () => { active = false; };
-  }, [reloadToken]);
+  }, [available, reloadToken]);
 
   useEffect(() => {
     let active = true;
@@ -102,6 +106,14 @@ export function Replay({
 
   // 切走面板時清掉，否則頂部列會停在上一次看到的數字
   useEffect(() => () => onHeadline(null), [onHeadline]);
+
+  if (!available) {
+    return <div className="replay-empty" role="status">
+      <h1>尚未計算</h1>
+      <p>本次開啟尚未完成計算，重播暫未開放。</p>
+      <p className="dim">先調整牌桌與策略，再按上方「計算」。完成後會自動切到這裡，播放本次計算的牌局。</p>
+    </div>;
+  }
 
   if (error) {
     return (

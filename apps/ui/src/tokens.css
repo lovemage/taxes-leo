@@ -280,9 +280,7 @@ input[type='range']::-moz-range-track {
   }
 }
 
-/* ── 計算工作區 ───────────────────────────────────────────────────────
-   計算輸出固定在上方約三分之一，牌桌設定在下方約三分之二。寬螢幕時五組
-   參數並排，讓使用者不必在狹窄側欄逐段向下捲動。 */
+/* 計算與牌桌各自使用完整工作區。 */
 
 .run-workspace {
   display: grid;
@@ -313,17 +311,18 @@ input[type='range']::-moz-range-track {
   align-items: baseline;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 10px;
+  max-width: 1280px;
+  margin: 0 auto 16px;
 }
 
 .run-workspace__setup-heading h2 {
   margin: 0;
-  font-size: 14px;
+  font-size: 18px;
 }
 
 .run-workspace__setup-heading span {
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 /* 翻前情境命中：計算狀態區下方，上一次 run 的實際命中 */
@@ -498,32 +497,156 @@ input[type='range']::-moz-range-track {
 }
 
 .table-setup--workspace {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
-  align-items: start;
+  max-width: 1280px;
+  margin: auto;
+  border: 1px solid var(--border);
+  background: var(--bg-base);
+  border-radius: 0;
+}
+
+.table-setup__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 32px;
+  padding: 16px 20px;
+  background: var(--bg-raised);
+}
+
+.table-setup__summary small,
+.table-setup__summary strong {
+  display: block;
+}
+
+.table-setup__summary small {
+  margin-bottom: 5px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.table-setup__summary strong {
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .table-setup__lock {
-  grid-column: 1 / -1;
+  margin: 0;
+  padding: 12px 20px;
+  color: var(--warning);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
 }
 
 .table-setup__group {
+  display: grid;
+  grid-template-columns: 155px minmax(0, 1fr);
+  gap: 24px;
   min-width: 0;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-panel);
-  background: var(--bg-base);
+  padding: 18px 20px;
+  border-top: 1px solid var(--border);
 }
 
-.table-setup__group > :last-child {
+.table-setup__group-heading h3 {
+  margin: 0 0 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.table-setup__group-heading p {
+  margin: 0 0 12px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.table-setup--workspace .table-setup__fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px 24px;
+  align-items: start;
+}
+
+.table-setup--workspace .table-setup__fields > [role=group] {
   margin-bottom: 0 !important;
 }
 
-/* 桌面殼最小寬度為 1100px，因此五欄維持到殼的可用範圍以下。 */
-@media (max-width: 1020px) {
-  .table-setup--workspace {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+.table-setup__fields > [role=group] > .dim {
+  line-height: 1.6;
+}
+
+.table-setup__blinds,
+.table-setup__seed {
+  display: flex;
+  gap: 8px;
+}
+
+.table-setup__blinds label {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+
+.table-setup__blinds input {
+  margin-top: 4px;
+}
+
+.table-setup__seed input {
+  min-width: 0;
+}
+
+.table-setup__seed button {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.table-setup__hand-limit input {
+  width: 100%;
+}
+
+.table-setup__hand-limit output {
+  display: block;
+  color: var(--accent);
+  font-size: 14px;
+  margin-top: 8px;
+}
+
+.table-setup__power {
+  grid-column: 1 / -1;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.table-setup__power summary {
+  cursor: pointer;
+  padding: 8px 0;
+}
+
+.table-setup__power summary span {
+  margin-left: 12px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.replay-empty {
+  max-width: 620px;
+  padding: 28px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.replay-empty h1 {
+  font-size: 18px;
+}
+
+@media (max-width: 1150px) {
+  .table-setup--workspace .table-setup__fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -543,7 +666,12 @@ input[type='range']::-moz-range-track {
     grid-template-columns: 1fr;
   }
 
-  .table-setup--workspace {
+  .table-setup__group {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .table-setup--workspace .table-setup__fields {
     grid-template-columns: 1fr;
   }
 

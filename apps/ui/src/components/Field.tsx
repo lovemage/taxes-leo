@@ -24,7 +24,7 @@ export function Field({
   children: ReactNode;
 }) {
   return (
-    <div style={{ marginBottom: dense ? 8 : 12 }}>
+    <div role="group" aria-label={label} style={{ marginBottom: dense ? 8 : 12 }}>
       <div
         style={{
           display: 'flex',
@@ -96,6 +96,7 @@ export function NumberInput({
   step = 1,
   decimals = 0,
   disabled,
+  ariaLabel,
 }: {
   value: number;
   onChange: (value: number) => void;
@@ -105,6 +106,7 @@ export function NumberInput({
   /** 允許的小數位數。0 代表整數欄位 */
   decimals?: number;
   disabled?: boolean;
+  ariaLabel?: string;
 }) {
   const quantize = (raw: number) => {
     const factor = 10 ** decimals;
@@ -131,6 +133,7 @@ export function NumberInput({
 
   return (
     <input
+      aria-label={ariaLabel}
       type={asText ? 'text' : 'number'}
       inputMode={asText ? 'decimal' : undefined}
       value={text}
@@ -159,13 +162,16 @@ export function TextInput({
   value,
   onChange,
   disabled,
+  ariaLabel,
 }: {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
+  ariaLabel?: string;
 }) {
   return (
     <input
+      aria-label={ariaLabel}
       type="text"
       value={value}
       disabled={disabled}
@@ -180,14 +186,17 @@ export function Select<T extends string>({
   options,
   onChange,
   disabled,
+  ariaLabel,
 }: {
   value: T;
   options: ReadonlyArray<{ value: T; label: string }>;
   onChange: (value: T) => void;
   disabled?: boolean;
+  ariaLabel?: string;
 }) {
   return (
     <select
+      aria-label={ariaLabel}
       value={value}
       disabled={disabled}
       onChange={(e) => onChange(e.target.value as T)}

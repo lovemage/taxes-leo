@@ -178,7 +178,7 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: 建立 Release
+      - name: 建立或更新 Release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -208,6 +208,11 @@ jobs:
           EOF
 
           ls -l dist
-          gh release create "$GITHUB_REF_NAME" dist/* \
-            --title "$GITHUB_REF_NAME" \
-            --notes-file release-notes.md
+          # 同版本重發時保留既有說明，替換 Windows 與 macOS 的下載檔。
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* \
+              --title "$GITHUB_REF_NAME" \
+              --notes-file release-notes.md
+          fi

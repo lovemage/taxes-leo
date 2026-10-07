@@ -30,6 +30,7 @@ export function useReplayPlayer(frames: FrameView[], options: {
     updateIndex(0); time.current = 0; setElapsed(0); finished.current = false;
   }, [frames]);
   useEffect(() => {
+    if (frames.length === 0) return;
     let id: number;
     let previous = performance.now();
     const tick = (now: number) => {
